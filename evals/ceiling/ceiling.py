@@ -12,7 +12,8 @@ A call is a navigation turn when the tools it asked for locate code instead of
 changing it or running it:
 - search: Grep, Glob, LS; Bash whose command starts with grep, rg, find, fd, ls,
   tree, git grep, git ls-files, ast-grep; graphify query/explain/path; serena's
-  symbol lookups;
+  symbol lookups; every tool of graff's and codebase-memory-mcp's MCP servers,
+  so that a map's own calls count where the searches they replace did;
 - a read to locate: Read, or Bash cat/head/tail/sed -n/nl/wc/bat on files, of a
   path that the session's next edit does not touch. Images, PDFs, logs, command
   output and /proc, /sys, /dev are results to check, not code: not counted. A read followed by an edit
@@ -60,6 +61,7 @@ SEARCH_TOOLS = {"Grep", "Glob", "LS"}
 SEARCH_CMDS = {"grep", "egrep", "rg", "find", "fd", "ls", "tree", "ast-grep", "sg", "locate"}
 READ_CMDS = {"cat", "head", "tail", "sed", "nl", "wc", "bat", "less", "awk"}
 SERENA_NAV = re.compile(r"^mcp__.*serena.*__(find_symbol|find_referencing_symbols|get_symbols_overview|search_for_pattern|list_dir|find_file)$")
+MAP_NAV = re.compile(r"^mcp__.*(graff|codebase[-_]memory).*__")
 EXT_LANG = {
     ".rs": "rust", ".nix": "nix", ".sh": "bash", ".bash": "bash", ".py": "python",
     ".c": "c", ".h": "c", ".cc": "c++", ".cpp": "c++", ".hpp": "c++",
@@ -187,6 +189,8 @@ def classify(name, args):
         return ("read", path) if is_code(path) else ("other", None)
     if name in SEARCH_TOOLS:
         return "search", [args.get("path") or ""]
+    if MAP_NAV.match(name):
+        return "search", [args.get("path") or args.get("file") or ""]
     if SERENA_NAV.match(name):
         return "search", [args.get("relative_path") or ""]
     if name != "Bash":
@@ -219,74 +223,80 @@ def profiles():
     return sorted(p for p in glob.glob(os.path.join(HOME, ".claude*")) if os.path.isdir(os.path.join(p, "projects")))
 
 
-def scan(since, until):
+def transcripts(since):
+    """(profile, path) of every transcript written since `since`, but the
+    paired runs'."""
+    for base in profiles():
+        for path in sorted(glob.glob(os.path.join(base, "projects", "**", "*.jsonl"), recursive=True)):
+            if SKIP not in path and os.path.getmtime(path) >= since.timestamp():
+                yield os.path.basename(base), path
+
+
+def scan(since, until, paths=None):
     """Each transcript's calls in file order, every call once, and the size of
-    every tool result by tool_use_id."""
+    every tool result by tool_use_id. `paths`, (profile, path) pairs, replaces
+    the profiles' transcripts: the paired runs' own, for the verdict."""
     seen = set()
     files = collections.defaultdict(list)
     results = {}
     compacts = collections.defaultdict(list)
-    for base in profiles():
-        profile = os.path.basename(base)
-        for path in sorted(glob.glob(os.path.join(base, "projects", "**", "*.jsonl"), recursive=True)):
-            if SKIP in path or os.path.getmtime(path) < since.timestamp():
-                continue
-            by_mid = {}
-            with open(path, errors="replace") as handle:
-                for raw in handle:
-                    if '"assistant"' not in raw and '"tool_result"' not in raw and "compact_boundary" not in raw:
-                        continue
-                    try:
-                        row = json.loads(raw)
-                    except ValueError:
-                        continue
-                    kind = row.get("type")
-                    if kind == "system" and row.get("subtype") == "compact_boundary":
-                        compacts[path].append(len(files[path]))
-                        continue
-                    message = row.get("message") or {}
-                    content = message.get("content")
-                    if kind == "user" and isinstance(content, list):
-                        for block in content:
-                            if isinstance(block, dict) and block.get("type") == "tool_result":
-                                body = block.get("content")
-                                size = len(body) if isinstance(body, str) else len(json.dumps(body or ""))
-                                results[block.get("tool_use_id")] = size
-                        continue
-                    if kind != "assistant" or not row.get("timestamp"):
-                        continue
-                    usage = message.get("usage")
-                    mid = message.get("id") or row.get("requestId")
-                    if not usage or not mid or message.get("model") == "<synthetic>":
-                        continue
-                    uses = [(b.get("id"), b.get("name", ""), b.get("input") or {})
-                            for b in content or [] if isinstance(b, dict) and b.get("type") == "tool_use"]
-                    if mid in by_mid:
-                        # one response is logged as one line per content block
-                        by_mid[mid].uses += uses
-                        continue
-                    if mid in seen:
-                        continue
-                    at = when(row["timestamp"])
-                    if not since <= at < until:
-                        continue
-                    seen.add(mid)
-                    call = Call()
-                    call.mid, call.profile, call.file, call.at = mid, profile, path, at
-                    call.side = bool(row.get("isSidechain")) or "/subagents/" in path
-                    call.cwd = row.get("cwd") or ""
-                    call.model = message.get("model") or ""
-                    split = usage.get("cache_creation") or {}
-                    cw1h, cw5m = split.get("ephemeral_1h_input_tokens"), split.get("ephemeral_5m_input_tokens")
-                    if cw1h is None and cw5m is None:
-                        cw1h, cw5m = usage.get("cache_creation_input_tokens") or 0, 0
-                    call.cw1h, call.cw5m = cw1h or 0, cw5m or 0
-                    call.inp = usage.get("input_tokens") or 0
-                    call.cr = usage.get("cache_read_input_tokens") or 0
-                    call.out = usage.get("output_tokens") or 0
-                    call.uses = uses
-                    by_mid[mid] = call
-                    files[path].append(call)
+    for profile, path in transcripts(since) if paths is None else paths:
+        by_mid = {}
+        with open(path, errors="replace") as handle:
+            for raw in handle:
+                if '"assistant"' not in raw and '"tool_result"' not in raw and "compact_boundary" not in raw:
+                    continue
+                try:
+                    row = json.loads(raw)
+                except ValueError:
+                    continue
+                kind = row.get("type")
+                if kind == "system" and row.get("subtype") == "compact_boundary":
+                    compacts[path].append(len(files[path]))
+                    continue
+                message = row.get("message") or {}
+                content = message.get("content")
+                if kind == "user" and isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "tool_result":
+                            body = block.get("content")
+                            size = len(body) if isinstance(body, str) else len(json.dumps(body or ""))
+                            results[block.get("tool_use_id")] = size
+                    continue
+                if kind != "assistant" or not row.get("timestamp"):
+                    continue
+                usage = message.get("usage")
+                mid = message.get("id") or row.get("requestId")
+                if not usage or not mid or message.get("model") == "<synthetic>":
+                    continue
+                uses = [(b.get("id"), b.get("name", ""), b.get("input") or {})
+                        for b in content or [] if isinstance(b, dict) and b.get("type") == "tool_use"]
+                if mid in by_mid:
+                    # one response is logged as one line per content block
+                    by_mid[mid].uses += uses
+                    continue
+                if mid in seen:
+                    continue
+                at = when(row["timestamp"])
+                if not since <= at < until:
+                    continue
+                seen.add(mid)
+                call = Call()
+                call.mid, call.profile, call.file, call.at = mid, profile, path, at
+                call.side = bool(row.get("isSidechain")) or "/subagents/" in path
+                call.cwd = row.get("cwd") or ""
+                call.model = message.get("model") or ""
+                split = usage.get("cache_creation") or {}
+                cw1h, cw5m = split.get("ephemeral_1h_input_tokens"), split.get("ephemeral_5m_input_tokens")
+                if cw1h is None and cw5m is None:
+                    cw1h, cw5m = usage.get("cache_creation_input_tokens") or 0, 0
+                call.cw1h, call.cw5m = cw1h or 0, cw5m or 0
+                call.inp = usage.get("input_tokens") or 0
+                call.cr = usage.get("cache_read_input_tokens") or 0
+                call.out = usage.get("output_tokens") or 0
+                call.uses = uses
+                by_mid[mid] = call
+                files[path].append(call)
     return files, results, compacts
 
 

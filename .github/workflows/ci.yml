@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: build, test & clippy
+    runs-on: ubuntu-latest
+    steps:
+      # As in ekko's CI: v5 is the first release on Node 24.
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      # --locked everywhere: Cargo.lock is committed, and a build that would
+      # change it should fail rather than resolve other versions than a local
+      # build does.
+      - name: Build
+        run: cargo build --locked --all-targets
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      # The evals' own tests: the checkers and metrics gate A and gate B are
+      # read with, each case holding an input that must make it say no. They
+      # read no transcript and no repository of the user's.
+      - name: Eval tests
+        run: |
+          for t in evals/*/test_*.py; do
+            echo "$t"
+            python3 "$t"
+          done
+
+      # Nothing else pins the declared MSRV, so it would rot while CI builds
+      # on stable. Build only, as ekko's CI does.
+      - name: Check the declared MSRV still builds
+        run: |
+          MSRV=$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2)
+          echo "Cargo.toml declares rust-version = $MSRV"
+          rustup toolchain install "$MSRV" --profile minimal
+          cargo "+$MSRV" build --locked
+
+      # The binary as a user runs it, beyond what the tests drive.
+      - name: Smoke-test the binary
+        run: |
+          VERSION=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          test "$(cargo run --locked --quiet -- --version)" = "graff $VERSION"

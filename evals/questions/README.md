@@ -32,9 +32,10 @@ prompts.
 | C        | 3              | 2       |
 
 - By repository: ekko 26, NixOS 10, ctx 8, kimi-k3-in-c 7, the work repository 1.
-- By source: 39 from a navigation run that ended in an edit; 4 graphify queries
-  as typed; 4 from searches or reads that ended the looking; 1 search that found
-  nothing before the agent wrote the thing; 4 asked of the wrong repository.
+- By source: 39 from a navigation run that ended in an edit; 4 from three
+  graphify queries, as typed; 4 from searches or reads that ended the looking;
+  1 search that found nothing before the agent wrote the thing; 4 asked of the
+  wrong repository.
 - What finding the answer cost the agent, over the 39 runs: a median of 3 calls
   and 62k units (task 1's units), at most 407k; 4.0M in all.
 - C has 3 questions with an answer, so gate A's per-language rule, which needs
@@ -83,6 +84,17 @@ widened to the block the question names (the flake's inputs, the hooks list)
 when the edit landed somewhere inside it, one narrowed to the heading the
 question names. A question made by hand takes the ranges the agent read, or for
 a graphify query the definitions it names, checked at the commit.
+
+**The graphify calls.** Task 2 names the 7 graphify query and explain calls of
+task 1's 30 days. kimi-k3-in-c's two queries are kimi-01 and kimi-02; its
+explain, 6 seconds after the search kimi-05 comes from, asks what kimi-05 asks.
+The other four were asked of repositories no longer on this machine: gone from
+`/projects`, in none of the btrfs snapshots and in none of the user's GitHub
+repositories, so no commit of theirs can be checked or indexed. Only one of the
+four was followed by reading in its own repository; the others were a smoke
+test right after graphify was installed and two questions whose looking went on
+in sibling repositories. One graphify query after that window, asked of the
+work repository's graph, gives two questions (see No answer).
 
 **No answer.** The patterns that would betray an answer are listed in
 `absent`, and `check.py` requires that none matches anywhere in the commit.

@@ -1,0 +1,54 @@
+run 2026-10-04
+graff 62e3c57e6a828ae9df4a87078b334a5e90e646ff with uncommitted changes
+corpus /projects/graff src, at 62e3c57e6a828ae9df4a87078b334a5e90e646ff (git archive), crate graff, 6 files
+truth rust-analyzer 2026-09-28 scip, read by scip version v0.10.0; 0 references left out, to 0 symbols it gives to more than one definition
+
+broken resolver: precision 0.000, recall 0.000
+graff: precision 0.999 (776 of 777 judged; 0 unjudged), recall 0.989 (776 of 785 references)
+
+precision by use:
+  call free        1.000  145 correct, 0 wrong, 0 unjudged
+  call method      0.994  173 correct, 1 wrong, 0 unjudged
+  call path        1.000  36 correct, 0 wrong, 0 unjudged
+  import           1.000  13 correct, 0 wrong, 0 unjudged
+  qualifier        1.000  161 correct, 0 wrong, 0 unjudged
+  reference path   1.000  132 correct, 0 wrong, 0 unjudged
+  reference type   1.000  95 correct, 0 wrong, 0 unjudged
+  reference value  1.000  21 correct, 0 wrong, 0 unjudged
+recall by what is referred to:
+  constant  1.000  of 29: 29 found
+  function  0.975  of 357: 348 found, 9 wrong or unresolved: ambiguous
+  type      1.000  of 268: 268 found
+  variant   1.000  of 131: 131 found
+rules: the wrong edges, of all the rule resolved
+  glob      0 wrong of 95
+  import    0 wrong of 55
+  module    0 wrong of 270
+  nested    0 wrong of 1
+  path      0 wrong of 182
+  receiver  0 wrong of 149
+  unique    1 wrong of 25
+
+wrong edges:
+src/extract/rust.rs:137 call method children (unique) -> src/extract/rust.rs:158 Reader::children; truth outside the crate
+    node.children(&mut cursor).collect()
+
+missed references:
+src/store.rs:522 name -> lang/impl#[Language]name().; graff: call method ambiguous
+    params![blob, language.name(), extract::VERSION],
+src/store.rs:559 name -> lang/impl#[Language]name().; graff: call method ambiguous
+    language.name(),
+src/store.rs:570 name -> extract/impl#[Kind]name().; graff: call method ambiguous
+    s.kind.name(),
+src/store.rs:578 name -> extract/impl#[CallKind]name().; graff: call method ambiguous
+    .execute(params![id, c.name, c.path, c.kind.name(), c.line, c.from])?;
+src/store.rs:582 name -> extract/impl#[RefKind]name().; graff: call method ambiguous
+    .execute(params![id, r.name, r.path, r.kind.name(), r.line, r.from])?;
+src/extract/mod.rs:218 name -> extract/impl#[Kind]name().; graff: call method ambiguous
+    Some(kind.name().to_string()),
+src/extract/mod.rs:224 name -> extract/impl#[CallKind]name().; graff: call method ambiguous
+    Some(kind.name().to_string()),
+src/extract/mod.rs:230 name -> extract/impl#[RefKind]name().; graff: call method ambiguous
+    Some(kind.name().to_string()),
+src/extract/rust.rs:178 read -> extract/rust/impl#[`Reader<'s>`]read().; graff: call method ambiguous
+    self.deeper(|reader| reader.read(node));

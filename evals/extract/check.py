@@ -40,7 +40,8 @@ ITEM = re.compile(
     r"(?P<name>(?:r#)?[^\W\d]\w*)"
 )
 
-# graff's kinds, as the keyword that defines each; an impl has no name of its own.
+# graff's kinds, as the keyword that defines each; an impl has no name of its own, and
+# an enum's variant no keyword.
 KEYWORD = {
     "function": "fn",
     "method": "fn",

@@ -1,8 +1,8 @@
 run 2026-10-04
-graff 918702420433b643563860c9f8178bc0edde523c with uncommitted changes
+graff 62e3c57e6a828ae9df4a87078b334a5e90e646ff with uncommitted changes
 corpus /projects/ekko src, at 1b25853ed5f2c5f8fae8efa132e7e0069096a419 (HEAD, through git archive)
 grammar tree-sitter 0.27.0, tree-sitter-rust 0.24.2
-extract: 30 files, 1980671 bytes, extracted in 379.6 ms; 0 with a syntax error; 0 cut for depth; 0 not read; deepest tree 31 levels, in src/shell.rs
+extract: 30 files, 1980671 bytes, extracted in 531.2 ms; 0 with a syntax error; 0 cut for depth; 0 not read; deepest tree 31 levels, in src/shell.rs
 
 30 files: 2046 definitions both found, 2 only the expression, 0 only graff
 only the expression: 2 in a macro_rules body, 0 more in a file with a syntax error, 0 unexplained

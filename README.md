@@ -13,9 +13,11 @@ Bash, Python, C and Markdown.
 graff reads Rust so far: definitions, calls, references and use items, each
 with its lines (`src/extract/`), kept in an index in `~/.cache/graff` that
 each query will bring up to date by itself, reading again only what changed
-(`src/store.rs`). `graff index` runs that check now and says what it did;
-the queries come next. What counts as graff working was fixed before its
-first line of code, in `evals/`:
+(`src/store.rs`). It ties each call and reference to the definition it
+reaches, by Rust's rules for names rather than by types, and says what stays
+ambiguous (`src/resolve.rs`). `graff index` runs the freshness check now and
+says what it did; the queries come next. What counts as graff working was
+fixed before its first line of code, in `evals/`:
 
 - `evals/ceiling/`: what code navigation costs today, read off the transcripts.
 - `evals/questions/`: 52 questions from real sessions, each with the commit it
@@ -31,6 +33,8 @@ What graff does so far is measured there too:
   and on a cargo registry's 17,112 files.
 - `evals/store/`: what keeping the index fresh costs a query, about 7 ms, and
   what a cold build costs.
+- `evals/resolve/`: the edges graff draws against rust-analyzer's, on ekko and
+  on graff's own source.
 
 ## Building
 

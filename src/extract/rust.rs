@@ -1,7 +1,7 @@
-//! Rust, read off tree-sitter-rust's tree: fn, struct, enum, union, trait,
-//! impl blocks and their methods, mod, const, static, type aliases and
-//! macro_rules, each with its lines and doc comment; calls (free, method, path
-//! and macro), references and use items, each with its line.
+//! Rust, read off tree-sitter-rust's tree: fn, struct, enum and its variants,
+//! union, trait, impl blocks and their methods, mod, const, static, type
+//! aliases and macro_rules, each with its lines and doc comment; calls (free,
+//! method, path and macro), references and use items, each with its line.
 //!
 //! tree-sitter leaves a macro's arguments as unparsed tokens. When they parse
 //! as Rust on their own, they are read as such: the items in
@@ -88,7 +88,7 @@ struct Reader<'s> {
     scope: Vec<(String, Scope)>,
     /// The definition the calls and references being read are in.
     from: Option<String>,
-    /// Names bound in the function being read, anywhere in it.
+    /// Names bound in the function being read, where the walk is.
     locals: HashSet<String>,
     /// The generic parameters of the items the walk is in.
     generics: Vec<HashSet<String>>,
@@ -146,6 +146,24 @@ fn path_text(text: &str) -> String {
         .replace(":: ", "::")
 }
 
+/// Whether a function's first parameter is `self`, `&self`, `mut self` or
+/// `self: Box<Self>`.
+fn takes_self(function: Node) -> bool {
+    let Some(parameters) = function.child_by_field_name("parameters") else {
+        return false;
+    };
+    let first = named_children(parameters)
+        .into_iter()
+        .find(|p| p.kind() != "attribute_item");
+    first.is_some_and(|first| match first.kind() {
+        "self_parameter" => true,
+        "parameter" => first
+            .child_by_field_name("pattern")
+            .is_some_and(|pattern| pattern.kind() == "self"),
+        _ => false,
+    })
+}
+
 fn starts_upper(name: &str) -> bool {
     name.chars().next().is_some_and(char::is_uppercase)
 }
@@ -176,6 +194,14 @@ impl<'s> Reader<'s> {
 
     fn visit(&mut self, node: Node) {
         self.deeper(|reader| reader.read(node));
+    }
+
+    /// Runs `step`, then forgets the names it bound: what a block, a closure
+    /// or a match arm binds is not bound after it.
+    fn local_scope(&mut self, step: impl FnOnce(&mut Self)) {
+        let locals = self.locals.clone();
+        step(self);
+        self.locals = locals;
     }
 
     fn read(&mut self, node: Node) {
@@ -212,11 +238,35 @@ impl<'s> Reader<'s> {
                     }
                 }
             }
-            "for_expression" => {
+            "for_expression" => self.local_scope(|reader| {
                 for (field, child) in fields(node) {
                     match field {
-                        Some("pattern") => self.bind(child),
-                        _ => self.visit(child),
+                        Some("pattern") => reader.bind(child),
+                        _ => reader.visit(child),
+                    }
+                }
+            }),
+            "block" | "closure_expression" | "while_expression" => {
+                self.local_scope(|reader| reader.children(node));
+            }
+            "if_expression" => {
+                // What `if let` binds holds in its block, not in the else.
+                self.local_scope(|reader| {
+                    for (field, child) in fields(node) {
+                        if field != Some("alternative") {
+                            reader.visit(child);
+                        }
+                    }
+                });
+                if let Some(alternative) = node.child_by_field_name("alternative") {
+                    self.visit(alternative);
+                }
+            }
+            "type_binding" => {
+                // `Item` in `Iterator<Item = Entry>` is the trait's, not a type in scope.
+                for (field, child) in fields(node) {
+                    if matches!(field, Some("type_arguments" | "type")) {
+                        self.visit(child);
                     }
                 }
             }
@@ -229,16 +279,16 @@ impl<'s> Reader<'s> {
                     self.bind(pattern);
                 }
             }
-            "match_arm" => {
+            "match_arm" => self.local_scope(|reader| {
                 // The pattern first: an arm's value is read with what the pattern bound.
                 for (field, child) in fields(node) {
                     match field {
-                        Some("pattern") => self.bind(child),
-                        Some("value") => self.visit(child),
+                        Some("pattern") => reader.bind(child),
+                        Some("value") => reader.visit(child),
                         _ => {}
                     }
                 }
-            }
+            }),
             "field_expression" => {
                 if let Some(value) = node.child_by_field_name("value") {
                     self.visit(value);
@@ -377,11 +427,12 @@ impl<'s> Reader<'s> {
     }
 
     fn function(&mut self, node: Node) {
-        let kind = if self
+        // A method takes `self`; `Storage::open()` is a function of the type.
+        let in_type = self
             .scope
             .last()
-            .is_some_and(|(_, scope)| *scope == Scope::Type)
-        {
+            .is_some_and(|(_, scope)| *scope == Scope::Type);
+        let kind = if in_type && takes_self(node) {
             Kind::Method
         } else {
             Kind::Function
@@ -416,18 +467,24 @@ impl<'s> Reader<'s> {
             return;
         };
         self.generics.push(self.generic_names(node));
-        let from = self.from.replace(qualified);
+        let from = self.from.replace(qualified.clone());
         for (field, child) in fields(node) {
             match (field, child.kind()) {
                 (Some("name"), _) => {}
                 (_, "enum_variant_list") => {
+                    // Each variant a definition of its own: `State::Pending`.
+                    self.scope.push((Self::segment(&qualified), Scope::Type));
                     for variant in named_children(child) {
+                        if variant.kind() == "enum_variant" {
+                            self.define(variant, Kind::Variant);
+                        }
                         for (field, part) in fields(variant) {
                             if matches!(field, Some("body" | "value")) {
                                 self.visit(part);
                             }
                         }
                     }
+                    self.scope.pop();
                 }
                 _ => self.visit(child),
             }
@@ -503,6 +560,9 @@ impl<'s> Reader<'s> {
         let tr = node.child_by_field_name("trait").map(|t| self.type_name(t));
         let (name, segment) = match &tr {
             Some(tr) => (format!("impl {tr} for {ty}"), format!("<{ty} as {tr}>")),
+            // `<store::Storage>::load`, as Rust writes a path's type, so that
+            // the type's path stays one segment of the qualified name.
+            None if ty.contains("::") => (format!("impl {ty}"), format!("<{ty}>")),
             None => (format!("impl {ty}"), ty.clone()),
         };
         let qualified = self.qualify(&name);
@@ -607,7 +667,19 @@ impl<'s> Reader<'s> {
             kind,
             line: line(at),
             from: self.from.clone(),
+            receiver: None,
         });
+    }
+
+    /// A method call, and its receiver when it is `self` or a name.
+    fn record_method(&mut self, at: Node, name: &str, receiver: Option<Node>) {
+        let receiver = receiver
+            .filter(|r| matches!(r.kind(), "self" | "identifier"))
+            .map(|r| self.text(r).to_string());
+        self.record_call(at, name, None, CallKind::Method);
+        if let Some(call) = self.out.calls.last_mut() {
+            call.receiver = receiver;
+        }
     }
 
     fn call(&mut self, node: Node) {
@@ -643,7 +715,11 @@ impl<'s> Reader<'s> {
                 if let Some(field) = function.child_by_field_name("field")
                     && field.kind() == "field_identifier"
                 {
-                    self.record_call(field, self.text(field), None, CallKind::Method);
+                    self.record_method(
+                        field,
+                        self.text(field),
+                        function.child_by_field_name("value"),
+                    );
                 }
             }
             "generic_function" => {
@@ -755,15 +831,66 @@ impl<'s> Reader<'s> {
         true
     }
 
-    /// What a macro's tokens call and name.
+    /// What a macro's tokens call and name. What they bind holds to the end
+    /// of the group it is bound in.
     fn tokens(&mut self, tree: Node) {
-        self.deeper(|reader| reader.read_tokens(tree));
+        self.deeper(|reader| reader.local_scope(|reader| reader.read_tokens(tree)));
+    }
+
+    /// Where the names a token binds end, if it binds any: the parameters
+    /// after a closure's `|`, the pattern after `let` or `for`.
+    fn binding_end(&self, tokens: &[Node], i: usize) -> Option<usize> {
+        let word = |i: usize| match tokens[i].kind() {
+            "identifier" => self.text(tokens[i]),
+            kind => kind,
+        };
+        let close = match word(i) {
+            // A closure's `|` comes where an operand does; `a | b` has one before it.
+            "|" if i == 0
+                || matches!(
+                    word(i - 1),
+                    "(" | "[" | "{" | "," | "=" | ";" | "=>" | "move" | "return"
+                ) =>
+            {
+                &["|"][..]
+            }
+            "let" => &["=", ":"][..],
+            "for" => &["in"][..],
+            _ => return None,
+        };
+        (i + 1..tokens.len()).find(|&j| close.contains(&word(j)))
+    }
+
+    /// The names a pattern's tokens bind: lower case, and not a type after `:`.
+    fn bind_tokens(&mut self, tokens: &[Node]) {
+        for (i, token) in tokens.iter().enumerate() {
+            let after_colon = i > 0 && tokens[i - 1].kind() == ":";
+            match token.kind() {
+                "token_tree" => {
+                    let inner = all_children(*token);
+                    self.deeper(|reader| reader.bind_tokens(&inner));
+                }
+                "identifier" if !after_colon => {
+                    let name = self.text(*token);
+                    if name.starts_with(|c: char| c.is_lowercase() || c == '_')
+                        && name != "mut"
+                        && !KEYWORDS.contains(&name)
+                    {
+                        self.locals.insert(name.to_string());
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 
     fn read_tokens(&mut self, tree: Node) {
         let tokens = all_children(tree);
         let kind = |i: usize| tokens.get(i).map(|t| t.kind());
         for (i, token) in tokens.iter().enumerate() {
+            if let Some(end) = self.binding_end(&tokens, i) {
+                self.bind_tokens(&tokens[i + 1..end]);
+            }
             if token.kind() == "token_tree" {
                 // An attribute, `#[..]` or `#![..]`, calls nothing, and a
                 // template is another program's; a group that opens with an
@@ -783,14 +910,16 @@ impl<'s> Reader<'s> {
                 }
                 continue;
             }
-            if token.kind() != "identifier" {
+            // tree-sitter-rust gives `default`, `union` and `gen` kinds of their own.
+            if !matches!(token.kind(), "identifier" | "default" | "union" | "gen") {
                 continue;
             }
             let name = self.text(*token);
             let before = i.checked_sub(1).and_then(kind);
             let after = kind(i + 1);
-            // A keyword, a lifetime, quote!'s `#name`, a path that goes on, or a field or argument named.
-            if KEYWORDS.contains(&name)
+            // A keyword (but `x.union(y)`), a lifetime, quote!'s `#name`, a path that goes on, or a
+            // field or argument named.
+            if (KEYWORDS.contains(&name) && !matches!(before, Some("::" | ".")))
                 || matches!(before, Some("'" | "#"))
                 || matches!(after, Some("::" | ":" | "="))
             {
@@ -805,7 +934,7 @@ impl<'s> Reader<'s> {
                 // A method if called, else a field.
                 Some(".") => {
                     if called {
-                        self.record_call(*token, name, None, CallKind::Method);
+                        self.record_method(*token, name, i.checked_sub(2).map(|j| tokens[j]));
                     }
                 }
                 Some("::") => {
@@ -1129,6 +1258,8 @@ mod tests {
             vec![
                 ("Storage", Kind::Struct),
                 ("Kind", Kind::Enum),
+                ("Kind::Task", Kind::Variant),
+                ("Kind::Note", Kind::Variant),
                 ("MAX", Kind::Const),
                 ("COUNT", Kind::Static),
                 ("Map", Kind::TypeAlias),
@@ -1137,7 +1268,7 @@ mod tests {
                 ("Render::render", Kind::Method),
                 ("Render::twice", Kind::Method),
                 ("impl Storage", Kind::Impl),
-                ("Storage::load", Kind::Method),
+                ("Storage::load", Kind::Function),
                 ("Storage::load::nested", Kind::Function),
                 ("impl Render for Storage", Kind::Impl),
                 ("<Storage as Render>::render", Kind::Method),
@@ -1244,6 +1375,34 @@ mod tests {
     }
 
     #[test]
+    fn a_method_call_knows_its_receiver_when_it_is_self_or_a_name() {
+        let source = "fn f(store: S) { self.load(); store.save(); store.inner.flush(); make().run(); println!(\"{}\", self.name()); }";
+        let out = extract(source.as_bytes());
+        let receivers: Vec<(&str, Option<&str>)> = out
+            .calls
+            .iter()
+            .filter(|c| c.kind == CallKind::Method)
+            .map(|c| (c.name.as_str(), c.receiver.as_deref()))
+            .collect();
+        assert_eq!(
+            receivers,
+            vec![
+                ("load", Some("self")),
+                ("save", Some("store")),
+                ("flush", None),
+                ("run", None),
+                ("name", Some("self"))
+            ]
+        );
+        assert!(
+            out.calls
+                .iter()
+                .filter(|c| c.kind != CallKind::Method)
+                .all(|c| c.receiver.is_none())
+        );
+    }
+
+    #[test]
     fn a_call_knows_the_definition_it_is_in() {
         let out = read();
         let helper = out
@@ -1308,6 +1467,72 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(types, vec!["Render", "Clone", "Out", "Into", "Item"]);
         assert_eq!(references(&out, RefKind::Value), vec![]);
+    }
+
+    #[test]
+    fn a_name_bound_in_a_block_an_arm_or_a_closure_is_not_bound_after_it() {
+        let source = "fn f(x: Option<u32>, kept: u32) {
+    let t = match x { Some(token) => token, None => token() };
+    let ok = x.is_some_and(|log| log > 1);
+    log(ok);
+    { let answer = 1; }
+    answer();
+    if let Some(found) = x { found() } else { found() };
+    let after = 1;
+    kept();
+    after();
+}";
+        let out = extract(source.as_bytes());
+        // `found()` inside the `if let` calls the binding; the others are functions.
+        assert_eq!(
+            calls(&out, CallKind::Free),
+            vec![
+                ("token".into(), 2),
+                ("log".into(), 4),
+                ("answer".into(), 6),
+                ("found".into(), 7)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_macros_tokens_call_a_function_named_as_a_contextual_keyword() {
+        let out = extract(b"fn f() { assert_eq!(a, Counters::default(), T::union(), T::gen()); }");
+        assert_eq!(
+            calls(&out, CallKind::Path),
+            vec![
+                ("Counters::default".into(), 1),
+                ("T::union".into(), 1),
+                ("T::gen".into(), 1)
+            ]
+        );
+    }
+
+    #[test]
+    fn what_a_macros_tokens_bind_is_no_reference() {
+        let source = "fn f(items: Vec<Item>) {
+    assert_eq!(items.iter().map(|link| link.id).count(), LIMIT);
+    assert!(items.iter().all(|(key, _)| key > MIN));
+    debug!(x, { let mut total = count(); total + EXTRA });
+    log!(a | b, (link, key, total));
+}";
+        let out = extract(source.as_bytes());
+        // What a group binds holds in it only: the last line's names are references.
+        assert_eq!(
+            names(&references(&out, RefKind::Value)),
+            vec![
+                "LIMIT", "MIN", "x", "EXTRA", "a", "b", "link", "key", "total"
+            ]
+        );
+    }
+
+    #[test]
+    fn the_name_in_an_associated_type_binding_is_no_reference() {
+        let out = extract(b"fn entries() -> impl Iterator<Item = Entry> {}");
+        assert_eq!(
+            names(&references(&out, RefKind::Type)),
+            vec!["Iterator", "Entry"]
+        );
     }
 
     #[test]

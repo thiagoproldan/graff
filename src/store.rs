@@ -23,7 +23,7 @@ use crate::lang::Language;
 
 /// Bumped whenever the tables change: an index of another version is dropped
 /// and built again, as a cache may be.
-const SCHEMA: i64 = 1;
+const SCHEMA: i64 = 2;
 
 /// A file written this close before graff saw it may be written again within
 /// the same tick of the file system's clock and keep its stat, so it is hashed
@@ -63,7 +63,8 @@ const TABLES: &str = "
         path TEXT,
         kind TEXT NOT NULL,
         line INTEGER NOT NULL,
-        caller TEXT
+        caller TEXT,
+        receiver TEXT
     );
     CREATE INDEX calls_by_content ON calls (content);
     CREATE INDEX calls_by_name ON calls (name);
@@ -541,7 +542,7 @@ impl<'t> Inserts<'t> {
                 "INSERT INTO contents (blob, language, extractor, syntax_error, too_deep, released) VALUES (?1, ?2, ?3, ?4, ?5, 0)",
             )?,
             symbol: transaction.prepare("INSERT INTO symbols VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")?,
-            call: transaction.prepare("INSERT INTO calls VALUES (?1, ?2, ?3, ?4, ?5, ?6)")?,
+            call: transaction.prepare("INSERT INTO calls VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")?,
             reference: transaction.prepare("INSERT INTO refs VALUES (?1, ?2, ?3, ?4, ?5, ?6)")?,
             import: transaction.prepare("INSERT INTO imports VALUES (?1, ?2, ?3, ?4, ?5, ?6)")?,
         })
@@ -574,8 +575,15 @@ impl<'t> Inserts<'t> {
             ])?;
         }
         for c in &extraction.calls {
-            self.call
-                .execute(params![id, c.name, c.path, c.kind.name(), c.line, c.from])?;
+            self.call.execute(params![
+                id,
+                c.name,
+                c.path,
+                c.kind.name(),
+                c.line,
+                c.from,
+                c.receiver
+            ])?;
         }
         for r in &extraction.references {
             self.reference
@@ -818,6 +826,108 @@ mod tests {
             .execute("UPDATE contents SET extractor = extractor - 1", [])
             .unwrap();
         assert_eq!(store.check(&root).unwrap(), checked(3, 2, 2, 2, 0));
+    }
+
+    /// Where the store keeps each part of an extraction: a list of records
+    /// in a table of its own, with the column each field is kept in where
+    /// the two names differ; a flag in `contents`.
+    fn kept_in(part: &str) -> (&'static str, &'static [(&'static str, &'static str)]) {
+        match part {
+            "symbols" => ("symbols", &[]),
+            "calls" => ("calls", &[("from", "caller")]),
+            "references" => ("refs", &[("from", "user")]),
+            "imports" => ("imports", &[]),
+            "syntax_error" | "too_deep" => ("contents", &[]),
+            other => panic!("the store keeps no {other}"),
+        }
+    }
+
+    /// A value of an extraction as SQLite holds it: a flag as 0 or 1.
+    fn as_stored(value: &serde_json::Value) -> rusqlite::types::Value {
+        use rusqlite::types::Value;
+        match value {
+            serde_json::Value::Null => Value::Null,
+            serde_json::Value::Bool(flag) => Value::Integer(i64::from(*flag)),
+            serde_json::Value::Number(number) => Value::Integer(number.as_i64().unwrap()),
+            serde_json::Value::String(text) => Value::Text(text.clone()),
+            other => panic!("no column holds {other}"),
+        }
+    }
+
+    /// Every part of an extraction, and every field of its records, as serde
+    /// lists them: a field the store does not keep fails here.
+    #[test]
+    fn everything_an_extraction_holds_is_kept() {
+        let source =
+            "use crate::x::{Y as Z, w::*};\n/// Doc.\nfn a(s: S) -> u32 { s.load(); b(); MAX }\n";
+        let folder = Folder::new();
+        let root = repository(folder.0.join("repo"));
+        write(&root, "src/a.rs", source, OLD);
+        let mut store = Store::open(&folder.0.join("index.db")).unwrap();
+        store.check(&root).unwrap();
+        let connection = &store.connection;
+        let content: i64 = connection
+            .query_row(
+                "SELECT content FROM files WHERE path = 'src/a.rs'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let read =
+            serde_json::to_value(extract::extract(Language::Rust, source.as_bytes())).unwrap();
+        for (part, value) in read.as_object().unwrap() {
+            let (table, renamed) = kept_in(part);
+            let column = |field: &str| {
+                renamed
+                    .iter()
+                    .find(|(f, _)| *f == field)
+                    .map_or(field, |(_, c)| c)
+                    .to_string()
+            };
+            let Some(records) = value.as_array() else {
+                let sql = format!("SELECT {part} FROM contents WHERE id = ?1");
+                let stored: rusqlite::types::Value = connection
+                    .query_row(&sql, [content], |row| row.get(0))
+                    .unwrap();
+                assert_eq!(stored, as_stored(value), "{part}");
+                continue;
+            };
+            assert!(!records.is_empty(), "the source gives {part}");
+            let mut statement = connection
+                .prepare(&format!(
+                    "SELECT * FROM {table} WHERE content = ?1 ORDER BY rowid"
+                ))
+                .unwrap();
+            let columns: Vec<String> = statement
+                .column_names()
+                .iter()
+                .map(|c| c.to_string())
+                .collect();
+            let rows: Vec<Vec<rusqlite::types::Value>> = statement
+                .query_map([content], |row| {
+                    (0..columns.len()).map(|i| row.get(i)).collect()
+                })
+                .unwrap()
+                .map(Result::unwrap)
+                .collect();
+            assert_eq!(rows.len(), records.len(), "{table}");
+            for (record, row) in records.iter().zip(&rows) {
+                let record = record.as_object().unwrap();
+                let mut fields: Vec<String> = record.keys().map(|field| column(field)).collect();
+                fields.push("content".to_string());
+                fields.sort();
+                let mut have = columns.clone();
+                have.sort();
+                assert_eq!(
+                    fields, have,
+                    "{table}: a column for each field of {part}, and no other"
+                );
+                for (field, value) in record {
+                    let at = columns.iter().position(|c| *c == column(field)).unwrap();
+                    assert_eq!(row[at], as_stored(value), "{table}.{}", column(field));
+                }
+            }
+        }
     }
 
     #[test]

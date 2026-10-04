@@ -11,7 +11,7 @@ use crate::lang::Language;
 
 /// Bumped whenever what an extractor produces changes, so that results kept
 /// from an older extractor are read again rather than trusted.
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Extraction {
@@ -37,7 +37,8 @@ pub const MAX_DEPTH: usize = 500;
 pub struct Symbol {
     pub name: String,
     /// Unique within the file: `Storage::load`, `<Storage as Display>::fmt`,
-    /// `tests::helper`, `impl Display for Storage`. A second definition with
+    /// `<store::Storage>::load` for an impl that writes its type as a path,
+    /// `Kind::Task`, `tests::helper`, `impl Display for Storage`. A second definition with
     /// the same name (two `impl Storage` blocks, items under different cfgs)
     /// takes `#2`, `#3`, in the order they appear.
     pub qualified: String,
@@ -53,7 +54,10 @@ pub struct Symbol {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Kind {
+    /// A function: free, nested in another, or of a type and called by its
+    /// path, as `Storage::open()`.
     Function,
+    /// A function of an impl or a trait that takes `self`.
     Method,
     Struct,
     Enum,
@@ -65,6 +69,8 @@ pub enum Kind {
     Static,
     Macro,
     TypeAlias,
+    /// An enum's variant, inside it: `State::Pending`.
+    Variant,
 }
 
 /// A call: what is called, by name as written, from where.
@@ -80,6 +86,9 @@ pub struct Call {
     /// The qualified name of the definition the call is in, or none at the
     /// top of the file.
     pub from: Option<String>,
+    /// A method call's receiver, when it is `self` or a name: `self` in
+    /// `self.load()`, `store` in `store.load()`; none for anything longer.
+    pub receiver: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -132,7 +141,7 @@ pub struct Import {
 }
 
 impl Kind {
-    pub const ALL: [Kind; 12] = [
+    pub const ALL: [Kind; 13] = [
         Kind::Function,
         Kind::Method,
         Kind::Struct,
@@ -145,6 +154,7 @@ impl Kind {
         Kind::Static,
         Kind::Macro,
         Kind::TypeAlias,
+        Kind::Variant,
     ];
 
     /// Its name as stored and shown, the same as serde's.
@@ -162,6 +172,7 @@ impl Kind {
             Kind::Static => "static",
             Kind::Macro => "macro",
             Kind::TypeAlias => "type_alias",
+            Kind::Variant => "variant",
         }
     }
 }

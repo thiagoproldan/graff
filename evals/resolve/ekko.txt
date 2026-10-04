@@ -1,0 +1,1864 @@
+run 2026-10-04
+graff 62e3c57e6a828ae9df4a87078b334a5e90e646ff with uncommitted changes
+corpus /projects/ekko src, at 1b25853ed5f2c5f8fae8efa132e7e0069096a419 (git archive), crate ekko, 30 files
+truth rust-analyzer 2026-08-03 scip, read by scip version v0.10.0; 18 references left out, to 3 symbols it gives to more than one definition
+
+broken resolver: precision 0.000, recall 0.000
+graff: precision 1.000 (13641 of 13641 judged; 18 unjudged), recall 0.937 (13642 of 14556 references)
+
+precision by use:
+  call free        1.000  3751 correct, 0 wrong, 0 unjudged
+  call macro       1.000  1 correct, 0 wrong, 0 unjudged
+  call method      1.000  2009 correct, 0 wrong, 0 unjudged
+  call path        1.000  1397 correct, 0 wrong, 0 unjudged
+  import           1.000  212 correct, 0 wrong, 0 unjudged
+  qualifier        1.000  2382 correct, 0 wrong, 0 unjudged
+  reference path   1.000  1224 correct, 0 wrong, 0 unjudged
+  reference type   1.000  2027 correct, 0 wrong, 2 unjudged
+  reference value  1.000  638 correct, 0 wrong, 16 unjudged
+recall by what is referred to:
+  constant  1.000  of 563: 563 found
+  function  0.883  of 7838: 6924 found, 914 wrong or unresolved: ambiguous
+  macro     1.000  of 1: 1 found
+  type      1.000  of 4524: 4524 found
+  variant   1.000  of 1630: 1630 found
+rules: the wrong edges, of all the rule resolved
+  glob      0 wrong of 1791
+  import    0 wrong of 1310
+  module    0 wrong of 5251
+  nested    0 wrong of 68
+  path      0 wrong of 3229
+  receiver  0 wrong of 561
+  unique    0 wrong of 1449
+
+wrong edges:
+
+missed references:
+src/main.rs:267 render -> ekko/impl#[Outcome]render().; graff: call method ambiguous
+    with_renderer(&home_dir, |r| outcome.render(r));
+src/main.rs:271 from -> ekko/impl#[EkkoError][`From<DirectoryError>`]from().; graff: call path ambiguous
+    Err(err) => finish_with_error(&EkkoError::from(err), json_mode, &home_dir),
+src/main.rs:274 from -> ekko/impl#[EkkoError][`From<DirectoryError>`]from().; graff: call path ambiguous
+    Err(err) => return finish_with_error(&EkkoError::from(err), json_mode, &home_dir),
+src/main.rs:276 label -> directory/impl#[Location]label().; graff: call method ambiguous
+    let board_label = location.label();
+src/main.rs:287 with_registry -> holder/impl#[Actor]with_registry().; graff: call method ambiguous
+    .acting_as(holder::Actor::of_this_command().with_registry(holder::Registry::at(agent::processes_dir(&home_dir))))
+src/main.rs:308 with_registry -> render/impl#[`Renderer<'a>`]with_registry().; graff: call method ambiguous
+    r.with_registry(holder::Registry::at(agent::processes_dir(&home_dir)));
+src/main.rs:326 render -> ekko/impl#[Outcome]render().; graff: call method ambiguous
+    outcome.render(r);
+src/main.rs:383 render -> ekko/impl#[Outcome]render().; graff: call method ambiguous
+    with_renderer(&home_dir, |r| outcome.render(r));
+src/main.rs:387 from -> ekko/impl#[EkkoError][`From<DirectoryError>`]from().; graff: call path ambiguous
+    Err(err) => finish_with_error(&EkkoError::from(err), json_mode, &home_dir),
+src/main.rs:410 from -> ekko/impl#[EkkoError][`From<DirectoryError>`]from().; graff: call path ambiguous
+    Err(err) => return finish_with_error(&EkkoError::from(err), json_mode, &home_dir),
+src/main.rs:431 render -> ekko/impl#[Outcome]render().; graff: call method ambiguous
+    with_renderer(&home_dir, |r| outcome.render(r));
+src/main.rs:457 from -> ekko/impl#[EkkoError][`From<DirectoryError>`]from().; graff: call path ambiguous
+    Err(err) => return finish_with_error(&EkkoError::from(err), json_mode, &home_dir),
+src/main.rs:596 set_phases -> ekko/impl#[Ekko]set_phases().; graff: call method ambiguous
+    return Ok(vec![ekko.set_phases(names)?]);
+src/main.rs:599 display_roadmap -> ekko/impl#[Ekko]display_roadmap().; graff: call method ambiguous
+    return Ok(vec![ekko.display_roadmap()?]);
+src/main.rs:623 display_stash -> ekko/impl#[Ekko]display_stash().; graff: call method ambiguous
+    ekko.display_stash()?
+src/main.rs:632 display_trash -> ekko/impl#[Ekko]display_trash().; graff: call method ambiguous
+    return Ok(vec![ekko.display_trash()?]);
+src/main.rs:683 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    return Ok(vec![ekko.set_state(&cli.input, cli.force)?]);
+src/main.rs:698 display_by_date -> ekko/impl#[Ekko]display_by_date().; graff: call method ambiguous
+    return Ok(vec![ekko.display_by_date()?, ekko.display_stats()?]);
+src/main.rs:698 display_stats -> ekko/impl#[Ekko]display_stats().; graff: call method ambiguous
+    return Ok(vec![ekko.display_by_date()?, ekko.display_stats()?]);
+src/main.rs:704 display_stats -> ekko/impl#[Ekko]display_stats().; graff: call method ambiguous
+    return Ok(vec![ekko.list_by_attributes(&cli.input)?, ekko.display_stats()?]);
+src/main.rs:723 clear -> ekko/impl#[Ekko]clear().; graff: call method ambiguous
+    return Ok(vec![ekko.clear()?]);
+src/main.rs:726 display_by_board -> ekko/impl#[Ekko]display_by_board().; graff: call method ambiguous
+    Ok(vec![ekko.display_by_board()?, ekko.display_stats()?])
+src/main.rs:726 display_stats -> ekko/impl#[Ekko]display_stats().; graff: call method ambiguous
+    Ok(vec![ekko.display_by_board()?, ekko.display_stats()?])
+src/main.rs:808 render -> ekko/impl#[EkkoError]render().; graff: call method ambiguous
+    with_renderer(home_dir, |r| err.render(r));
+src/wake.rs:103 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    me.is(holder)
+src/wake.rs:104 alive -> holder/impl#[Holder]alive().; graff: call method ambiguous
+    || (!holder.alive()
+src/wake.rs:140 mark -> wake/impl#[Told]mark().; graff: call method ambiguous
+    if !works(artifact, rev) || !told.mark(&format!("feedback-{uid}")) {
+src/wake.rs:152 mark -> wake/impl#[Told]mark().; graff: call method ambiguous
+    told.mark(&format!("answer-{question}"));
+src/wake.rs:179 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    && !over.by.as_ref().is_some_and(|by| me.is(by)) =>
+src/wake.rs:181 mark -> wake/impl#[Told]mark().; graff: call method ambiguous
+    if told.mark(&format!("over-{uid}")) {
+src/wake.rs:184 word -> item/impl#[State]word().; graff: call method ambiguous
+    (How::Released, Some(state)) => format!(", now {}", state.word()),
+src/wake.rs:197 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    if held.is_some_and(|holder| me.is(holder)) && told.mark(&format!("waited-{uid}")) {
+src/wake.rs:197 mark -> wake/impl#[Told]mark().; graff: call method ambiguous
+    if held.is_some_and(|holder| me.is(holder)) && told.mark(&format!("waited-{uid}")) {
+src/wake.rs:201 word -> item/impl#[Until]word().; graff: call method ambiguous
+    wait.until.word(),
+src/wake.rs:212 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    let theirs = !answer.by.as_ref().is_some_and(|by| me.is(by));
+src/wake.rs:213 mark -> wake/impl#[Told]mark().; graff: call method ambiguous
+    if answer.rev > since && theirs && told.has(&format!("open-{uid}")) && told.mark(&format!("answer-{uid}")) {
+src/wake.rs:276 wait -> ops/impl#[`Draft<'a>`]wait().; graff: call method ambiguous
+    let crate::ops::Waited::Recorded(note) = draft.wait(&spec).unwrap() else { panic!("a wait recorded") };
+src/wake.rs:283 set_state -> ops/impl#[`Draft<'a>`]set_state().; graff: call method ambiguous
+    draft.set_state(&[Ref::Id(item)], state).unwrap();
+src/wake.rs:336 ask -> ops/impl#[`Draft<'a>`]ask().; graff: call method ambiguous, call method ambiguous
+    let (open, answered) = (draft.ask("Merge now?", None).unwrap(), draft.ask("Release too?", None).unwrap());
+src/wake.rs:336 ask -> ops/impl#[`Draft<'a>`]ask().; graff: call method ambiguous, call method ambiguous
+    let (open, answered) = (draft.ask("Merge now?", None).unwrap(), draft.ask("Release too?", None).unwrap());
+src/wake.rs:338 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let uid = |id: u32| as_(&me).storage.get().unwrap()[&id].uid.clone().unwrap();
+src/wake.rs:339 left_open -> wake/impl#[Told]left_open().; graff: call method ambiguous
+    mine.left_open(&uid(open));
+src/tasklist.rs:83 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    .filter(|item| item.done_by.as_ref().is_some_and(|holder| me.is_some_and(|me| me.is(holder))))
+src/tasklist.rs:290 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@5", "progress"]), false).unwrap();
+src/tasklist.rs:321 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    as_(&other).set_state(&words(&["@1", "progress"]), false).unwrap();
+src/tasklist.rs:322 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    as_(&gone).set_state(&words(&["@2", "progress"]), false).unwrap();
+src/tasklist.rs:323 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    as_(&me).set_state(&words(&["@3", "progress"]), false).unwrap();
+src/tasklist.rs:347 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    mine.set_state(&words(&["@1", "done"]), false).unwrap();
+src/tasklist.rs:349 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    mine.set_state(&words(&["@2", "done"]), false).unwrap();
+src/tasklist.rs:350 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    as_(&other).set_state(&words(&["@3", "done"]), false).unwrap();
+src/tasklist.rs:351 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    mine.set_state(&words(&["@4", "progress"]), false).unwrap();
+src/tasklist.rs:353 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    mine.set_state(&words(&["@5", "done"]), false).unwrap();
+src/tasklist.rs:354 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    mine.set_state(&words(&["@5", "undone"]), false).unwrap();
+src/tasklist.rs:362 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(mine.storage.get().unwrap()[&5].done_by, None, "reopened");
+src/tasklist.rs:421 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "done"]), false).unwrap();
+src/storage.rs:876 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(storage.get().unwrap(), BTreeMap::new());
+src/storage.rs:890 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    storage.set(&data).unwrap();
+src/storage.rs:892 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(storage.get().unwrap(), data);
+src/storage.rs:909 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    storage.set(&data).unwrap();
+src/storage.rs:936 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    storage.set(&BTreeMap::from([(1, later)])).unwrap();
+src/storage.rs:938 set_phases -> storage/impl#[Storage]set_phases().; graff: call method ambiguous
+    storage.set_phases(&["alpha".to_string()]).unwrap();
+src/storage.rs:956 apply -> ops/impl#[`Draft<'a>`]apply().; graff: call method ambiguous
+    draft.apply(&serde_json::from_value(op).unwrap()).unwrap();
+src/storage.rs:958 ask -> ops/impl#[`Draft<'a>`]ask().; graff: call method ambiguous
+    let asked = draft.ask("Merge now?", Some(&crate::ops::Ref::Id(2))).unwrap();
+src/storage.rs:960 wait -> ops/impl#[`Draft<'a>`]wait().; graff: call method ambiguous
+    draft.wait(&spec).unwrap();
+src/storage.rs:968 apply -> ops/impl#[`Draft<'a>`]apply().; graff: call method ambiguous
+    draft.apply(&serde_json::from_value(serde_json::json!({"op": "set_state", "items": [3], "state": "paused"})).unwrap()).u
+src/storage.rs:988 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    storage.set(&data).unwrap();
+src/storage.rs:993 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(storage.get().unwrap(), *first, "a copy to change is the same board");
+src/storage.rs:996 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    storage.set(&data).unwrap();
+src/storage.rs:1000 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(storage.get().unwrap(), data);
+src/storage.rs:1012 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    storage.set(&data).unwrap();
+src/storage.rs:1307 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    storage.set(&BTreeMap::new()).unwrap();
+src/storage.rs:1317 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    storage.set(&data).unwrap();
+src/storage.rs:1345 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    storage.set(&data).unwrap();
+src/storage.rs:1360 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    storage.set(&data).unwrap();
+src/storage.rs:1443 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    storage.set(&BTreeMap::from([(1, sample_item(1))])).unwrap();
+src/storage.rs:1448 set_phases -> storage/impl#[Storage]set_phases().; graff: call method ambiguous
+    storage.set_phases(&["one".to_string()]).unwrap();
+src/storage.rs:1449 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    storage.set(&BTreeMap::from([(1, sample_item(1)), (3, sample_item(3))])).unwrap();
+src/storage.rs:1453 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(copied.get().unwrap().keys().copied().collect::<Vec<u32>>(), vec![1, 3], "the latest version");
+src/storage.rs:1471 set_phases -> storage/impl#[Storage]set_phases().; graff: call method ambiguous
+    before.set_phases(&["one".to_string()]).unwrap();
+src/storage.rs:1476 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    storage.set(&BTreeMap::from([(1, sample_item(1))])).unwrap();
+src/storage.rs:1479 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(copied.get().unwrap().len(), 1);
+src/storage.rs:1495 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    storage.set(&BTreeMap::from([(1, sample_item(1))])).unwrap();
+src/storage.rs:1496 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(storage.get().unwrap().len(), 1);
+src/shell.rs:1154 word -> shell/impl#[Sink]word().; graff: call method ambiguous, call method ambiguous
+    serde_json::json!([c.name, c.args, c.sink.word(), output(&found, i).word(), c.stdin, c.piped_to, c.parent])
+src/shell.rs:1154 word -> shell/impl#[Sink]word().; graff: call method ambiguous, call method ambiguous
+    serde_json::json!([c.name, c.args, c.sink.word(), output(&found, i).word(), c.stdin, c.piped_to, c.parent])
+src/serve.rs:186 start -> serve/start().; graff: call free ambiguous
+    start(home)?;
+src/serve.rs:333 bytes -> serve/impl#[Answer]bytes().; graff: call method ambiguous
+    let _ = stream.write_all(&Answer::text(503, "too many connections at once").bytes());
+src/serve.rs:430 bytes -> serve/impl#[Answer]bytes().; graff: call method ambiguous
+    let _ = stream.write_all(&answer.bytes());
+src/serve.rs:753 review -> ops/impl#[`Draft<'a>`]review().; graff: call method ambiguous
+    let written = as_person(shared, project.as_deref(), |draft| draft.review(&crate::ops::Ref::Text(uid.clone()), &posted.ve
+src/serve.rs:799 with -> serve/impl#[Answer]with().; graff: call method ambiguous
+    let answer = Answer::text(303, "the page").with("Location", path.to_string());
+src/serve.rs:803 with -> serve/impl#[Answer]with().; graff: call method ambiguous
+    answer.with("Set-Cookie", format!("{}={token}; HttpOnly; SameSite=Strict; Path=/", cookie_name(shared.runtime.port)))
+src/serve.rs:816 with -> serve/impl#[Answer]with().; graff: call method ambiguous
+    Answer::new(200, "text/html; charset=utf-8", html.replace("<script>", &format!("<script nonce=\"{nonce}\">"))).with("Con
+src/serve.rs:1221 bytes -> serve/impl#[Answer]bytes().; graff: call method ambiguous
+    assert!(String::from_utf8_lossy(&font.bytes()).contains("\r\nCache-Control: max-age=31536000, immutable\r\n"));
+src/serve.rs:1231 bytes -> serve/impl#[Answer]bytes().; graff: call method ambiguous
+    assert!(String::from_utf8_lossy(&page.bytes()).contains("\r\nCache-Control: no-store\r\n"));
+src/render.rs:390 mark -> item/impl#[Item]mark().; graff: call method ambiguous
+    let overhead = 12 + item.mark().map_or(0, |mark| mark.len() + 3);
+src/render.rs:445 mark -> item/impl#[Item]mark().; graff: call method ambiguous
+    if let Some(mark) = item.mark() {
+src/render.rs:489 alive -> holder/impl#[Holder]alive().; graff: call method ambiguous
+    let gone = if holder.alive() { "" } else { ", gone" };
+src/render.rs:1558 display_by_board -> render/impl#[`Renderer<'a>`]display_by_board().; graff: call method ambiguous
+    r.display_by_board(&golden_groups_by_board());
+src/render.rs:1559 display_stats -> render/impl#[`Renderer<'a>`]display_stats().; graff: call method ambiguous
+    r.display_stats(&golden_stats());
+src/render.rs:1570 display_by_date -> render/impl#[`Renderer<'a>`]display_by_date().; graff: call method ambiguous
+    r.display_by_date(&date_groups);
+src/render.rs:1571 display_stats -> render/impl#[`Renderer<'a>`]display_stats().; graff: call method ambiguous
+    r.display_stats(&golden_stats());
+src/render.rs:1606 display_by_date -> render/impl#[`Renderer<'a>`]display_by_date().; graff: call method ambiguous
+    r.display_by_date(&date_groups);
+src/render.rs:1641 display_by_board -> render/impl#[`Renderer<'a>`]display_by_board().; graff: call method ambiguous
+    r.display_by_board(&[("@b".to_string(), vec![long_note("just a note"), handoff, gotcha])]);
+src/render.rs:1660 display_by_board -> render/impl#[`Renderer<'a>`]display_by_board().; graff: call method ambiguous
+    r.display_by_board(&[("@b".to_string(), vec![note])]);
+src/render.rs:1672 display_by_board -> render/impl#[`Renderer<'a>`]display_by_board().; graff: call method ambiguous
+    r.display_by_board(&[("@b".to_string(), vec![long_note(&text)])]);
+src/render.rs:1684 display_by_board -> render/impl#[`Renderer<'a>`]display_by_board().; graff: call method ambiguous
+    r.display_by_board(&[("@b".to_string(), vec![long_note("short enough")])]);
+src/render.rs:1700 display_by_board -> render/impl#[`Renderer<'a>`]display_by_board().; graff: call method ambiguous
+    r.display_by_board(&[("@b".to_string(), vec![task])]);
+src/render.rs:1715 display_by_board -> render/impl#[`Renderer<'a>`]display_by_board().; graff: call method ambiguous
+    r.display_by_board(&[("@b".to_string(), vec![task])]);
+src/render.rs:1729 display_by_board -> render/impl#[`Renderer<'a>`]display_by_board().; graff: call method ambiguous
+    r.display_by_board(&[("@b".to_string(), vec![long_note(&text)])]);
+src/render.rs:1739 display_by_board -> render/impl#[`Renderer<'a>`]display_by_board().; graff: call method ambiguous
+    r.display_by_board(&[("@b".to_string(), vec![long_note(&text)])]);
+src/render.rs:1750 display_stats -> render/impl#[`Renderer<'a>`]display_stats().; graff: call method ambiguous
+    r.display_stats(&Stats { percent: 25, complete: 1, total: 4, in_progress: 1, paused: 0, waiting: 0, cancelled: 0, pendin
+src/render.rs:1759 display_stats -> render/impl#[`Renderer<'a>`]display_stats().; graff: call method ambiguous
+    r.display_stats(&Stats { percent: 0, complete: 0, total: 4, in_progress: 1, paused: 2, waiting: 0, cancelled: 0, pending
+src/render.rs:1768 display_stats -> render/impl#[`Renderer<'a>`]display_stats().; graff: call method ambiguous
+    r.display_stats(&Stats { percent: 0, complete: 0, total: 4, in_progress: 0, paused: 0, waiting: 3, cancelled: 0, pending
+src/render.rs:1777 display_stats -> render/impl#[`Renderer<'a>`]display_stats().; graff: call method ambiguous
+    r.display_stats(&Stats { percent: 0, complete: 0, total: 1, in_progress: 1, paused: 0, waiting: 0, cancelled: 0, pending
+src/render.rs:1780 display_stats -> render/impl#[`Renderer<'a>`]display_stats().; graff: call method ambiguous
+    r.display_stats(&Stats { percent: 0, complete: 0, total: 3, in_progress: 3, paused: 0, waiting: 0, cancelled: 0, pending
+src/render.rs:1795 display_by_board -> render/impl#[`Renderer<'a>`]display_by_board().; graff: call method ambiguous
+    r.display_by_board(&[("@b".to_string(), vec![item])]);
+src/render.rs:1807 display_stats -> render/impl#[`Renderer<'a>`]display_stats().; graff: call method ambiguous
+    r.display_stats(&Stats { percent: 50, complete: 1, total: 3, in_progress: 1, paused: 0, waiting: 0, cancelled: 0, pendin
+src/render.rs:1818 display_by_board -> render/impl#[`Renderer<'a>`]display_by_board().; graff: call method ambiguous
+    r.display_by_board(&golden_groups_by_board());
+src/render.rs:1859 display_by_board -> render/impl#[`Renderer<'a>`]display_by_board().; graff: call method ambiguous
+    r.display_by_board(&stats_board(true));
+src/render.rs:1860 display_stats -> render/impl#[`Renderer<'a>`]display_stats().; graff: call method ambiguous
+    r.display_stats(&Stats {
+src/render.rs:1881 display_by_board -> render/impl#[`Renderer<'a>`]display_by_board().; graff: call method ambiguous
+    r.display_by_board(&stats_board(false));
+src/render.rs:1882 display_stats -> render/impl#[`Renderer<'a>`]display_stats().; graff: call method ambiguous
+    r.display_stats(&Stats {
+src/render.rs:1917 display_by_date -> render/impl#[`Renderer<'a>`]display_by_date().; graff: call method ambiguous
+    r.display_by_date(&groups);
+src/render.rs:1935 display_roadmap -> render/impl#[`Renderer<'a>`]display_roadmap().; graff: call method ambiguous
+    let output = render_with(Config::default(), |r| r.display_roadmap(&steps, 0));
+src/render.rs:1956 display_roadmap -> render/impl#[`Renderer<'a>`]display_roadmap().; graff: call method ambiguous
+    let output = render_with(Config::default(), |r| r.display_roadmap(&steps, 0));
+src/render.rs:2055 display_by_board -> render/impl#[`Renderer<'a>`]display_by_board().; graff: call method ambiguous
+    let output = render_with(Config::default(), |r| r.display_by_board(&groups));
+src/render.rs:2079 write -> item/impl#[State]write().; graff: call method ambiguous
+    State::Done.write(&mut done);
+src/render.rs:2083 write -> item/impl#[State]write().; graff: call method ambiguous
+    State::Cancelled.write(&mut dropped);
+src/render.rs:2086 display_by_board -> render/impl#[`Renderer<'a>`]display_by_board().; graff: call method ambiguous
+    let output = render_with(Config::default(), |r| r.display_by_board(&groups));
+src/project.rs:817 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    storage.set(&items).unwrap();
+src/project.rs:941 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let board = Storage::new(&repo.join(".ekko")).unwrap().get().unwrap();
+src/project.rs:974 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(Storage::new(&site.join(".ekko")).unwrap().get().unwrap()[&1].description, "kept");
+src/project.rs:1047 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    storage.set(&items).unwrap();
+src/project.rs:1070 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let board = Storage::new(&site.join(EKKO_DIR_NAME)).unwrap().get().unwrap();
+src/project.rs:1092 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let board = Storage::new(&new.join(EKKO_DIR_NAME)).unwrap().get().unwrap();
+src/project.rs:1274 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let mut data = ekko.storage.get().unwrap();
+src/project.rs:1276 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    ekko.storage.set(&data).unwrap();
+src/ops.rs:624 text -> ops/impl#[Ref]text().; graff: call method ambiguous
+    let raw = reference.text();
+src/ops.rs:959 find -> feedback/impl#[Shown]find().; graff: call method ambiguous
+    let span = match shown.find(quote) {
+src/ops.rs:964 words -> feedback/impl#[Shown]words().; graff: call method ambiguous
+    shown.words(&span)
+src/ops.rs:971 written -> feedback/impl#[Shown]written().; graff: call method ambiguous
+    let Some(bytes) = shown.written(&description, &span) else {
+src/ops.rs:1180 name -> ops/impl#[Names]name().; graff: call method ambiguous
+    supersede(&mut self.data, id, Some(older), &|id| names.name(id))?;
+src/ops.rs:1231 proposes -> item/impl#[Question]proposes().; graff: call method ambiguous
+    if asked.proposes() && !person {
+src/ops.rs:1364 answers -> ops/impl#[ArtifactSpec]answers().; graff: call method ambiguous
+    if spec.answers() {
+src/ops.rs:1462 proposes -> ops/impl#[Inquiry]proposes().; graff: call method ambiguous
+    if inquiry.proposes() {
+src/ops.rs:1596 linked -> ekko/impl#[Ekko]linked().; graff: call method ambiguous
+    if self.ekko.linked().iter().any(|linked| linked.name == there.name) {
+src/ops.rs:1697 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    open.over.is_none() && open.on == wait.on && open.until == until && waiter.is(&open.by)
+src/ops.rs:1735 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    note.wait.as_ref().is_some_and(|wait| wait.over.is_none() && wait.on == on && waiter.is(&wait.by))
+src/ops.rs:1765 whose -> holder/impl#[Holder]whose().; graff: call method ambiguous
+    .filter(|note| note.created_by.as_ref().and_then(|author| author.whose(actor)) != Some(Whose::Running))
+src/ops.rs:1815 apply -> item/impl#[Setting]apply().; graff: call method ambiguous
+    setting.apply(self.item(*id));
+src/ops.rs:1958 name -> ops/impl#[Names]name().; graff: call method ambiguous
+    let named = self.names().name(id);
+src/ops.rs:2073 name -> ops/impl#[Names]name().; graff: call method ambiguous
+    supersede(&mut self.data, id, older, &|id| names.name(id))?;
+src/ops.rs:2128 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    if actor.is_some_and(|actor| actor.is(&wait.by)) {
+src/ops.rs:2133 label -> holder/impl#[Holder]label().; graff: call method ambiguous
+    let waiter = actor.map_or_else(|| wait.by.label(), |actor| actor.name(&wait.by));
+src/ops.rs:2133 name -> holder/impl#[Actor]name().; graff: call method ambiguous
+    let waiter = actor.map_or_else(|| wait.by.label(), |actor| actor.name(&wait.by));
+src/ops.rs:2273 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    Some(holder) if actor.is(holder) => {
+src/ops.rs:2276 alive -> holder/impl#[Holder]alive().; graff: call method ambiguous
+    Some(holder) if holder.alive() && actor.continues(holder) => {
+src/ops.rs:2277 name -> holder/impl#[Actor]name().; graff: call method ambiguous
+    format!("{id} was in progress under this conversation until Claude Code moved it out of {}: yours again", actor.name(hol
+src/ops.rs:2279 alive -> holder/impl#[Holder]alive().; graff: call method ambiguous
+    Some(holder) if holder.alive() => format!("{id} was in progress under {}, still running: taken over", actor.name(holder)
+src/ops.rs:2279 name -> holder/impl#[Actor]name().; graff: call method ambiguous
+    Some(holder) if holder.alive() => format!("{id} was in progress under {}, still running: taken over", actor.name(holder)
+src/ops.rs:2280 name -> holder/impl#[Actor]name().; graff: call method ambiguous
+    Some(holder) => format!("{id} was in progress under {}, which is gone: now yours", actor.name(holder)),
+src/ops.rs:2283 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    if !old.held_by.as_ref().is_some_and(|holder| actor.is(holder)) {
+src/ops.rs:2326 word -> item/impl#[Knowledge]word().; graff: call method ambiguous
+    kind = kind.word()
+src/ops.rs:2364 word -> item/impl#[Knowledge]word().; graff: call method ambiguous
+    (false, Some(kind)) => format!("a {}", kind.word()),
+src/ops.rs:2399 apply -> ops/impl#[`Draft<'a>`]apply().; graff: call method ambiguous
+    draft.apply(&op(value.clone()))?;
+src/ops.rs:2486 ask -> ops/impl#[`Draft<'a>`]ask().; graff: call method ambiguous
+    let asked = draft.ask("How long may an answer run?", None).unwrap();
+src/ops.rs:2531 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let mut data = ekko.storage.get().unwrap();
+src/ops.rs:2533 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    ekko.storage.set(&data).unwrap();
+src/ops.rs:2581 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    State::of(&ekko.storage.get().unwrap()[&id])
+src/ops.rs:2595 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let holder = board.storage.get().unwrap()[&1].held_by.clone().expect("held once in progress");
+src/ops.rs:2596 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    assert!(me.is(&holder));
+src/ops.rs:2605 set_state -> ops/impl#[`Draft<'a>`]set_state().; graff: call method ambiguous
+    draft.set_state(&[Ref::Id(1)], "progress").unwrap();
+src/ops.rs:2608 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    assert!(other.is(board.storage.get().unwrap()[&1].held_by.as_ref().unwrap()));
+src/ops.rs:2608 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert!(other.is(board.storage.get().unwrap()[&1].held_by.as_ref().unwrap()));
+src/ops.rs:2611 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(board.storage.get().unwrap()[&1].held_by, None, "done lets it go");
+src/ops.rs:2651 ask -> ops/impl#[`Draft<'a>`]ask().; graff: call method ambiguous
+    let asked = draft.ask("Merge auditoria now?", Some(&Ref::Id(1))).unwrap();
+src/ops.rs:2654 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let note = board.storage.get().unwrap()[&asked].clone();
+src/ops.rs:2656 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    assert!(me.is(question.asked_by.as_ref().unwrap()) && question.answer.is_none());
+src/ops.rs:2658 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(note.attached_to, board.storage.get().unwrap()[&1].uid);
+src/ops.rs:2664 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let answer = board.storage.get().unwrap()[&asked].question.clone().unwrap().answer.expect("answered");
+src/ops.rs:2665 label -> holder/impl#[Holder]label().; graff: call method ambiguous
+    assert_eq!((answer.text.as_str(), answer.by.unwrap().label()), ("yes, after the rebase", "the user".to_string()));
+src/ops.rs:2678 wait -> ops/impl#[`Draft<'a>`]wait().; graff: call method ambiguous
+    let waited = draft.wait(&spec)?;
+src/ops.rs:2699 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let written = board.storage.get().unwrap()[&note].clone();
+src/ops.rs:2702 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    assert!(me.is(&wait.by));
+src/ops.rs:2704 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(written.attached_to, board.storage.get().unwrap()[&1].uid);
+src/ops.rs:2709 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let written = board.storage.get().unwrap()[&note].clone();
+src/ops.rs:2712 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    assert!(other.is(over.by.as_ref().unwrap()));
+src/ops.rs:2728 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let how = |note: u32| board.storage.get().unwrap()[&note].wait.clone().unwrap().over.map(|over| over.how);
+src/ops.rs:2746 set_state -> ops/impl#[`Draft<'a>`]set_state().; graff: call method ambiguous
+    draft.set_state(&[Ref::Id(3)], "progress").unwrap();
+src/ops.rs:2753 ask -> ops/impl#[`Draft<'a>`]ask().; graff: call method ambiguous
+    let asked = draft.ask("Merge now?", Some(&Ref::Id(1))).unwrap();
+src/ops.rs:2756 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(board.storage.get().unwrap()[&answer].wait.clone().unwrap().until, Until::Answered);
+src/ops.rs:2802 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = ekko.storage.get().unwrap();
+src/ops.rs:2806 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(ekko.storage.get().unwrap()[&1].blocked_by, Some(vec![uid(3)]));
+src/ops.rs:2810 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(ekko.storage.get().unwrap()[&1].boards, vec!["@x", "@y"]);
+src/ops.rs:2814 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let read = ekko.storage.get().unwrap()[&1].updated_at.unwrap();
+src/ops.rs:2845 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(ekko.storage.get().unwrap()[&id].boards, expected, "{change}");
+src/ops.rs:2892 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(ekko.storage.get().unwrap(), *data, "what was reported is not what was written");
+src/ops.rs:2975 ask -> ops/impl#[`Draft<'a>`]ask().; graff: call method ambiguous
+    draft.ask("Which way?", Some(&Ref::Id(1))).unwrap();
+src/ops.rs:2977 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let before = ekko.storage.get().unwrap();
+src/ops.rs:3039 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(ekko.storage.get().unwrap().len(), 1, "a refused handoff wrote nothing");
+src/ops.rs:3079 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let before = ekko.storage.get().unwrap()[&1].clone();
+src/ops.rs:3117 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(ekko.storage.get().unwrap().len(), 5, "no refusal wrote anything");
+src/ops.rs:3218 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert!(ekko.storage.get().unwrap().is_empty(), "a refused batch wrote something");
+src/ops.rs:3232 apply -> ops/impl#[`Draft<'a>`]apply().; graff: call method ambiguous
+    draft.apply(&op(json!({"op": "create", "text": "drafted"}))).unwrap();
+src/ops.rs:3234 name -> ops/impl#[Names]name().; graff: call method ambiguous
+    assert_eq!(names.name(1), "1");
+src/ops.rs:3235 name -> ops/impl#[Names]name().; graff: call method ambiguous
+    assert_eq!(names.name(2), "$1 (from operation 1)");
+src/ops.rs:3236 name -> ops/impl#[Names]name().; graff: call method ambiguous
+    assert_eq!(names.name(3), "the new item");
+src/ops.rs:3387 set_phases -> ekko/impl#[Ekko]set_phases().; graff: call method ambiguous
+    ekko.set_phases(&["early".to_string(), "late".to_string()]).unwrap();
+src/ops.rs:3454 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let uid = |id: u32| board.storage.get().unwrap()[&id].uid.clone().unwrap();
+src/ops.rs:3465 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = board.storage.get().unwrap();
+src/ops.rs:3473 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert!(board.storage.get().unwrap()[&mine].trashed.is_some(), "in the trash, kept 30 days");
+src/ops.rs:3537 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = board.storage.get().unwrap();
+src/ops.rs:3555 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert!(board.storage.get().unwrap()[&ends].comment.as_deref().unwrap().applied.is_none(), "a refused call wrote nothing
+src/ops.rs:3557 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert!(board.storage.get().unwrap()[&first].description.contains("passes, then it stops."));
+src/ops.rs:3560 set_state -> ops/impl#[`Draft<'a>`]set_state().; graff: call method ambiguous
+    draft.set_state(&[Ref::Id(second)], "cancelled").unwrap();
+src/ops.rs:3595 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = board.storage.get().unwrap();
+src/ops.rs:3636 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert!(board.storage.get().unwrap()[&first].description.contains(&format!("## Goal\n{left}\n")), "{said:?} less {words:
+src/ops.rs:3661 review -> ops/impl#[`Draft<'a>`]review().; graff: call method ambiguous
+    let review = draft.review(&Ref::Id(first), Review::COMMENT, "Look again.", 1).unwrap();
+src/ops.rs:3665 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(standing(&board.storage.get().unwrap()), Some((1, 1)));
+src/ops.rs:3678 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = board.storage.get().unwrap();
+src/ops.rs:3695 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = board.storage.get().unwrap();
+src/ops.rs:3701 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(board.storage.get().unwrap()[&facts].comment.as_deref().unwrap().resolved, at, "resolved once, when it was");
+src/ops.rs:3702 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(board.storage.get().unwrap()[&first].artifact.as_deref().unwrap().steps.len(), 1, "the steps stay as they wer
+src/move_to.rs:528 process -> holder/impl#[Holder]process().; graff: call method ambiguous
+    holder.process().is_some_and(|process| process.alive()) && !actor.is_some_and(|actor| actor.is(holder))
+src/move_to.rs:528 alive -> holder/impl#[Process]alive().; graff: call method ambiguous
+    holder.process().is_some_and(|process| process.alive()) && !actor.is_some_and(|actor| actor.is(holder))
+src/move_to.rs:528 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    holder.process().is_some_and(|process| process.alive()) && !actor.is_some_and(|actor| actor.is(holder))
+src/move_to.rs:530 label -> holder/impl#[Holder]label().; graff: call method ambiguous
+    let name = |holder: &Holder| actor.map_or_else(|| holder.label(), |actor| actor.name(holder));
+src/move_to.rs:530 name -> holder/impl#[Actor]name().; graff: call method ambiguous
+    let name = |holder: &Holder| actor.map_or_else(|| holder.label(), |actor| actor.name(holder));
+src/move_to.rs:620 apply -> ops/impl#[`Draft<'a>`]apply().; graff: call method ambiguous
+    draft.apply(&serde_json::from_value(value.clone()).unwrap()).unwrap();
+src/move_to.rs:703 text -> agent/impl#[Changes]text().; graff: call method ambiguous, call method ambiguous
+    assert!(changes.text().contains("   2. [moved to project notes as 3] file the notes"), "{}", changes.text());
+src/move_to.rs:703 text -> agent/impl#[Changes]text().; graff: call method ambiguous, call method ambiguous
+    assert!(changes.text().contains("   2. [moved to project notes as 3] file the notes"), "{}", changes.text());
+src/move_to.rs:780 set_phases -> ekko/impl#[Ekko]set_phases().; graff: call method ambiguous
+    there.set_phases(&["build".to_string()]).unwrap();
+src/move_to.rs:785 set_phases -> ekko/impl#[Ekko]set_phases().; graff: call method ambiguous
+    here.set_phases(&["build".to_string()]).unwrap();
+src/menu.rs:860 answers -> menu/impl#[Menu]answers().; graff: call method ambiguous
+    for (uid, text) in menu.answers() {
+src/menu.rs:1090 answers -> menu/impl#[Menu]answers().; graff: call method ambiguous
+    assert_eq!(menu.answers(), [("uid-1".to_string(), "No".to_string())]);
+src/menu.rs:1094 answers -> menu/impl#[Menu]answers().; graff: call method ambiguous
+    assert_eq!(menu.answers()[0].1, "Yes");
+src/menu.rs:1126 answers -> menu/impl#[Menu]answers().; graff: call method ambiguous
+    assert_eq!(menu.answers()[0].1, "x");
+src/menu.rs:1134 answers -> menu/impl#[Menu]answers().; graff: call method ambiguous
+    assert_eq!(menu.answers()[0].1, "kj");
+src/menu.rs:1148 answers -> menu/impl#[Menu]answers().; graff: call method ambiguous
+    assert_eq!(menu.answers()[0].1, "A, C, D too");
+src/menu.rs:1153 answers -> menu/impl#[Menu]answers().; graff: call method ambiguous
+    assert_eq!(menu.answers()[0].1, "B");
+src/menu.rs:1164 answers -> menu/impl#[Menu]answers().; graff: call method ambiguous
+    assert_eq!(menu.answers()[0].1, "Yes — note: but ask again in May");
+src/menu.rs:1190 answers -> menu/impl#[Menu]answers().; graff: call method ambiguous
+    let answers: Vec<String> = menu.answers().into_iter().map(|(_, answer)| answer).collect();
+src/menu.rs:1240 answers -> menu/impl#[Menu]answers().; graff: call method ambiguous
+    assert_eq!(menu.answers()[0].1, "Cut", "the recorded answer carries no mark");
+src/mcp.rs:274 code -> ekko/impl#[EkkoError]code().; graff: call method ambiguous
+    ToolError { code: error.code(), message: agent_message(&error, &|id| id.to_string()) }
+src/mcp.rs:280 code -> ekko/impl#[EkkoError]code().; graff: call method ambiguous
+    ToolError { code: error.code(), message: agent_message(error, &|id| names.name(id)) }
+src/mcp.rs:280 name -> ops/impl#[Names]name().; graff: call method ambiguous
+    ToolError { code: error.code(), message: agent_message(error, &|id| names.name(id)) }
+src/mcp.rs:320 watch -> mcp/impl#[Server]watch().; graff: call method ambiguous
+    let mut settled = server.watch();
+src/mcp.rs:352 with_registry -> holder/impl#[Actor]with_registry().; graff: call method ambiguous
+    let actor = holder::Actor::client_of_this_server().with_registry(holder::Registry::at(agent::processes_dir(&home)));
+src/mcp.rs:392 from -> ekko/impl#[EkkoError][`From<StorageError>`]from().; graff: reference path ambiguous
+    let revision = ekko.storage.get_counters().map_err(EkkoError::from)?.revision as i64;
+src/mcp.rs:564 watch -> dialog/impl#[Dialogs]watch().; graff: call method ambiguous
+    self.dialogs().watch(Pending { window: Some(window), ..pending });
+src/mcp.rs:590 open -> dialog/impl#[Dialogs]open().; graff: call method ambiguous
+    return self.dialogs().open(pending);
+src/mcp.rs:603 resume -> dialog/impl#[Dialogs]resume().; graff: call method ambiguous
+    let Some(mut pending) = self.dialogs().resume(state) else {
+src/mcp.rs:617 take -> dialog/impl#[Dialogs]take().; graff: call method ambiguous
+    let Some(pending) = self.dialogs().take(id) else { return Vec::new() };
+src/mcp.rs:801 label -> directory/impl#[Location]label().; graff: call method ambiguous
+    let since = wake::since(&self.home, &self.actor, &location.label());
+src/mcp.rs:818 left_open -> wake/impl#[Told]left_open().; graff: call method ambiguous
+    told.left_open(uid);
+src/mcp.rs:892 code -> ekko/impl#[EkkoError]code().; graff: call method ambiguous
+    .map_err(|error| RpcError::new(-32602, format!("{}: {error}", error.code())))?;
+src/mcp.rs:921 label -> directory/impl#[Location]label().; graff: call method ambiguous
+    agent::prime(&ekko, &location.label()).map_err(resource_error)?.text()
+src/mcp.rs:921 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    agent::prime(&ekko, &location.label()).map_err(resource_error)?.text()
+src/mcp.rs:978 linked -> ekko/impl#[Ekko]linked().; graff: call method ambiguous
+    let linked = own.linked();
+src/mcp.rs:982 from -> ekko/impl#[EkkoError][`From<DirectoryError>`]from().; graff: reference path ambiguous
+    let location = directory::locate(&self.home, &self.cwd, None, None, Some(&there.name)).map_err(EkkoError::from)?;
+src/mcp.rs:997 linked -> ekko/impl#[Ekko]linked().; graff: call method ambiguous
+    here.as_ref().is_some_and(|here| here.name == there.name) || own.linked().iter().any(|linked| linked.name == there.name)
+src/mcp.rs:1019 linked -> ekko/impl#[Ekko]linked().; graff: call method ambiguous
+    self.open().map(|(ekko, _)| ekko.linked().into_iter().map(|project| project.name).collect()).unwrap_or_default()
+src/mcp.rs:1069 label -> directory/impl#[Location]label().; graff: call method ambiguous
+    let text = agent::prime(&ekko, &location.label())?.text();
+src/mcp.rs:1069 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let text = agent::prime(&ekko, &location.label())?.text();
+src/mcp.rs:1131 text -> agent/impl#[Found]text().; graff: call method ambiguous
+    Ok(agent::search(&ekko, text.as_deref(), &filters, limit.unwrap_or(agent::SEARCH_LIMIT))?.text())
+src/mcp.rs:1136 label -> directory/impl#[Location]label().; graff: call method ambiguous
+    Ok(agent::changes_within(&ekko, since, &location.label())?)
+src/mcp.rs:1140 display_roadmap -> ekko/impl#[Ekko]display_roadmap().; graff: call method ambiguous
+    Ok(agent::roadmap_text(&ekko.display_roadmap()?))
+src/mcp.rs:1144 create -> ops/impl#[`Draft<'a>`]create().; graff: call method ambiguous
+    write(&ekko, false, |draft| draft.create(&spec).map(|id| vec![id]))
+src/mcp.rs:1148 set_state -> ops/impl#[`Draft<'a>`]set_state().; graff: call method ambiguous
+    write(&ekko, name == "force_state", |draft| draft.set_state(&spec.items, &spec.state))
+src/mcp.rs:1156 update -> ops/impl#[`Draft<'a>`]update().; graff: call method ambiguous
+    write(&ekko, false, |draft| draft.update(&spec))
+src/mcp.rs:1160 link -> ops/impl#[`Draft<'a>`]link().; graff: call method ambiguous
+    write(&ekko, false, |draft| draft.link(&spec))
+src/mcp.rs:1197 set_phases -> ekko/impl#[Ekko]set_phases().; graff: call method ambiguous
+    ekko.set_phases(&sequence)?;
+src/mcp.rs:1198 display_roadmap -> ekko/impl#[Ekko]display_roadmap().; graff: call method ambiguous
+    Ok(agent::roadmap_text(&ekko.display_roadmap()?))
+src/mcp.rs:1239 apply -> ops/impl#[`Draft<'a>`]apply().; graff: call method ambiguous
+    match draft.apply(op) {
+src/mcp.rs:1347 from -> ekko/impl#[EkkoError][`From<StorageError>`]from().; graff: reference path ambiguous
+    let all = ekko.storage.get_shared().map_err(EkkoError::from)?;
+src/mcp.rs:1353 text -> agent/impl#[Context]text().; graff: call method ambiguous
+    let mut text = read[0].text();
+src/mcp.rs:1380 words -> artifact/impl#[Standing]words().; graff: call method ambiguous
+    reply["standing"] = json!(standing.words());
+src/mcp.rs:1414 wait -> ops/impl#[`Draft<'a>`]wait().; graff: call method ambiguous
+    draft.wait(spec).map(|waited| (Vec::new(), Some(waited)))
+src/mcp.rs:1677 render -> ekko/impl#[Outcome]render().; graff: call method ambiguous
+    outcome.render(&mut renderer);
+src/mcp.rs:1715 code -> ekko/impl#[EkkoError]code().; graff: call method ambiguous
+    RpcError::new(-32603, format!("{}: {error}", error.code()))
+src/mcp.rs:2132 replaced -> mcp/impl#[Launch]replaced().; graff: call method ambiguous
+    assert!(![&pinned, &by_name, &dev_build].iter().any(|launch| launch.replaced()), "nothing changed");
+src/mcp.rs:2135 replaced -> mcp/impl#[Launch]replaced().; graff: call method ambiguous
+    assert!(pinned.replaced(), "a switch, seen through the name on PATH");
+src/mcp.rs:2136 replaced -> mcp/impl#[Launch]replaced().; graff: call method ambiguous
+    assert!(by_name.replaced(), "a server started by the name itself");
+src/mcp.rs:2137 replaced -> mcp/impl#[Launch]replaced().; graff: call method ambiguous
+    assert!(!dev_build.replaced(), "the ekko on PATH never was the dev build");
+src/mcp.rs:2140 replaced -> mcp/impl#[Launch]replaced().; graff: call method ambiguous
+    assert!(!pinned.replaced(), "PATH leads to this server's binary again");
+src/json_output.rs:38 word -> item/impl#[Setting]word().; graff: call method ambiguous
+    json!({"ok": true, "command": command, "ids": ids, "states": settings.iter().map(|s| s.word()).collect::<Vec<_>>()}),
+src/json_output.rs:152 code -> ekko/impl#[EkkoError]code().; graff: call method ambiguous
+    let mut value = json!({"ok": false, "error": error.to_string(), "code": error.code()});
+src/item.rs:803 process -> holder/impl#[Holder]process().; graff: call method ambiguous, call method ambiguous, call method ambiguous
+    Some(holder) if self.by.process().is_some() && holder.process() == self.by.process() => Some(How::Yours),
+src/item.rs:803 process -> holder/impl#[Holder]process().; graff: call method ambiguous, call method ambiguous, call method ambiguous
+    Some(holder) if self.by.process().is_some() && holder.process() == self.by.process() => Some(How::Yours),
+src/item.rs:803 process -> holder/impl#[Holder]process().; graff: call method ambiguous, call method ambiguous, call method ambiguous
+    Some(holder) if self.by.process().is_some() && holder.process() == self.by.process() => Some(How::Yours),
+src/item.rs:804 alive -> holder/impl#[Holder]alive().; graff: call method ambiguous
+    Some(holder) if !holder.alive() => Some(How::Ended),
+src/item.rs:1211 write -> item/impl#[State]write().; graff: call method ambiguous
+    current.after(change).write(item);
+src/item.rs:1384 write -> item/impl#[State]write().; graff: call method ambiguous
+    state.write(&mut item);
+src/item.rs:1422 write -> item/impl#[State]write().; graff: call method ambiguous
+    from.after(change).write(&mut item);
+src/item.rs:1467 write -> item/impl#[State]write().; graff: call method ambiguous
+    state.write(&mut item);
+src/item.rs:1483 write -> item/impl#[State]write().; graff: call method ambiguous
+    from.after(change).write(&mut item);
+src/item.rs:1545 word -> item/impl#[Setting]word().; graff: call method ambiguous
+    assert_eq!(Setting::from_word(setting.word()), Some(setting), "{setting:?}");
+src/item.rs:1556 word -> item/impl#[State]word().; graff: call method ambiguous
+    let words: std::collections::HashSet<&str> = State::ALL.iter().map(|state| state.word()).collect();
+src/item.rs:1919 mark -> item/impl#[Item]mark().; graff: call method ambiguous
+    assert_eq!(note.mark(), Some("lesson"));
+src/holder.rs:126 record -> holder/impl#[Registry]record().; graff: call method ambiguous
+    if let Err(error) = registry.record(now) {
+src/holder.rs:154 process -> holder/impl#[Holder]process().; graff: call method ambiguous
+    self.process == holder.process()
+src/holder.rs:164 process -> holder/impl#[Holder]process().; graff: call method ambiguous
+    if holder.process().is_none_or(|theirs| &theirs == process) {
+src/holder.rs:215 alive -> holder/impl#[Process]alive().; graff: call method ambiguous
+    self.process().is_none_or(|process| process.alive())
+src/holder.rs:259 alive -> holder/impl#[Process]alive().; graff: call method ambiguous
+    if process.alive() {
+src/holder.rs:338 label -> holder/impl#[Holder]label().; graff: call method ambiguous
+    holder.label()
+src/holder.rs:382 process -> holder/impl#[Running]process().; graff: call method ambiguous
+    let process = now.process();
+src/holder.rs:408 process -> holder/impl#[Running]process().; graff: call method ambiguous
+    .is_some_and(|running| running.process().alive());
+src/holder.rs:408 alive -> holder/impl#[Process]alive().; graff: call method ambiguous
+    .is_some_and(|running| running.process().alive());
+src/holder.rs:536 alive -> holder/impl#[Process]alive().; graff: call method ambiguous
+    assert!(me.alive());
+src/holder.rs:537 alive -> holder/impl#[Process]alive().; graff: call method ambiguous
+    assert!(!Process { start: me.start + 1, ..me.clone() }.alive(), "another process that got the pid");
+src/holder.rs:538 alive -> holder/impl#[Process]alive().; graff: call method ambiguous
+    assert!(!Process { boot: "another boot".into(), ..me.clone() }.alive());
+src/holder.rs:550 label -> holder/impl#[Holder]label().; graff: call method ambiguous
+    assert_eq!(holder.label(), "trabalho on pts/1");
+src/holder.rs:551 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    assert!(actor.is(&holder));
+src/holder.rs:552 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    assert!(!Actor::person().is(&holder));
+src/holder.rs:553 label -> holder/impl#[Holder]label().; graff: call method ambiguous
+    assert_eq!(Actor::person().holder(1).label(), "the user");
+src/holder.rs:554 alive -> holder/impl#[Holder]alive().; graff: call method ambiguous
+    assert!(Actor::person().holder(1).alive(), "a person's claim lasts until the task leaves progress");
+src/holder.rs:555 alive -> holder/impl#[Holder]alive().; graff: call method ambiguous
+    assert!(!holder.alive(), "no process 42 started at tick 7 in boot b");
+src/holder.rs:575 record -> holder/impl#[Actor]record().; graff: call method ambiguous
+    actor.record("a6b026e6-85d5-4e5c-ae3b-e5a4a676878a", Path::new("/board"), None);
+src/holder.rs:578 label -> holder/impl#[Holder]label().; graff: call method ambiguous
+    assert_eq!(claim.label(), "trabalho on pts/5 \u{b7} a6b026e6");
+src/holder.rs:580 record -> holder/impl#[Actor]record().; graff: call method ambiguous
+    actor.record("e3011485-0b75-46ea-b411-2cdf3193e1d1", Path::new("/board"), None);
+src/holder.rs:581 name -> holder/impl#[Actor]name().; graff: call method ambiguous
+    assert_eq!(actor.name(&claim), "trabalho on pts/5 \u{b7} e3011485", "after a /clear, the one to resume");
+src/holder.rs:582 label -> holder/impl#[Holder]label().; graff: call method ambiguous
+    assert_eq!(claim.label(), "trabalho on pts/5 \u{b7} a6b026e6", "the claim keeps the one it was made in");
+src/guard.rs:218 process -> holder/impl#[Holder]process().; graff: call method ambiguous
+    session: question.asked_by.as_ref().and_then(|by| by.process()).as_ref().map(key),
+src/guard.rs:688 apply -> ops/impl#[`Draft<'a>`]apply().; graff: call method ambiguous
+    let ids = draft.apply(&serde_json::from_value::<Op>(op).unwrap())?;
+src/guard.rs:707 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let mut data = ekko.storage.get().unwrap();
+src/guard.rs:709 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    ekko.storage.set(&data).unwrap();
+src/guard.rs:871 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let allow = ekko_at(&dir, None).storage.get().unwrap()[&asked].question.clone().unwrap().allow.unwrap();
+src/guard.rs:973 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let mut data = ekko.storage.get().unwrap();
+src/guard.rs:975 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    ekko.storage.set(&data).unwrap();
+src/guard.rs:977 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let has_cue = |gotcha: u32| ekko_at(&dir, None).storage.get().unwrap()[&gotcha].cue.is_some();
+src/guard.rs:1053 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let on = || cues_on(&ekko_at(&dir, None).storage.get().unwrap()).into_values().collect::<Vec<_>>();
+src/guard.rs:1092 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let count = || cues_on(&ekko_at(&dir, None).storage.get().unwrap()).len();
+src/guard.rs:1094 code -> ekko/impl#[EkkoError]code().; graff: call method ambiguous
+    assert_eq!(result.map_err(|error| error.code()), Err("CUE_IS_USERS"), "{what}");
+src/guard.rs:1214 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let prime = crate::agent::prime(&ekko, "default board").unwrap().text();
+src/guard.rs:1217 text -> agent/impl#[Context]text().; graff: call method ambiguous
+    let read = crate::agent::context(&ekko, &gotcha.to_string()).unwrap().text();
+src/guard.rs:1219 text -> agent/impl#[Context]text().; graff: call method ambiguous
+    assert!(!crate::agent::context(&ekko, &plain.to_string()).unwrap().text().contains("cue on"));
+src/feedback.rs:63 push -> feedback/impl#[Shown]push().; graff: call method ambiguous
+    shown.push(' ', None, part);
+src/feedback.rs:65 push -> feedback/impl#[Shown]push().; graff: call method ambiguous
+    shown.push(c, at, part);
+src/feedback.rs:391 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    (Some(by), Some(me)) if by.pid.is_some() && me.is(by) => "this session".to_string(),
+src/feedback.rs:392 label -> holder/impl#[Holder]label().; graff: call method ambiguous
+    (Some(by), me) if by.pid.is_some() => format!("a session, {}", me.map_or_else(|| by.label(), |me| me.name(by))),
+src/feedback.rs:392 name -> holder/impl#[Actor]name().; graff: call method ambiguous
+    (Some(by), me) if by.pid.is_some() => format!("a session, {}", me.map_or_else(|| by.label(), |me| me.name(by))),
+src/feedback.rs:409 find -> feedback/impl#[Shown]find().; graff: call method ambiguous
+    match shown.find(quote) {
+src/feedback.rs:412 words -> feedback/impl#[Shown]words().; graff: call method ambiguous
+    let _ = write!(out, ", its words changed to \"{}\"", crate::agent::clip(&shown.words(&span), QUOTED));
+src/feedback.rs:549 words -> feedback/impl#[Shown]words().; graff: call method ambiguous
+    Found::Here(span) | Found::Changed(span) => shown.words(&span) + &format!("@{}", span.start),
+src/feedback.rs:553 find -> feedback/impl#[Shown]find().; graff: call method ambiguous
+    assert_eq!(span(shown.find(&quote("The session reads it", "", ".", "Goal"))), "The session reads it@0");
+src/feedback.rs:554 find -> feedback/impl#[Shown]find().; graff: call method ambiguous
+    assert_eq!(span(shown.find(&quote("The session reads it", "", ", then", ""))), format!("The session reads it@{first}"), 
+src/feedback.rs:555 find -> feedback/impl#[Shown]find().; graff: call method ambiguous
+    assert_eq!(span(shown.find(&quote("The session reads it", "", "", "Design"))), format!("The session reads it@{first}"), 
+src/feedback.rs:557 find -> feedback/impl#[Shown]find().; graff: call method ambiguous
+    assert!(matches!(shown.find(&idle), Found::Here(_)));
+src/feedback.rs:560 find -> feedback/impl#[Shown]find().; graff: call method ambiguous, call method ambiguous
+    assert!(matches!(changed.find(&idle), Found::Changed(ref span) if changed.words(span) == "until one idle hour"), "{:?}",
+src/feedback.rs:560 words -> feedback/impl#[Shown]words().; graff: call method ambiguous
+    assert!(matches!(changed.find(&idle), Found::Changed(ref span) if changed.words(span) == "until one idle hour"), "{:?}",
+src/feedback.rs:560 find -> feedback/impl#[Shown]find().; graff: call method ambiguous, call method ambiguous
+    assert!(matches!(changed.find(&idle), Found::Changed(ref span) if changed.words(span) == "until one idle hour"), "{:?}",
+src/feedback.rs:562 find -> feedback/impl#[Shown]find().; graff: call method ambiguous
+    assert_eq!(gone.find(&idle), Found::Gone, "too far from the words it was on");
+src/feedback.rs:564 find -> feedback/impl#[Shown]find().; graff: call method ambiguous
+    assert_eq!(cut.find(&idle), Found::Gone);
+src/feedback.rs:565 find -> feedback/impl#[Shown]find().; graff: call method ambiguous
+    assert_eq!(shown.find(&quote("  ", "", "", "")), Found::Gone, "no words, no place");
+src/feedback.rs:575 find -> feedback/impl#[Shown]find().; graff: call method ambiguous
+    let written = |exact: &str| match shown.find(&quote(exact, "", "", "")) {
+src/feedback.rs:576 written -> feedback/impl#[Shown]written().; graff: call method ambiguous
+    Found::Here(span) => shown.written(description, &span).map(|bytes| description[bytes].to_string()),
+src/feedback.rs:590 find -> feedback/impl#[Shown]find().; graff: call method ambiguous
+    let Found::Here(span) = shown.find(&quote("an idle", "", "", "")) else { panic!("found") };
+src/feedback.rs:591 written -> feedback/impl#[Shown]written().; graff: call method ambiguous
+    assert_eq!(shown.written(lines, &span).map(|bytes| &lines[bytes]), Some("an\nidle"), "across the line's end");
+src/feedback.rs:633 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    draft.send_comment(&on, session.storage.get().unwrap()[&note].uid.as_deref().unwrap()).unwrap();
+src/feedback.rs:638 review -> ops/impl#[`Draft<'a>`]review().; graff: call method ambiguous
+    let review = draft.review(&on, Review::CHANGES, "Tighten it.", 1).unwrap();
+src/feedback.rs:650 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let all = session.storage.get().unwrap();
+src/ekko.rs:610 display_by_board -> render/impl#[`Renderer<'a>`]display_by_board().; graff: call method ambiguous
+    Outcome::Board(groups) | Outcome::Find(groups) | Outcome::List(groups) => out.display_by_board(groups),
+src/ekko.rs:611 display_by_date -> render/impl#[`Renderer<'a>`]display_by_date().; graff: call method ambiguous
+    Outcome::Timeline(groups) | Outcome::Archive(groups) => out.display_by_date(groups),
+src/ekko.rs:626 display_stash -> render/impl#[`Renderer<'a>`]display_stash().; graff: call method ambiguous
+    Outcome::Stash(groups) => out.display_stash(groups),
+src/ekko.rs:627 display_trash -> render/impl#[`Renderer<'a>`]display_trash().; graff: call method ambiguous
+    Outcome::Trash(items) => out.display_trash(items),
+src/ekko.rs:629 display_roadmap -> render/impl#[`Renderer<'a>`]display_roadmap().; graff: call method ambiguous
+    out.display_roadmap(steps, *rootless);
+src/ekko.rs:632 display_stats -> render/impl#[`Renderer<'a>`]display_stats().; graff: call method ambiguous
+    Outcome::Stats(stats) => out.display_stats(stats),
+src/ekko.rs:633 raw -> render/impl#[`Renderer<'a>`]raw().; graff: call method ambiguous
+    Outcome::Prime(prime) => out.raw(&prime.text()),
+src/ekko.rs:633 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    Outcome::Prime(prime) => out.raw(&prime.text()),
+src/ekko.rs:634 raw -> render/impl#[`Renderer<'a>`]raw().; graff: call method ambiguous
+    Outcome::Sessions(sessions) => out.raw(&sessions.text()),
+src/ekko.rs:634 text -> agent/impl#[Sessions]text().; graff: call method ambiguous
+    Outcome::Sessions(sessions) => out.raw(&sessions.text()),
+src/ekko.rs:635 raw -> render/impl#[`Renderer<'a>`]raw().; graff: call method ambiguous
+    Outcome::Hook(text) => out.raw(text),
+src/ekko.rs:636 raw -> render/impl#[`Renderer<'a>`]raw().; graff: call method ambiguous
+    Outcome::Next(entries) => out.raw(&crate::agent::list_text(entries, "Nothing is in progress or ready.")),
+src/ekko.rs:637 raw -> render/impl#[`Renderer<'a>`]raw().; graff: call method ambiguous
+    Outcome::Context(context) => out.raw(&context.text()),
+src/ekko.rs:637 text -> agent/impl#[Context]text().; graff: call method ambiguous
+    Outcome::Context(context) => out.raw(&context.text()),
+src/ekko.rs:1107 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    let mine = || actor.is_some_and(|actor| actor.is(holder) || actor.continues(holder));
+src/ekko.rs:1108 alive -> holder/impl#[Holder]alive().; graff: call method ambiguous
+    (touched && holder.alive() && !mine())
+src/ekko.rs:1109 label -> holder/impl#[Holder]label().; graff: call method ambiguous
+    .then(|| (*id, actor.map_or_else(|| holder.label(), |actor| actor.name(holder)), holder.since))
+src/ekko.rs:1109 name -> holder/impl#[Actor]name().; graff: call method ambiguous
+    .then(|| (*id, actor.map_or_else(|| holder.label(), |actor| actor.name(holder)), holder.since))
+src/ekko.rs:1130 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    if actor.is(holder) {
+src/ekko.rs:1133 alive -> holder/impl#[Holder]alive().; graff: call method ambiguous
+    let resumed = !holder.alive() && holder.conversation_in(actor.registry.as_ref()).as_deref() == Some(conversation);
+src/ekko.rs:1141 name -> holder/impl#[Actor]name().; graff: call method ambiguous
+    notices.push(format!("{id} was held by this conversation {until} ({}): yours again", actor.name(holder)));
+src/ekko.rs:1290 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    self.storage.set(data)?;
+src/ekko.rs:1364 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let mut data = self.storage.get()?;
+src/ekko.rs:1412 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let mut data = self.storage.get()?;
+src/ekko.rs:1444 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let mut data = self.storage.get()?;
+src/ekko.rs:1458 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let mut data = self.storage.get()?;
+src/ekko.rs:1466 write -> item/impl#[State]write().; graff: call method ambiguous
+    next.write(item);
+src/ekko.rs:1478 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let mut data = self.storage.get()?;
+src/ekko.rs:1486 write -> item/impl#[State]write().; graff: call method ambiguous
+    next.write(item);
+src/ekko.rs:1500 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let mut data = self.storage.get()?;
+src/ekko.rs:1532 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let mut data = self.storage.get()?;
+src/ekko.rs:1564 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let mut data = self.storage.get()?;
+src/ekko.rs:1599 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let mut data = self.storage.get()?;
+src/ekko.rs:1619 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let mut data = self.storage.get()?;
+src/ekko.rs:1646 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let mut data = self.storage.get()?;
+src/ekko.rs:1659 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let mut data = self.storage.get()?;
+src/ekko.rs:1796 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let mut data = self.storage.get()?;
+src/ekko.rs:1815 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let mut data = self.storage.get()?;
+src/ekko.rs:1907 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let mut data = self.storage.get()?;
+src/ekko.rs:2016 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let mut data = self.storage.get()?;
+src/ekko.rs:2046 apply -> item/impl#[Setting]apply().; graff: call method ambiguous
+    setting.apply(item);
+src/ekko.rs:2096 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let mut data = self.storage.get()?;
+src/ekko.rs:2357 set_phases -> storage/impl#[Storage]set_phases().; graff: call method ambiguous
+    self.storage.set_phases(&cleaned)?;
+src/ekko.rs:2884 display_by_board -> ekko/impl#[Ekko]display_by_board().; graff: call method ambiguous
+    let Outcome::Board(groups) = ekko.display_by_board().unwrap() else { panic!() };
+src/ekko.rs:2951 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "done"]), false).unwrap();
+src/ekko.rs:2953 clear -> ekko/impl#[Ekko]clear().; graff: call method ambiguous
+    let Outcome::Delete(results) = ekko.clear().unwrap() else { panic!() };
+src/ekko.rs:2965 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "done"]), false).unwrap();
+src/ekko.rs:2966 clear -> ekko/impl#[Ekko]clear().; graff: call method ambiguous
+    ekko.clear().unwrap(); // archive id 1
+src/ekko.rs:2988 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@2", "done"]), false).unwrap();
+src/ekko.rs:2989 clear -> ekko/impl#[Ekko]clear().; graff: call method ambiguous
+    ekko.clear().unwrap();
+src/ekko.rs:3012 display_by_board -> ekko/impl#[Ekko]display_by_board().; graff: call method ambiguous
+    let Outcome::Board(groups) = ekko.display_by_board().unwrap() else { panic!() };
+src/ekko.rs:3051 clear -> ekko/impl#[Ekko]clear().; graff: call method ambiguous
+    let Outcome::Delete(results) = ekko.clear().unwrap() else { panic!() };
+src/ekko.rs:3055 clear -> ekko/impl#[Ekko]clear().; graff: call method ambiguous
+    let Outcome::Delete(results) = ekko.clear().unwrap() else { panic!() };
+src/ekko.rs:3088 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = ekko.storage.get().unwrap();
+src/ekko.rs:3091 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "done"]), false).unwrap();
+src/ekko.rs:3093 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = ekko.storage.get().unwrap();
+src/ekko.rs:3109 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let stored = ekko.storage.get().unwrap()[&2].blocked_by.clone().unwrap();
+src/ekko.rs:3110 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let blocker_uid = ekko.storage.get().unwrap()[&1].uid.clone().unwrap();
+src/ekko.rs:3171 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@2", "waiting"]), false).unwrap();
+src/ekko.rs:3177 display_stats -> ekko/impl#[Ekko]display_stats().; graff: call method ambiguous
+    let Outcome::Stats(stats) = ekko.display_stats().unwrap() else { panic!() };
+src/ekko.rs:3180 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let before = ekko.storage.get().unwrap();
+src/ekko.rs:3182 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let after = ekko.storage.get().unwrap();
+src/ekko.rs:3188 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(State::of(&ekko.storage.get().unwrap()[&2]), Some(State::Progress));
+src/ekko.rs:3203 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = ekko.storage.get().unwrap();
+src/ekko.rs:3256 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = ekko.storage.get().unwrap();
+src/ekko.rs:3303 set_phases -> ekko/impl#[Ekko]set_phases().; graff: call method ambiguous
+    ekko.set_phases(&words(&["setup", "ship"])).unwrap();
+src/ekko.rs:3305 set_phases -> ekko/impl#[Ekko]set_phases().; graff: call method ambiguous
+    ekko.set_phases(&words(&["setup", "testing", "ship"])).unwrap();
+src/ekko.rs:3319 set_phases -> ekko/impl#[Ekko]set_phases().; graff: call method ambiguous
+    ekko.set_phases(&words(&["setup", "ship"])).unwrap();
+src/ekko.rs:3322 set_phases -> ekko/impl#[Ekko]set_phases().; graff: call method ambiguous
+    let refused = ekko.set_phases(&words(&["setup"]));
+src/ekko.rs:3326 set_phases -> ekko/impl#[Ekko]set_phases().; graff: call method ambiguous
+    ekko.set_phases(&words(&["ship", "setup"])).unwrap();
+src/ekko.rs:3327 set_phases -> ekko/impl#[Ekko]set_phases().; graff: call method ambiguous
+    ekko.set_phases(&words(&["ship"])).unwrap();
+src/ekko.rs:3352 set_phases -> ekko/impl#[Ekko]set_phases().; graff: call method ambiguous
+    ekko.set_phases(&words(&["setup"])).unwrap();
+src/ekko.rs:3356 display_roadmap -> ekko/impl#[Ekko]display_roadmap().; graff: call method ambiguous
+    let Outcome::Roadmap { steps, rootless, .. } = ekko.display_roadmap().unwrap() else { panic!() };
+src/ekko.rs:3370 set_phases -> ekko/impl#[Ekko]set_phases().; graff: call method ambiguous
+    ekko.set_phases(&words(&["setup", "build"])).unwrap();
+src/ekko.rs:3374 display_roadmap -> ekko/impl#[Ekko]display_roadmap().; graff: call method ambiguous
+    let Outcome::Roadmap { steps, .. } = ekko.display_roadmap().unwrap() else { panic!() };
+src/ekko.rs:3385 set_phases -> ekko/impl#[Ekko]set_phases().; graff: call method ambiguous
+    ekko.set_phases(&words(&["setup", "build"])).unwrap();
+src/ekko.rs:3389 display_roadmap -> ekko/impl#[Ekko]display_roadmap().; graff: call method ambiguous
+    let Outcome::Roadmap { steps, .. } = ekko.display_roadmap().unwrap() else { panic!() };
+src/ekko.rs:3392 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@2", "progress"]), false).unwrap();
+src/ekko.rs:3393 display_roadmap -> ekko/impl#[Ekko]display_roadmap().; graff: call method ambiguous
+    let Outcome::Roadmap { steps, .. } = ekko.display_roadmap().unwrap() else { panic!() };
+src/ekko.rs:3404 set_phases -> ekko/impl#[Ekko]set_phases().; graff: call method ambiguous
+    ekko.set_phases(&words(&["setup"])).unwrap();
+src/ekko.rs:3407 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "done"]), false).unwrap();
+src/ekko.rs:3408 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@2", "cancelled"]), false).unwrap();
+src/ekko.rs:3410 display_roadmap -> ekko/impl#[Ekko]display_roadmap().; graff: call method ambiguous
+    let Outcome::Roadmap { steps, .. } = ekko.display_roadmap().unwrap() else { panic!() };
+src/ekko.rs:3421 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "progress"]), false).unwrap();
+src/ekko.rs:3423 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "cancelled"]), false).unwrap();
+src/ekko.rs:3425 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let item = &ekko.storage.get().unwrap()[&1];
+src/ekko.rs:3439 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&[id, "cancelled"]), false).unwrap();
+src/ekko.rs:3440 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&[id, revive]), false).unwrap();
+src/ekko.rs:3443 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = ekko.storage.get().unwrap();
+src/ekko.rs:3458 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "done"]), false).unwrap();
+src/ekko.rs:3459 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@2", "cancelled"]), false).unwrap();
+src/ekko.rs:3466 display_stats -> ekko/impl#[Ekko]display_stats().; graff: call method ambiguous
+    let Outcome::Stats(stats) = ekko.display_stats().unwrap() else { panic!() };
+src/ekko.rs:3480 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "progress"]), false).unwrap();
+src/ekko.rs:3481 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "paused"]), false).unwrap();
+src/ekko.rs:3483 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = ekko.storage.get().unwrap();
+src/ekko.rs:3495 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "progress"]), false).unwrap();
+src/ekko.rs:3497 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "unstarted"]), false).unwrap();
+src/ekko.rs:3499 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let item = &ekko.storage.get().unwrap()[&1];
+src/ekko.rs:3512 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&[id, "progress"]), false).unwrap();
+src/ekko.rs:3513 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&[id, "paused"]), false).unwrap();
+src/ekko.rs:3516 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "progress"]), false).unwrap();
+src/ekko.rs:3517 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@2", "done"]), false).unwrap();
+src/ekko.rs:3519 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = ekko.storage.get().unwrap();
+src/ekko.rs:3533 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "progress"]), false).unwrap();
+src/ekko.rs:3534 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "paused"]), false).unwrap();
+src/ekko.rs:3536 display_stats -> ekko/impl#[Ekko]display_stats().; graff: call method ambiguous
+    let Outcome::Stats(stats) = ekko.display_stats().unwrap() else { panic!() };
+src/ekko.rs:3556 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@2", "done"]), false).unwrap();
+src/ekko.rs:3588 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "done"]), false).unwrap();
+src/ekko.rs:3589 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let after_first = ekko.storage.get().unwrap()[&1].updated_at;
+src/ekko.rs:3592 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "done"]), false).unwrap(); // idempotent: no change
+src/ekko.rs:3594 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(ekko.storage.get().unwrap()[&1].updated_at, after_first);
+src/ekko.rs:3610 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let old_uid = ekko.storage.get().unwrap()[&2].uid.clone();
+src/ekko.rs:3612 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@2", "done"]), false).unwrap();
+src/ekko.rs:3613 clear -> ekko/impl#[Ekko]clear().; graff: call method ambiguous
+    ekko.clear().unwrap();
+src/ekko.rs:3616 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = ekko.storage.get().unwrap();
+src/ekko.rs:3629 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let before = ekko.storage.get().unwrap()[&1].uid.clone();
+src/ekko.rs:3632 clear -> ekko/impl#[Ekko]clear().; graff: call method ambiguous
+    ekko.clear().unwrap();
+src/ekko.rs:3635 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let after = ekko.storage.get().unwrap().values().next().unwrap().uid.clone();
+src/ekko.rs:3657 clear -> ekko/impl#[Ekko]clear().; graff: call method ambiguous
+    let failed = ekko.clear();
+src/ekko.rs:3661 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(ekko.storage.get().unwrap().len(), 1, "the item is still in storage");
+src/ekko.rs:3674 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let item = ekko.storage.get().unwrap()[&1].clone();
+src/ekko.rs:3677 clear -> ekko/impl#[Ekko]clear().; graff: call method ambiguous
+    ekko.clear().unwrap();
+src/ekko.rs:3682 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert!(ekko.storage.get().unwrap().is_empty());
+src/ekko.rs:3694 clear -> ekko/impl#[Ekko]clear().; graff: call method ambiguous
+    ekko.clear().unwrap();
+src/ekko.rs:3698 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    ekko.storage.set(&BTreeMap::from([(2, item.clone())])).unwrap();
+src/ekko.rs:3702 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = ekko.storage.get().unwrap();
+src/ekko.rs:3715 set_phases -> ekko/impl#[Ekko]set_phases().; graff: call method ambiguous
+    ekko.set_phases(&words(&["design"])).unwrap();
+src/ekko.rs:3722 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = ekko.storage.get().unwrap();
+src/ekko.rs:3734 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = ekko.storage.get().unwrap();
+src/ekko.rs:3747 clear -> ekko/impl#[Ekko]clear().; graff: call method ambiguous
+    ekko.clear().unwrap();
+src/ekko.rs:3761 set_phases -> ekko/impl#[Ekko]set_phases().; graff: call method ambiguous
+    ekko.set_phases(&words(&["design", "build"])).unwrap();
+src/ekko.rs:3777 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = ekko.storage.get().unwrap();
+src/ekko.rs:3793 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "done"]), false).unwrap();
+src/ekko.rs:3794 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "done"]), false).unwrap();
+src/ekko.rs:3795 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(ekko.storage.get().unwrap()[&1].is_complete, Some(true));
+src/ekko.rs:3799 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(ekko.storage.get().unwrap()[&1].is_complete, Some(false));
+src/ekko.rs:3810 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "@2", "progress", "starred"]), false).unwrap();
+src/ekko.rs:3812 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = ekko.storage.get().unwrap();
+src/ekko.rs:3831 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["1", "@2", "paused"]), false).unwrap();
+src/ekko.rs:3833 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = ekko.storage.get().unwrap();
+src/ekko.rs:3835 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    assert!(matches!(ekko.set_state(&words(&["7", "done"]), false), Err(EkkoError::InvalidId(ref id)) if id == "7"));
+src/ekko.rs:3845 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "done", "starred"]), false).unwrap();
+src/ekko.rs:3847 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = ekko.storage.get().unwrap();
+src/ekko.rs:3859 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    assert!(matches!(ekko.set_state(&words(&["@1"]), false), Err(EkkoError::MissingState)));
+src/ekko.rs:3861 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "finished"]), false),
+src/ekko.rs:3864 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(ekko.storage.get().unwrap()[&1].is_complete, Some(false), "nothing applied");
+src/ekko.rs:3876 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = ekko.storage.get().unwrap();
+src/ekko.rs:3890 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert!(ekko.storage.get().unwrap().is_empty(), "nothing should have been created");
+src/ekko.rs:3977 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@4", "done"]), false).unwrap();
+src/ekko.rs:4005 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = ekko.storage.get().unwrap();
+src/ekko.rs:4022 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(ekko.storage.get().unwrap().len(), 4, "no refusal wrote anything");
+src/ekko.rs:4069 code -> ekko/impl#[EkkoError]code().; graff: call method ambiguous
+    assert_eq!(ekko.check_tasks(&[], false).unwrap_err().code(), "MISSING_ID");
+src/ekko.rs:4070 code -> ekko/impl#[EkkoError]code().; graff: call method ambiguous
+    assert_eq!(ekko.check_tasks(&words(&["999"]), false).unwrap_err().code(), "INVALID_ID");
+src/ekko.rs:4071 code -> ekko/impl#[EkkoError]code().; graff: call method ambiguous
+    assert_eq!(ekko.create_task(&[]).unwrap_err().code(), "MISSING_DESC");
+src/ekko.rs:4072 code -> ekko/impl#[EkkoError]code().; graff: call method ambiguous
+    assert_eq!(ekko.edit_description(&words(&["@1", "@2", "x"])).unwrap_err().code(), "INVALID_IDS_NUMBER");
+src/ekko.rs:4073 code -> ekko/impl#[EkkoError]code().; graff: call method ambiguous
+    assert_eq!(ekko.move_boards(&words(&["@1"])).unwrap_err().code(), "INVALID_ID"); // no item 1 exists yet -> caught befor
+src/ekko.rs:4091 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    let outcome = ekko.set_state(&words(&["@1", state]), false).unwrap();
+src/ekko.rs:4097 render -> ekko/impl#[Outcome]render().; graff: call method ambiguous
+    outcome.render(&mut renderer);
+src/ekko.rs:4150 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&[marked.clone(), "done".to_string()], false).unwrap();
+src/ekko.rs:4157 display_by_board -> ekko/impl#[Ekko]display_by_board().; graff: call method ambiguous
+    let stored = ekko.display_by_board().unwrap();
+src/ekko.rs:4178 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    let by_uid = ekko.set_state(&words(&["@18cfdfefd310bd35-10468b", "done"]), false);
+src/ekko.rs:4179 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    let by_id = ekko.set_state(&words(&["@999", "done"]), false);
+src/ekko.rs:4201 display_by_board -> ekko/impl#[Ekko]display_by_board().; graff: call method ambiguous
+    let Outcome::Board(groups) = ekko.display_by_board().unwrap() else { panic!() };
+src/ekko.rs:4224 display_by_board -> ekko/impl#[Ekko]display_by_board().; graff: call method ambiguous
+    let Outcome::Board(groups) = ekko.display_by_board().unwrap() else { panic!() };
+src/ekko.rs:4265 display_by_board -> ekko/impl#[Ekko]display_by_board().; graff: call method ambiguous
+    let Outcome::Board(groups) = ekko.display_by_board().unwrap() else { panic!() };
+src/ekko.rs:4282 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "done"]), false).unwrap();
+src/ekko.rs:4286 display_by_board -> ekko/impl#[Ekko]display_by_board().; graff: call method ambiguous
+    let Outcome::Board(groups) = ekko.display_by_board().unwrap() else { panic!() };
+src/ekko.rs:4289 display_stash -> ekko/impl#[Ekko]display_stash().; graff: call method ambiguous
+    let Outcome::Stash(stashed) = ekko.display_stash().unwrap() else { panic!() };
+src/ekko.rs:4293 display_by_board -> ekko/impl#[Ekko]display_by_board().; graff: call method ambiguous
+    let Outcome::Board(groups) = ekko.display_by_board().unwrap() else { panic!() };
+src/ekko.rs:4308 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "done"]), false).unwrap();
+src/ekko.rs:4312 display_stats -> ekko/impl#[Ekko]display_stats().; graff: call method ambiguous
+    let Outcome::Stats(stats) = ekko.display_stats().unwrap() else { panic!() };
+src/ekko.rs:4334 display_by_board -> ekko/impl#[Ekko]display_by_board().; graff: call method ambiguous
+    let Outcome::Board(groups) = ekko.display_by_board().unwrap() else { panic!() };
+src/ekko.rs:4351 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "@2", "done"]), false).unwrap();
+src/ekko.rs:4354 clear -> ekko/impl#[Ekko]clear().; graff: call method ambiguous
+    ekko.clear().unwrap();
+src/ekko.rs:4356 display_stash -> ekko/impl#[Ekko]display_stash().; graff: call method ambiguous
+    let Outcome::Stash(stashed) = ekko.display_stash().unwrap() else { panic!() };
+src/ekko.rs:4376 display_trash -> ekko/impl#[Ekko]display_trash().; graff: call method ambiguous
+    let Outcome::Trash(trashed) = ekko.display_trash().unwrap() else { panic!() };
+src/ekko.rs:4393 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let mut data = ekko.storage.get().unwrap();
+src/ekko.rs:4396 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    ekko.storage.set(&data).unwrap();
+src/ekko.rs:4398 display_by_board -> ekko/impl#[Ekko]display_by_board().; graff: call method ambiguous
+    ekko.display_by_board().unwrap();
+src/ekko.rs:4399 display_trash -> ekko/impl#[Ekko]display_trash().; graff: call method ambiguous
+    ekko.display_trash().unwrap();
+src/ekko.rs:4400 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert!(ekko.storage.get().unwrap().contains_key(&1), "a read swept the trash");
+src/ekko.rs:4403 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert!(!ekko.storage.get().unwrap().contains_key(&1), "a write did not sweep it");
+src/ekko.rs:4420 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    let by_set = ekko.set_state(&words(&["@2", "done"]), false);
+src/ekko.rs:4427 code -> ekko/impl#[EkkoError]code().; graff: call method ambiguous
+    assert_eq!(result.unwrap_err().code(), "BLOCKED");
+src/ekko.rs:4429 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert!(!ekko.storage.get().unwrap()[&2].is_complete.unwrap_or(false), "it closed anyway");
+src/ekko.rs:4453 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert!(ekko.storage.get().unwrap()[&2].is_complete.unwrap_or(false));
+src/ekko.rs:4472 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    theirs.set_state(&words(&["@1", "progress"]), false).unwrap();
+src/ekko.rs:4476 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ("--set", mine.set_state(&words(&["@1", "paused"]), false)),
+src/ekko.rs:4486 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let item = mine.storage.get().unwrap()[&1].clone();
+src/ekko.rs:4488 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    assert!(other.is(item.held_by.as_ref().unwrap()));
+src/ekko.rs:4490 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    mine.set_state(&words(&["@1", "paused"]), true).unwrap();
+src/ekko.rs:4491 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(State::of(&mine.storage.get().unwrap()[&1]), Some(State::Paused), "--force changes it anyway");
+src/ekko.rs:4493 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    theirs.set_state(&words(&["@1", "progress"]), false).unwrap();
+src/ekko.rs:4495 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(State::of(&mine.storage.get().unwrap()[&1]), Some(State::Done), "the user decides");
+src/ekko.rs:4511 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    let result = ekko.set_state(&words(&["@1", "@3", "done"]), false);
+src/ekko.rs:4514 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert!(!ekko.storage.get().unwrap()[&1].is_complete.unwrap_or(false), "half the command landed");
+src/ekko.rs:4531 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@2", state]), false)
+src/ekko.rs:4535 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@2", "done"]), true).unwrap();
+src/ekko.rs:4536 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@2", "done"]), false).expect("a retry after --force was refused");
+src/ekko.rs:4551 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    let outcome = ekko.set_state(&words(&["@2", "done"]), true).unwrap();
+src/ekko.rs:4555 render -> ekko/impl#[Outcome]render().; graff: call method ambiguous
+    outcome.render(&mut renderer);
+src/ekko.rs:4585 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "cancelled"]), false).unwrap();
+src/ekko.rs:4589 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let item = &ekko.storage.get().unwrap()[&1];
+src/ekko.rs:4592 display_stats -> ekko/impl#[Ekko]display_stats().; graff: call method ambiguous
+    let Outcome::Stats(stats) = ekko.display_stats().unwrap() else { panic!() };
+src/ekko.rs:4610 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let mut data = ekko.storage.get().unwrap();
+src/ekko.rs:4619 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    ekko.storage.set(&data).unwrap();
+src/ekko.rs:4621 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = ekko.storage.get().unwrap();
+src/ekko.rs:4636 display_stats -> ekko/impl#[Ekko]display_stats().; graff: call method ambiguous
+    let Outcome::Stats(stats) = ekko.display_stats().unwrap() else { panic!() };
+src/ekko.rs:4681 write -> item/impl#[State]write().; graff: call method ambiguous
+    State::Done.write(&mut done);
+src/ekko.rs:4683 write -> item/impl#[State]write().; graff: call method ambiguous
+    State::Cancelled.write(&mut dropped);
+src/ekko.rs:4708 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "done"]), false).unwrap();
+src/ekko.rs:4709 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@2", "done"]), false).unwrap();
+src/ekko.rs:4713 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "undone"]), false),
+src/ekko.rs:4714 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "progress"]), false),
+src/ekko.rs:4723 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(State::of(&ekko.storage.get().unwrap()[&1]), Some(State::Done), "it reopened anyway");
+src/ekko.rs:4737 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "done"]), false).unwrap();
+src/ekko.rs:4738 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@2", "done"]), false).unwrap();
+src/ekko.rs:4740 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "cancelled"]), false).expect("cancelling a done blocker was refused");
+src/ekko.rs:4742 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "unstarted"]), false),
+src/ekko.rs:4761 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "@3", "done"]), false).unwrap();
+src/ekko.rs:4762 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@2", "done"]), false).unwrap();
+src/ekko.rs:4764 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    let Outcome::Set { reopened, .. } = ekko.set_state(&words(&["@1", "undone"]), true).unwrap() else {
+src/ekko.rs:4768 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert_eq!(State::of(&ekko.storage.get().unwrap()[&2]), Some(State::Done));
+src/ekko.rs:4770 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@3", "undone"]), false).expect("an open dependent stopped a reopening");
+src/ekko.rs:4782 set_phases -> ekko/impl#[Ekko]set_phases().; graff: call method ambiguous
+    ekko.set_phases(&words(&["early", "late"])).unwrap();
+src/ekko.rs:4805 set_phases -> ekko/impl#[Ekko]set_phases().; graff: call method ambiguous
+    ekko.set_phases(&words(&["early", "late"])).unwrap();
+src/ekko.rs:4810 set_phases -> ekko/impl#[Ekko]set_phases().; graff: call method ambiguous
+    ekko.set_phases(&words(&["late", "early"])).unwrap();
+src/ekko.rs:4812 display_roadmap -> ekko/impl#[Ekko]display_roadmap().; graff: call method ambiguous
+    let Outcome::Roadmap { inversions, .. } = ekko.display_roadmap().unwrap() else { panic!() };
+src/ekko.rs:4844 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    ekko.storage.set(&data).unwrap();
+src/ekko.rs:4870 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "@2", "done"]), false).expect("completing both at once was refused");
+src/ekko.rs:4871 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "@2", "undone"]), false).expect("reopening both at once was refused");
+src/ekko.rs:4873 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert!(broken_dependencies(&ekko.storage.get().unwrap()).is_empty());
+src/ekko.rs:4887 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@2", "@3", "done"]), false).unwrap();
+src/ekko.rs:4894 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert!(ekko.storage.get().unwrap()[&3].blocked_by.is_none(), "it was recorded anyway");
+src/ekko.rs:4910 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "@2", "done"]), false).unwrap();
+src/ekko.rs:4912 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    let outcome = ekko.set_state(&words(&["@1", "undone"]), true).unwrap();
+src/ekko.rs:4916 render -> ekko/impl#[Outcome]render().; graff: call method ambiguous
+    outcome.render(&mut renderer);
+src/ekko.rs:4956 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    (format!("--set {at_a} {state}"), ekko.set_state(&words(&[at_a.as_str(), state]), false))
+src/ekko.rs:4961 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    (format!("--set {at_a} {at_b} {state}"), ekko.set_state(&input, false))
+src/ekko.rs:4967 code -> ekko/impl#[EkkoError]code().; graff: call method ambiguous
+    refused.insert(error.code().to_string());
+src/ekko.rs:4969 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let broken = broken_dependencies(&ekko.storage.get().unwrap());
+src/ekko.rs:4993 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&[format!("@{id}").as_str(), state]), false).unwrap();
+src/ekko.rs:4998 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = ekko.storage.get().unwrap();
+src/ekko.rs:5003 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let prime = crate::agent::prime(&ekko, "board").unwrap().text();
+src/ekko.rs:5032 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "progress"]), false).unwrap();
+src/ekko.rs:5033 clear -> ekko/impl#[Ekko]clear().; graff: call method ambiguous
+    ekko.clear().unwrap();
+src/docs.rs:93 kind -> docs/impl#[`Board<'a>`]kind().; graff: call method ambiguous
+    let (decisions, decision_count) = board.kind(Page::Decisions, "Decisions", "What was settled, and why:");
+src/docs.rs:94 kind -> docs/impl#[`Board<'a>`]kind().; graff: call method ambiguous
+    let (gotchas, gotcha_count) = board.kind(Page::Gotchas, "Gotchas", "Traps, and how to avoid them:");
+src/docs.rs:95 kind -> docs/impl#[`Board<'a>`]kind().; graff: call method ambiguous
+    let (procedures, procedure_count) = board.kind(Page::Procedures, "Procedures", "Steps that work:");
+src/docs.rs:134 path -> docs/impl#[Page]path().; graff: call method ambiguous
+    pages.into_iter().map(|(page, body)| (folder.join(page.path()), format!("{head}{}\n", body.trim_end()))).collect();
+src/docs.rs:208 path -> docs/impl#[Page]path().; graff: call method ambiguous
+    (Page::Task(_), other) => format!("../{}", other.path()),
+src/docs.rs:209 path -> docs/impl#[Page]path().; graff: call method ambiguous
+    (_, other) => other.path(),
+src/docs.rs:425 link -> docs/impl#[Page]link().; graff: call method ambiguous
+    about.push(format!("[history]({})", on.link(Page::History, None)));
+src/docs.rs:454 link -> docs/impl#[Page]link().; graff: call method ambiguous
+    on.link(self.homes[note], Some(*note)),
+src/docs.rs:514 link -> docs/impl#[Page]link().; graff: call method ambiguous
+    format!("[{id}]({})", on.link(page, anchor))
+src/docs.rs:526 word -> item/impl#[Knowledge]word().; graff: call method ambiguous
+    return capitalized(kind.word());
+src/docs.rs:628 link -> docs/impl#[Page]link().; graff: call method ambiguous
+    let _ = write!(out, "[{number}]({})", on.link(page, anchor));
+src/docs.rs:922 linked -> docs/impl#[`Board<'a>`]linked().; graff: call method ambiguous
+    assert_eq!(board.linked("see task 2.", index), "see task [2](tasks/2.md).");
+src/docs.rs:923 linked -> docs/impl#[`Board<'a>`]linked().; graff: call method ambiguous
+    assert_eq!(board.linked("see task 2.", Page::Task(1)), "see task [2](2.md).");
+src/docs.rs:924 linked -> docs/impl#[`Board<'a>`]linked().; graff: call method ambiguous
+    assert_eq!(board.linked("Decision 3 holds", Page::Task(1)), "Decision [3](../decisions.md#3) holds");
+src/docs.rs:925 linked -> docs/impl#[`Board<'a>`]linked().; graff: call method ambiguous
+    assert_eq!(board.linked("note 4", Page::Task(1)), "note [4](#4)");
+src/docs.rs:926 linked -> docs/impl#[`Board<'a>`]linked().; graff: call method ambiguous
+    assert_eq!(board.linked("note 4", Page::Decisions), "note [4](tasks/1.md#4)");
+src/docs.rs:927 linked -> docs/impl#[`Board<'a>`]linked().; graff: call method ambiguous
+    assert_eq!(board.linked("tasks 1, 2 and 9", index), "tasks [1](tasks/1.md), [2](tasks/2.md) and 9");
+src/docs.rs:928 linked -> docs/impl#[`Board<'a>`]linked().; graff: call method ambiguous
+    assert_eq!(board.linked("task 1, 2 runs", index), "task [1](tasks/1.md), 2 runs", "a list follows a plural only");
+src/docs.rs:929 linked -> docs/impl#[`Board<'a>`]linked().; graff: call method ambiguous
+    assert_eq!(board.linked("`ekko --context` on task 1, `task 2`", index), "`ekko --context` on task [1](tasks/1.md), `task
+src/docs.rs:931 linked -> docs/impl#[`Board<'a>`]linked().; graff: call method ambiguous
+    assert_eq!(board.linked(untouched, index), untouched);
+src/docs.rs:980 kind -> docs/impl#[`Board<'a>`]kind().; graff: call method ambiguous
+    let (page, count) = board.kind(Page::Decisions, "Decisions", "What was settled, and why:");
+src/docs.rs:986 label -> docs/impl#[`Board<'a>`]label().; graff: call method ambiguous
+    assert_eq!(board.label(4), "Earlier handoff");
+src/docs.rs:987 label -> docs/impl#[`Board<'a>`]label().; graff: call method ambiguous
+    assert_eq!(board.label(5), "Handoff");
+src/docs.rs:1014 kind -> docs/impl#[`Board<'a>`]kind().; graff: call method ambiguous
+    let (decisions, count) = board.kind(Page::Decisions, "Decisions", "What was settled, and why:");
+src/directory.rs:373 label -> directory/impl#[Location]label().; graff: call method ambiguous
+    assert_eq!(found.label(), "project site, found from this folder");
+src/directory.rs:374 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    crate::ekko::Ekko::at(&found).unwrap().storage.set(&crate::storage::ItemMap::new()).unwrap();
+src/directory.rs:379 label -> directory/impl#[Location]label().; graff: call method ambiguous
+    let label = fallen.label();
+src/dialog.rs:187 proposes -> ops/impl#[Inquiry]proposes().; graff: call method ambiguous
+    let composed = inquiry.proposes();
+src/artifact.rs:277 word -> item/impl#[State]word().; graff: call method ambiguous
+    return self.state.word().to_string();
+src/artifact.rs:364 words -> artifact/impl#[Standing]words().; graff: call method ambiguous
+    Some(Planned { version: artifact.version, approved_version: artifact.approved_version, standing: standing.words(), steps
+src/artifact.rs:859 label -> holder/impl#[Holder]label().; graff: call method ambiguous
+    Some(if by.pid.is_none() { "the user".to_string() } else { format!("a session, {}", by.label()) })
+src/artifact.rs:1057 mark -> item/impl#[Item]mark().; graff: call method ambiguous
+    match (&note.question, note.mark()) {
+src/artifact.rs:4276 words -> artifact/impl#[Standing]words().; graff: call method ambiguous
+    assert_eq!(Standing::of(&draft, &all).unwrap().words(), "draft, 3 steps");
+src/artifact.rs:4279 write -> item/impl#[State]write().; graff: call method ambiguous
+    State::Done.write(&mut done);
+src/artifact.rs:4290 words -> artifact/impl#[Standing]words().; graff: call method ambiguous
+    assert_eq!(standing.words(), "approved, 1 of 2 done, 1 step to approve");
+src/artifact.rs:4293 words -> artifact/impl#[Standing]words().; graff: call method ambiguous
+    assert_eq!(Standing::of(&approved, &all).unwrap().words(), "approved, 1 of 2 done, 1 step to approve, changed since appr
+src/artifact.rs:4296 write -> item/impl#[State]write().; graff: call method ambiguous
+    State::Cancelled.write(&mut closed);
+src/artifact.rs:4297 words -> artifact/impl#[Standing]words().; graff: call method ambiguous
+    assert_eq!(Standing::of(&closed, &all).unwrap().words(), "cancelled");
+src/artifact.rs:4695 write -> item/impl#[State]write().; graff: call method ambiguous
+    State::Done.write(&mut done);
+src/artifact.rs:4775 write -> item/impl#[State]write().; graff: call method ambiguous
+    State::Done.write(&mut done);
+src/artifact.rs:4934 apply -> ops/impl#[`Draft<'a>`]apply().; graff: call method ambiguous
+    draft.apply(&serde_json::from_value::<Op>(op).unwrap())?;
+src/artifact.rs:4975 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let board = || as_user.storage.get().unwrap();
+src/artifact.rs:4977 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let drafted = crate::agent::prime(&as_user, "test").unwrap().text();
+src/artifact.rs:5034 words -> artifact/impl#[Standing]words().; graff: call method ambiguous
+    assert_eq!(Standing::of(&data[&target], &data).unwrap().words(), "approved, 0 of 3 done");
+src/artifact.rs:5037 text -> agent/impl#[Context]text().; graff: call method ambiguous
+    let context = crate::agent::context(&as_user, &target.to_string()).unwrap().text();
+src/artifact.rs:5041 text -> agent/impl#[Context]text().; graff: call method ambiguous
+    let of_step = crate::agent::context(&as_user, &field.id.to_string()).unwrap().text();
+src/artifact.rs:5043 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let prime = crate::agent::prime(&as_user, "test").unwrap().text();
+src/artifact.rs:5078 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let mut data = as_user.storage.get().unwrap();
+src/artifact.rs:5080 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    as_user.storage.set(&data).unwrap();
+src/artifact.rs:5083 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let made = || as_user.storage.get().unwrap()[&target].artifact.as_ref().unwrap().steps[0].task.is_some();
+src/artifact.rs:5102 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    assert!(as_user.storage.get().unwrap()[&target].artifact.as_ref().unwrap().steps[0].task.is_none());
+src/artifact.rs:5105 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let plain = as_user.storage.get().unwrap().values().find(|item| item.description == "A plain task").unwrap().id;
+src/artifact.rs:5122 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let mut data = as_user.storage.get().unwrap();
+src/artifact.rs:5124 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    as_user.storage.set(&data).unwrap();
+src/artifact.rs:5127 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = as_user.storage.get().unwrap();
+src/artifact.rs:5150 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let board = || as_user.storage.get().unwrap();
+src/artifact.rs:5173 review -> ops/impl#[`Draft<'a>`]review().; graff: call method ambiguous
+    let id = draft.review(&on, verdict, text, version)?;
+src/artifact.rs:5269 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let board = || as_user.storage.get().unwrap();
+src/artifact.rs:5272 left_open -> wake/impl#[Told]left_open().; graff: call method ambiguous
+    told(&asker).left_open(&uid(asked));
+src/artifact.rs:5274 words -> artifact/impl#[Standing]words().; graff: call method ambiguous
+    let words = || Standing::of(&board()[&target], &board()).unwrap().words();
+src/artifact.rs:5303 review -> ops/impl#[`Draft<'a>`]review().; graff: call method ambiguous
+    let changes = draft.review(&on, "changes", "Split the step.\nIt does two things.", 1).unwrap();
+src/artifact.rs:5347 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = as_user.storage.get().unwrap();
+src/agent.rs:481 word -> item/impl#[Knowledge]word().; graff: call method ambiguous
+    (Some(kind), []) if self.cue => format!("[{}, cue on] ", kind.word()),
+src/agent.rs:482 word -> item/impl#[Knowledge]word().; graff: call method ambiguous
+    (Some(kind), []) => format!("[{}] ", kind.word()),
+src/agent.rs:483 word -> item/impl#[Knowledge]word().; graff: call method ambiguous
+    (Some(kind), newer) if self.cue => format!("[{}, cue on, superseded by {}] ", kind.word(), join(newer)),
+src/agent.rs:484 word -> item/impl#[Knowledge]word().; graff: call method ambiguous
+    (Some(kind), newer) => format!("[{}, superseded by {}] ", kind.word(), join(newer)),
+src/agent.rs:541 label -> holder/impl#[Holder]label().; graff: call method ambiguous
+    by: self.me.as_ref().map_or_else(|| holder.label(), |me| me.name(holder)),
+src/agent.rs:541 name -> holder/impl#[Actor]name().; graff: call method ambiguous
+    by: self.me.as_ref().map_or_else(|| holder.label(), |me| me.name(holder)),
+src/agent.rs:543 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    yours: self.me.as_ref().is_some_and(|me| me.is(holder)),
+src/agent.rs:544 alive -> holder/impl#[Holder]alive().; graff: call method ambiguous
+    gone: !holder.alive(),
+src/agent.rs:551 whose -> holder/impl#[Holder]whose().; graff: call method ambiguous
+    note.created_by.as_ref()?.whose(self.me.as_ref())
+src/agent.rs:558 label -> holder/impl#[Holder]label().; graff: call method ambiguous
+    Some(self.me.as_ref().map_or_else(|| author.label(), |me| me.name(author)))
+src/agent.rs:558 name -> holder/impl#[Actor]name().; graff: call method ambiguous
+    Some(self.me.as_ref().map_or_else(|| author.label(), |me| me.name(author)))
+src/agent.rs:1157 next -> agent/impl#[`Reader<'a>`]next().; graff: call method ambiguous
+    let (next, _) = reader.next(None);
+src/agent.rs:1167 words -> artifact/impl#[Standing]words().; graff: call method ambiguous
+    Some(ArtifactLine { id: item.id, title, standing: standing.words() })
+src/agent.rs:1182 entry -> agent/impl#[`Reader<'a>`]entry().; graff: call method ambiguous
+    let mut blocked: Vec<Entry> = blocked.into_iter().take(BLOCKED_SHOWN).map(|item| reader.entry(item)).collect();
+src/agent.rs:1191 entry -> agent/impl#[`Reader<'a>`]entry().; graff: call method ambiguous
+    let mut waiting: Vec<Entry> = waiting.into_iter().take(BLOCKED_SHOWN).map(|item| reader.entry(item)).collect();
+src/agent.rs:1199 entry -> agent/impl#[`Reader<'a>`]entry().; graff: call method ambiguous
+    with_someone.into_iter().take(BLOCKED_SHOWN).map(|item| reader.entry(item)).collect();
+src/agent.rs:1215 uid -> agent/impl#[`Reader<'a>`]uid().; graff: call method ambiguous
+    let task = &all[&reader.uid(note.attached_to.as_deref()?)?];
+src/agent.rs:1219 whose -> agent/impl#[`Reader<'a>`]whose().; graff: call method ambiguous
+    let rank = |note: &Item, task: &Item| match (reader.held(task), reader.whose(note)) {
+src/agent.rs:1236 text -> agent/impl#[Held]text().; graff: call method ambiguous
+    held: reader.held(task).map(|held| held.text()),
+src/agent.rs:1238 whose -> agent/impl#[`Reader<'a>`]whose().; graff: call method ambiguous
+    whose: reader.whose(note),
+src/agent.rs:1249 whose -> agent/impl#[`Reader<'a>`]whose().; graff: call method ambiguous
+    whose: reader.whose(note),
+src/agent.rs:1301 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    me.is(asker)
+src/agent.rs:1302 alive -> holder/impl#[Holder]alive().; graff: call method ambiguous
+    || (!asker.alive() && me.conversation().is_some_and(|now| asker.conversation_in(registry).as_deref() == Some(now.as_str(
+src/agent.rs:1329 uid -> agent/impl#[`Reader<'a>`]uid().; graff: call method ambiguous
+    let target = reader.uid(&wait.on).and_then(|id| all.get(&id));
+src/agent.rs:1333 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    .is_some_and(|holder| reader.me.as_ref().is_some_and(|me| me.is(holder)));
+src/agent.rs:1338 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    let by_me = over.by.as_ref().is_some_and(|by| reader.me.as_ref().is_some_and(|me| me.is(by)));
+src/agent.rs:1347 display_roadmap -> ekko/impl#[Ekko]display_roadmap().; graff: call method ambiguous
+    let (roadmap, rootless, inversions) = match (phases.is_empty(), ekko.display_roadmap()?) {
+src/agent.rs:1366 uid -> agent/impl#[`Reader<'a>`]uid().; graff: call method ambiguous
+    .filter_map(|uid| reader.uid(uid))
+src/agent.rs:1374 linked -> ekko/impl#[Ekko]linked().; graff: call method ambiguous
+    linked: ekko.linked().into_iter().map(|project| project.name).collect(),
+src/agent.rs:1446 next -> agent/impl#[`Reader<'a>`]next().; graff: call method ambiguous
+    Ok(Reader::shared(&all, &phases).seen_by(ekko).next(limit))
+src/agent.rs:1607 word -> item/impl#[Knowledge]word().; graff: call method ambiguous
+    (None, Some(kind)) => kind.word(),
+src/agent.rs:1624 uid -> agent/impl#[`Reader<'a>`]uid().; graff: call method ambiguous
+    .and_then(|uid| reader.uid(uid))
+src/agent.rs:1639 entry -> agent/impl#[`Reader<'a>`]entry().; graff: call method ambiguous
+    let entry = reader.entry(item);
+src/agent.rs:1645 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    let to_waiter = reader.me.as_ref().is_some_and(|me| me.is(&wait.by));
+src/agent.rs:1682 uid -> agent/impl#[`Reader<'a>`]uid().; graff: call method ambiguous
+    let target = reader.uid(&wait.on).and_then(|id| reader.graph.all.get(&id));
+src/agent.rs:1690 word -> item/impl#[Until]word().; graff: call method ambiguous
+    until: wait.until.word(),
+src/agent.rs:1692 label -> holder/impl#[Holder]label().; graff: call method ambiguous
+    held: held.map(|holder| reader.me.as_ref().map_or_else(|| holder.label(), |me| me.name(holder))),
+src/agent.rs:1692 name -> holder/impl#[Actor]name().; graff: call method ambiguous
+    held: held.map(|holder| reader.me.as_ref().map_or_else(|| holder.label(), |me| me.name(holder))),
+src/agent.rs:1711 uid -> agent/impl#[`Reader<'a>`]uid().; graff: call method ambiguous
+    about: note.attached_to.as_deref().and_then(|uid| reader.uid(uid)),
+src/agent.rs:1749 is_empty -> lexical/impl#[Query]is_empty().; graff: call method ambiguous, call method ambiguous
+    if query.is_empty() && filters.is_empty() {
+src/agent.rs:1764 is_empty -> lexical/impl#[Query]is_empty().; graff: call method ambiguous
+    if query.is_empty() {
+src/agent.rs:1766 entry -> agent/impl#[`Reader<'a>`]entry().; graff: call method ambiguous
+    candidates.iter().take(limit).map(|item| (reader.entry(item), headline(&item.description, item.is_task, TASK_CLIP))).col
+src/agent.rs:1779 entry -> agent/impl#[`Reader<'a>`]entry().; graff: call method ambiguous
+    (reader.entry(item), lexical::snippet(&item.description, &query, SNIPPET))
+src/agent.rs:1925 whose -> agent/impl#[`Reader<'a>`]whose().; graff: call method ambiguous
+    .filter(|note| matches!(reader.whose(note), Some(Whose::Yours) | None))
+src/agent.rs:1938 whose -> agent/impl#[`Reader<'a>`]whose().; graff: call method ambiguous
+    let _ = if reader.whose(note) == Some(Whose::Yours) {
+src/agent.rs:1963 whose -> agent/impl#[`Reader<'a>`]whose().; graff: call method ambiguous
+    let _ = match (reader.whose(note), reader.author(note)) {
+src/agent.rs:2018 word -> item/impl#[State]word().; graff: call method ambiguous
+    (n > 0).then(|| format!("{n} {}", state.word()))
+src/agent.rs:2124 entry -> agent/impl#[`Reader<'a>`]entry().; graff: call method ambiguous
+    all.values().filter(moved).map(|item| (item.rev.unwrap_or(0), reader.entry(item))).collect();
+src/agent.rs:2134 uid -> agent/impl#[`Reader<'a>`]uid().; graff: call method ambiguous
+    .and_then(|uid| reader.uid(uid))
+src/agent.rs:2175 entry -> agent/impl#[`Reader<'a>`]entry().; graff: call method ambiguous
+    items.push(reader.entry(&all[id]));
+src/agent.rs:2207 text -> agent/impl#[Changes]text().; graff: call method ambiguous
+    let moved = changes(ekko, since)?.text();
+src/agent.rs:2211 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let view = prime(ekko, board)?.text();
+src/agent.rs:2276 record -> holder/impl#[Actor]record().; graff: call method ambiguous
+    actor.record(conversation, ekko.storage.storage_path(), event.transcript.as_deref());
+src/agent.rs:2289 text -> agent/impl#[Changes]text().; graff: call method ambiguous
+    let moved = changes(ekko, cursor)?.text();
+src/agent.rs:2293 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    prime(ekko, board)?.text()
+src/agent.rs:2299 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    _ => prime(ekko, board)?.text(),
+src/agent.rs:2386 label -> holder/impl#[Running]label().; graff: call method ambiguous
+    name: running.label(),
+src/agent.rs:2387 process -> holder/impl#[Running]process().; graff: call method ambiguous
+    running: running.process().alive(),
+src/agent.rs:2387 alive -> holder/impl#[Process]alive().; graff: call method ambiguous
+    running: running.process().alive(),
+src/agent.rs:2389 resume -> holder/impl#[Running]resume().; graff: call method ambiguous
+    resume: Some(running.resume()),
+src/agent.rs:2400 process -> holder/impl#[Running]process().; graff: call method ambiguous
+    .filter(|running| running.process().alive())
+src/agent.rs:2400 alive -> holder/impl#[Process]alive().; graff: call method ambiguous
+    .filter(|running| running.process().alive())
+src/agent.rs:2405 process -> holder/impl#[Running]process().; graff: call method ambiguous, call method ambiguous
+    other.process() != running.process()
+src/agent.rs:2405 process -> holder/impl#[Running]process().; graff: call method ambiguous, call method ambiguous
+    other.process() != running.process()
+src/agent.rs:2406 process -> holder/impl#[Running]process().; graff: call method ambiguous
+    && other.process().alive()
+src/agent.rs:2406 alive -> holder/impl#[Process]alive().; graff: call method ambiguous
+    && other.process().alive()
+src/agent.rs:2409 process -> holder/impl#[Running]process().; graff: call method ambiguous, call method ambiguous
+    Some((running.process(), into.process()))
+src/agent.rs:2409 process -> holder/impl#[Running]process().; graff: call method ambiguous, call method ambiguous
+    Some((running.process(), into.process()))
+src/agent.rs:2416 process -> holder/impl#[Running]process().; graff: call method ambiguous
+    .filter(|running| running.board.as_deref() == Some(here) && running.process().alive())
+src/agent.rs:2416 alive -> holder/impl#[Process]alive().; graff: call method ambiguous
+    .filter(|running| running.board.as_deref() == Some(here) && running.process().alive())
+src/agent.rs:2417 process -> holder/impl#[Running]process().; graff: call method ambiguous
+    .filter(|running| !moved.iter().any(|(from, _)| *from == running.process()))
+src/agent.rs:2418 process -> holder/impl#[Running]process().; graff: call method ambiguous
+    .map(|running| (Some(running.process()), view(running)))
+src/agent.rs:2423 process -> holder/impl#[Holder]process().; graff: call method ambiguous
+    let process = holder.process().map(went_on);
+src/agent.rs:2427 process -> holder/impl#[Running]process().; graff: call method ambiguous
+    let recorded = process.as_ref().and_then(|process| recorded.iter().find(|running| running.process() == *process));
+src/agent.rs:2430 alive -> holder/impl#[Holder]alive().; graff: call method ambiguous
+    running: holder.alive(),
+src/agent.rs:2464 word -> item/impl#[Until]word().; graff: call method ambiguous
+    let text = format!("on {on} until {}: {}", wait.until.word(), clip(&item.description, TASK_CLIP));
+src/agent.rs:2580 word -> item/impl#[State]word().; graff: call method ambiguous
+    meta.push(state.word().to_string());
+src/agent.rs:2583 text -> agent/impl#[Held]text().; graff: call method ambiguous
+    meta.push(held.text());
+src/agent.rs:2627 mark -> agent/impl#[NoteRef]mark().; graff: call method ambiguous
+    format!("{:>8}. {}{}", note.id, note.mark(), clip(&note.description, max))
+src/agent.rs:2634 mark -> agent/impl#[NoteRef]mark().; graff: call method ambiguous
+    format!("{:>4}. {}{}", note.id, note.mark(), clip(first, TASK_CLIP))
+src/agent.rs:2688 word -> item/impl#[State]word().; graff: call method ambiguous
+    (s.in_progress, State::Progress.word()),
+src/agent.rs:2689 word -> item/impl#[State]word().; graff: call method ambiguous
+    (s.paused, State::Paused.word()),
+src/agent.rs:2690 word -> item/impl#[State]word().; graff: call method ambiguous
+    (s.waiting, State::Waiting.word()),
+src/agent.rs:2691 word -> item/impl#[State]word().; graff: call method ambiguous
+    (s.pending, State::Pending.word()),
+src/agent.rs:2692 word -> item/impl#[State]word().; graff: call method ambiguous
+    (s.cancelled, State::Cancelled.word()),
+src/agent.rs:2739 text -> agent/impl#[Handoff]text().; graff: call method ambiguous
+    out.push_str(&handoff.text());
+src/agent.rs:2860 write -> agent/impl#[Section]write().; graff: call method ambiguous
+    section.write(&mut out, shown);
+src/agent.rs:3176 word -> item/impl#[Knowledge]word().; graff: call method ambiguous
+    (None, false, Some(kind)) => format!("note, a {}", kind.word()),
+src/agent.rs:3179 word -> item/impl#[State]word().; graff: call method ambiguous
+    (Some(state), _, _) => format!("task, {}", state.word()),
+src/agent.rs:3182 text -> agent/impl#[Held]text().; graff: call method ambiguous
+    facts[0] = format!("{}, {} since {}", facts[0], held.text(), crate::holder::when(held.since));
+src/agent.rs:3185 word -> item/impl#[State]word().; graff: call method ambiguous
+    facts[0] = format!("artifact, a task {}", state.word());
+src/agent.rs:3220 lines -> artifact/impl#[Planned]lines().; graff: call method ambiguous
+    for line in planned.lines() {
+src/agent.rs:3346 mark -> agent/impl#[NoteRef]mark().; graff: call method ambiguous
+    let _ = writeln!(out, "{:>4}. {}{body}", note.id, note.mark());
+src/agent.rs:3399 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@7", "progress"]), false).unwrap();
+src/agent.rs:3441 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let all = ekko.storage.get().unwrap();
+src/agent.rs:3498 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@2", "cancelled"]), false).unwrap();
+src/agent.rs:3511 set_phases -> ekko/impl#[Ekko]set_phases().; graff: call method ambiguous
+    ekko.set_phases(&words(&["early", "late"])).unwrap();
+src/agent.rs:3535 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@2", "cancelled"]), false).unwrap();
+src/agent.rs:3551 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "progress"]), false).unwrap();
+src/agent.rs:3558 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let text = view.text();
+src/agent.rs:3580 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    assert!(!prime(&ekko, "default board").unwrap().text().contains("Waiting"));
+src/agent.rs:3582 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@2", "@3", "waiting"]), false).unwrap();
+src/agent.rs:3587 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let text = view.text();
+src/agent.rs:3610 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@5", "progress"]), false).unwrap();
+src/agent.rs:3617 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let text = view.text();
+src/agent.rs:3626 text -> agent/impl#[Context]text().; graff: call method ambiguous
+    assert!(context(&ekko, "2").unwrap().text().contains("task, pending \u{b7} with rodrigo"));
+src/agent.rs:3630 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    assert!(!prime(&plain, "default board").unwrap().text().contains("With someone"));
+src/agent.rs:3645 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@2", "done"]), true).unwrap();
+src/agent.rs:3647 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let text = prime(&ekko, "default board").unwrap().text();
+src/agent.rs:3668 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let uid = ekko.storage.get().unwrap()[&1].uid.clone().unwrap();
+src/agent.rs:3688 text -> agent/impl#[Changes]text().; graff: call method ambiguous
+    let text = seen.text();
+src/agent.rs:3706 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@3", "done"]), false).unwrap();
+src/agent.rs:3709 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "done"]), false).unwrap();
+src/agent.rs:3710 clear -> ekko/impl#[Ekko]clear().; graff: call method ambiguous
+    ekko.clear().unwrap();
+src/agent.rs:3713 text -> agent/impl#[Changes]text().; graff: call method ambiguous
+    let text = seen.text();
+src/agent.rs:3717 text -> agent/impl#[Changes]text().; graff: call method ambiguous
+    assert!(changes(&ekko, seen.cursor).unwrap().text().starts_with(&format!("cursor {} \u{b7} 0 changed", seen.cursor)));
+src/agent.rs:3730 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "cancelled"]), false).unwrap();
+src/agent.rs:3732 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let text = prime(&ekko, "default board").unwrap().text();
+src/agent.rs:3811 text -> agent/impl#[Context]text().; graff: call method ambiguous
+    let text = context(&ekko, "2").unwrap().text();
+src/agent.rs:3833 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let text = prime(&ekko, "default board").unwrap().text();
+src/agent.rs:3853 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    ekko.storage.set(&data).unwrap();
+src/agent.rs:3879 set -> storage/impl#[Storage]set().; graff: call method ambiguous
+    ekko.storage.set(&data).unwrap();
+src/agent.rs:3881 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let text = prime(&ekko, "default board").unwrap().text();
+src/agent.rs:3909 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let text = prime(&ekko, "default board").unwrap().text();
+src/agent.rs:3937 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let text = prime(&ekko, "default board").unwrap().text();
+src/agent.rs:3950 apply -> ops/impl#[`Draft<'a>`]apply().; graff: call method ambiguous
+    draft.apply(&op).unwrap();
+src/agent.rs:3962 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "progress"]), false).unwrap();
+src/agent.rs:3964 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@2", "done"]), false).unwrap();
+src/agent.rs:3967 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let text = prime(&ekko, "default board").unwrap().text();
+src/agent.rs:3987 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "progress"]), false).unwrap();
+src/agent.rs:3997 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let text = prime(&ekko, "default board").unwrap().text();
+src/agent.rs:4018 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "progress"]), false).unwrap();
+src/agent.rs:4022 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let text = prime(&ekko, "default board").unwrap().text();
+src/agent.rs:4036 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "progress"]), false).unwrap();
+src/agent.rs:4040 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let uid = ekko.storage.get().unwrap()[&1].uid.clone().unwrap();
+src/agent.rs:4062 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "progress"]), false).unwrap();
+src/agent.rs:4078 apply -> ops/impl#[`Draft<'a>`]apply().; graff: call method ambiguous
+    draft.apply(&op).unwrap();
+src/agent.rs:4105 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "progress"]), false).unwrap();
+src/agent.rs:4107 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let text = prime(&ekko, "default board").unwrap().text();
+src/agent.rs:4150 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let text = prime(&ekko, "default board").unwrap().text();
+src/agent.rs:4185 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let text = prime(&ekko, "default board").unwrap().text();
+src/agent.rs:4309 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let text = prime(&ekko, "default board").unwrap().text();
+src/agent.rs:4337 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&[format!("@{k}").as_str(), "progress"]), false).unwrap();
+src/agent.rs:4340 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let text = prime(&ekko, "default board").unwrap().text();
+src/agent.rs:4356 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let text = prime(&ekko, "default board").unwrap().text();
+src/agent.rs:4375 text -> agent/impl#[Context]text().; graff: call method ambiguous
+    let older = context(&ekko, "1").unwrap().text();
+src/agent.rs:4378 text -> agent/impl#[Context]text().; graff: call method ambiguous
+    let newer = context(&ekko, "2").unwrap().text();
+src/agent.rs:4382 text -> agent/impl#[Context]text().; graff: call method ambiguous
+    let older = context(&ekko, "1").unwrap().text();
+src/agent.rs:4384 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let text = prime(&ekko, "default board").unwrap().text();
+src/agent.rs:4412 text -> agent/impl#[Context]text().; graff: call method ambiguous
+    let replaced = context(&ekko, "2").unwrap().text();
+src/agent.rs:4416 text -> agent/impl#[Context]text().; graff: call method ambiguous
+    let current = context(&ekko, "3").unwrap().text();
+src/agent.rs:4418 text -> agent/impl#[Found]text().; graff: call method ambiguous
+    let found = search(&ekko, Some("parser"), &[], 20).unwrap().text();
+src/agent.rs:4441 text -> agent/impl#[Found]text().; graff: call method ambiguous
+    let text = decisions.text();
+src/agent.rs:4496 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@2", "done"]), false).unwrap();
+src/agent.rs:4500 text -> agent/impl#[Found]text().; graff: call method ambiguous
+    let text = found.text();
+src/agent.rs:4505 text -> agent/impl#[Found]text().; graff: call method ambiguous
+    let bounded = search(&ekko, Some("cycle"), &[], 1).unwrap().text();
+src/agent.rs:4508 text -> agent/impl#[Found]text().; graff: call method ambiguous
+    let summary = search(&ekko, None, &[], SEARCH_LIMIT).unwrap().text();
+src/agent.rs:4527 text -> agent/impl#[Found]text().; graff: call method ambiguous
+    let text = |query: Option<&str>, filters: &[&str]| search(&ekko, query, &words(filters), SEARCH_LIMIT).unwrap().text();
+src/agent.rs:4576 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@5", "done"]), false).unwrap();
+src/agent.rs:4581 text -> agent/impl#[Context]text().; graff: call method ambiguous
+    let text = tip.text();
+src/agent.rs:4585 text -> agent/impl#[Context]text().; graff: call method ambiguous
+    let middle = context(&ekko, "3").unwrap().text();
+src/agent.rs:4590 text -> agent/impl#[Context]text().; graff: call method ambiguous, call method ambiguous
+    assert!(root.text().contains("2 open tasks wait on this"), "{}", root.text());
+src/agent.rs:4590 text -> agent/impl#[Context]text().; graff: call method ambiguous, call method ambiguous
+    assert!(root.text().contains("2 open tasks wait on this"), "{}", root.text());
+src/agent.rs:4606 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    as_(actor).set_state(&words(&[id, "progress"]), false).unwrap();
+src/agent.rs:4609 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let text = prime(&as_(&me), "default board").unwrap().text();
+src/agent.rs:4628 apply -> ops/impl#[`Draft<'a>`]apply().; graff: call method ambiguous
+    draft.apply(&serde_json::from_value(op).unwrap()).unwrap();
+src/agent.rs:4634 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    as_(&me).set_state(&words(&["@1", "progress"]), false).unwrap();
+src/agent.rs:4635 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    as_(&other).set_state(&words(&["@2", "progress"]), false).unwrap();
+src/agent.rs:4639 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let mine = prime(&as_(&me), "default board").unwrap().text();
+src/agent.rs:4643 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let theirs = prime(&as_(&other), "default board").unwrap().text();
+src/agent.rs:4666 apply -> ops/impl#[`Draft<'a>`]apply().; graff: call method ambiguous
+    draft.apply(&serde_json::from_value(op).unwrap()).unwrap();
+src/agent.rs:4672 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    as_(&me).set_state(&words(&["@2", "waiting"]), false).unwrap();
+src/agent.rs:4678 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let mine = prime(&as_(&me), "default board").unwrap().text();
+src/agent.rs:4684 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let theirs = prime(&as_(&other), "default board").unwrap().text();
+src/agent.rs:4690 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let fresh = prime(&as_(&crate::holder::Actor::person()), "default board").unwrap().text();
+src/agent.rs:4693 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    as_(&me).set_state(&words(&["@1", "done"]), false).unwrap();
+src/agent.rs:4694 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let fresh = prime(&as_(&crate::holder::Actor::person()), "default board").unwrap().text();
+src/agent.rs:4716 with_registry -> holder/impl#[Actor]with_registry().; graff: call method ambiguous
+    Ekko::new(Storage::new(&dir).unwrap()).acting_as(actor.clone().with_registry(registry.clone()))
+src/agent.rs:4726 apply -> ops/impl#[`Draft<'a>`]apply().; graff: call method ambiguous
+    draft.apply(&serde_json::from_value(op).unwrap()).unwrap();
+src/agent.rs:4739 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let text = prime(&as_(&me), "default board").unwrap().text();
+src/agent.rs:4744 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let text = prime(&as_(&me), "default board").unwrap().text();
+src/agent.rs:4763 apply -> ops/impl#[`Draft<'a>`]apply().; graff: call method ambiguous
+    draft.apply(&serde_json::from_value(op).unwrap()).unwrap();
+src/agent.rs:4798 apply -> ops/impl#[`Draft<'a>`]apply().; graff: call method ambiguous
+    draft.apply(&serde_json::from_value(op).unwrap()).unwrap();
+src/agent.rs:4804 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    as_(&me).set_state(&words(&["@1", "progress"]), false).unwrap();
+src/agent.rs:4805 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    as_(&other).set_state(&words(&["@2", "progress"]), false).unwrap();
+src/agent.rs:4810 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let mine = prime(&as_(&me), "default board").unwrap().text();
+src/agent.rs:4813 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let theirs = prime(&as_(&other), "default board").unwrap().text();
+src/agent.rs:4829 with_registry -> holder/impl#[Actor]with_registry().; graff: call method ambiguous
+    Ekko::new(Storage::new(&dir).unwrap()).acting_as(actor.clone().with_registry(registry.clone()))
+src/agent.rs:4838 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    as_(&me).set_state(&words(&["@1", "progress"]), false).unwrap();
+src/agent.rs:4839 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let claim = as_(&me).storage.get().unwrap()[&1].held_by.clone().unwrap();
+src/agent.rs:4842 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let theirs = prime(&as_(&other), "default board").unwrap().text();
+src/agent.rs:4845 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let theirs = prime(&as_(&other), "default board").unwrap().text();
+src/agent.rs:4847 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    let refused = as_(&other).set_state(&words(&["@1", "paused"]), false).unwrap_err().to_string();
+src/agent.rs:4862 with_registry -> holder/impl#[Actor]with_registry().; graff: call method ambiguous
+    Ekko::new(Storage::new(&dir).unwrap()).acting_as(actor.clone().with_registry(registry.clone()))
+src/agent.rs:4872 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    as_(actor).set_state(&words(&[id, "progress"]), false).unwrap();
+src/agent.rs:4882 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = as_(&me).storage.get().unwrap();
+src/agent.rs:4884 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    assert!(me.is(claim) && claim.conversation.as_deref() == Some("c-before-the-restart"));
+src/agent.rs:4885 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    assert!(other.is(data[&2].held_by.as_ref().unwrap()), "a holder that still runs keeps its task");
+src/agent.rs:4906 with_registry -> holder/impl#[Actor]with_registry().; graff: call method ambiguous
+    Ekko::new(Storage::new(&dir).unwrap()).acting_as(actor.clone().with_registry(registry.clone()))
+src/agent.rs:4926 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    as_(&other).set_state(&words(&[id, "progress"]), false).unwrap();
+src/agent.rs:4931 apply -> ops/impl#[`Draft<'a>`]apply().; graff: call method ambiguous
+    draft.apply(&serde_json::from_value(op).unwrap()).unwrap();
+src/agent.rs:4932 ask -> ops/impl#[`Draft<'a>`]ask().; graff: call method ambiguous
+    let asked = draft.ask("Merge now?", Some(&crate::ops::Ref::Id(1))).unwrap();
+src/agent.rs:4934 wait -> ops/impl#[`Draft<'a>`]wait().; graff: call method ambiguous
+    let crate::ops::Waited::Recorded(_) = draft.wait(&spec).unwrap() else { panic!("a wait recorded") };
+src/agent.rs:4936 wait -> ops/impl#[`Draft<'a>`]wait().; graff: call method ambiguous
+    let crate::ops::Waited::Recorded(ended) = draft.wait(&spec).unwrap() else { panic!("a wait recorded") };
+src/agent.rs:4939 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    as_(&crate::holder::Actor::person()).set_state(&words(&["@4", "done"]), false).unwrap();
+src/agent.rs:4943 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    let refusal = as_(&me).set_state(&words(&["@1", "paused"]), false).unwrap_err().to_string();
+src/agent.rs:4946 with_registry -> holder/impl#[Actor]with_registry().; graff: call method ambiguous
+    let reader = me.clone().with_registry(registry.clone());
+src/agent.rs:4948 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let prime = prime(&as_(&me), "default board").unwrap().text();
+src/agent.rs:4951 text -> agent/impl#[Sessions]text().; graff: call method ambiguous
+    let listed = sessions(&as_(&me), "default board").unwrap().text();
+src/agent.rs:4977 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    as_(&me).set_state(&words(&["@1", "done"]), false).expect("its own claim, before SessionStart took it back");
+src/agent.rs:4980 set_state -> ops/impl#[`Draft<'a>`]set_state().; graff: call method ambiguous
+    draft.set_state(&[crate::ops::Ref::Id(5)], "progress").unwrap();
+src/agent.rs:4991 get -> storage/impl#[Storage]get().; graff: call method ambiguous
+    let data = as_(&me).storage.get().unwrap();
+src/agent.rs:4993 is -> holder/impl#[Actor]is().; graff: call method ambiguous
+    assert!(me.is(claim) && claim.conversation.as_deref() == Some("c-background"), "{claim:?}");
+src/agent.rs:5009 with_registry -> holder/impl#[Actor]with_registry().; graff: call method ambiguous
+    Ekko::new(Storage::new(&dir).unwrap()).acting_as(actor.clone().with_registry(registry.clone()))
+src/agent.rs:5019 ask -> ops/impl#[`Draft<'a>`]ask().; graff: call method ambiguous
+    let asked = draft.ask("Merge auditoria now?", Some(&crate::ops::Ref::Id(1))).unwrap();
+src/agent.rs:5023 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let theirs = prime(&as_(&other), "default board").unwrap().text();
+src/agent.rs:5031 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let mine = prime(&as_(&me), "default board").unwrap().text();
+src/agent.rs:5036 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let theirs = prime(&as_(&other), "default board").unwrap().text();
+src/agent.rs:5039 text -> agent/impl#[Context]text().; graff: call method ambiguous
+    let read = contexts(&as_(&me), &[asked.to_string()]).unwrap()[0].text();
+src/agent.rs:5057 with_registry -> holder/impl#[Actor]with_registry().; graff: call method ambiguous
+    Ekko::new(Storage::new(&dir).unwrap()).acting_as(actor.clone().with_registry(registry.clone()))
+src/agent.rs:5066 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    as_(&me).set_state(&words(&["@1", "progress"]), false).unwrap();
+src/agent.rs:5067 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    as_(&me).set_state(&words(&["@2", "done"]), false).unwrap();
+src/agent.rs:5068 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    as_(&gone).set_state(&words(&["@3", "progress"]), false).unwrap();
+src/agent.rs:5071 ask -> ops/impl#[`Draft<'a>`]ask().; graff: call method ambiguous
+    draft.ask("Merge now?", Some(&crate::ops::Ref::Id(1))).unwrap();
+src/agent.rs:5074 text -> agent/impl#[Sessions]text().; graff: call method ambiguous
+    let text = sessions(&mine, "default board").unwrap().text();
+src/agent.rs:5095 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    as_(&other).set_state(&words(&["@1", "progress"]), false).unwrap();
+src/agent.rs:5099 wait -> ops/impl#[`Draft<'a>`]wait().; graff: call method ambiguous
+    let crate::ops::Waited::Recorded(note) = draft.wait(&spec).unwrap() else { panic!("a wait recorded") };
+src/agent.rs:5102 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let waiting = prime(&as_(&me), "default board").unwrap().text();
+src/agent.rs:5106 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let holding = prime(&as_(&other), "default board").unwrap().text();
+src/agent.rs:5110 text -> agent/impl#[Context]text().; graff: call method ambiguous
+    let read = contexts(&as_(&other), &[note.to_string()]).unwrap()[0].text();
+src/agent.rs:5113 text -> agent/impl#[Sessions]text().; graff: call method ambiguous
+    let text = sessions(&as_(&me), "default board").unwrap().text();
+src/agent.rs:5116 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    as_(&other).set_state(&words(&["@1", "done"]), false).unwrap();
+src/agent.rs:5117 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let over = prime(&as_(&me), "default board").unwrap().text();
+src/agent.rs:5121 text -> agent/impl#[Context]text().; graff: call method ambiguous
+    let read = contexts(&as_(&me), &[note.to_string()]).unwrap()[0].text();
+src/agent.rs:5123 text -> agent/impl#[Sessions]text().; graff: call method ambiguous
+    assert!(!sessions(&as_(&me), "default board").unwrap().text().contains("waiting "), "an ended wait waits no more");
+src/agent.rs:5143 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@1", "done"]), false).unwrap();
+src/agent.rs:5144 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@2", "progress"]), false).unwrap();
+src/agent.rs:5146 text -> agent/impl#[Prime]text().; graff: call method ambiguous
+    let text = prime(&ekko, "default board").unwrap().text();
+src/agent.rs:5148 text -> agent/impl#[Context]text().; graff: call method ambiguous
+    let read = contexts(&ekko, &["3".to_string()]).unwrap()[0].text();
+src/agent.rs:5177 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@2", "waiting"]), false).unwrap();
+src/agent.rs:5178 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@3", "progress"]), false).unwrap();
+src/agent.rs:5183 text -> agent/impl#[Context]text().; graff: call method ambiguous
+    let text = tip.text();
+src/agent.rs:5202 set_state -> ekko/impl#[Ekko]set_state().; graff: call method ambiguous
+    ekko.set_state(&words(&["@2", "done"]), false).unwrap();
+src/agent.rs:5238 apply -> ops/impl#[`Draft<'a>`]apply().; graff: call method ambiguous
+    draft.apply(&serde_json::from_value(serde_json::json!({"op": "create", "kind": "note", "text": "written through a tool"}
+src/agent.rs:5241 text -> agent/impl#[Context]text().; graff: call method ambiguous
+    let read = |id: &str| context(&as_(None), id).unwrap().text();

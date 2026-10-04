@@ -1,0 +1,84 @@
+{"tool": "graphify-0.9.61", "repo": "ctx", "commit": "5f0c70b6f538523c6d4c35819cbb4735a785b621", "seconds": 1.3, "exit": 0, "nodes": 214, "edges": 393, "private": false}
+{"tool": "graphify-0.9.61", "repo": "ctx", "commit": "5f926bd67750f98d339b529b5cf8051c77e6f61b", "seconds": 1.3, "exit": 0, "nodes": 155, "edges": 256, "private": false}
+{"tool": "graphify-0.9.61", "repo": "ctx", "commit": "7706ea3a1c77615db04f4b2cbdb61b25e942ac5c", "seconds": 0.7, "exit": 0, "nodes": 87, "edges": 133, "private": false}
+{"tool": "graphify-0.9.61", "repo": "ctx", "commit": "a6e6affaed62cfbc66039c7b57abaf23c83775a4", "seconds": 1.4, "exit": 0, "nodes": 314, "edges": 606, "private": false}
+{"tool": "graphify-0.9.61", "repo": "ctx", "commit": "ac97338dd67ce1326c4d83e14f4c7b818abf907b", "seconds": 1.4, "exit": 0, "nodes": 315, "edges": 608, "private": false}
+{"tool": "graphify-0.9.61", "repo": "ctx", "commit": "bbe6e70efea8ab83a6e8a2f72488f8f3cd32e19c", "seconds": 1.6, "exit": 0, "nodes": 315, "edges": 607, "private": false}
+{"tool": "graphify-0.9.61", "repo": "ctx", "commit": "d301a2719c41a366baaccff2ce4b4586ee900a9f", "seconds": 0.8, "exit": 0, "nodes": 108, "edges": 168, "private": false}
+{"tool": "graphify-0.9.61", "repo": "ekko", "commit": "199eb141886cbeda970517fd5de2d7f18e5af036", "seconds": 2.8, "exit": 0, "nodes": 1983, "edges": 6771, "private": false}
+{"tool": "graphify-0.9.61", "repo": "ekko", "commit": "25acda0fa9a57ef2ff21e35a63ad2f66ae874fb1", "seconds": 2.5, "exit": 0, "nodes": 1913, "edges": 6290, "private": false}
+{"tool": "graphify-0.9.61", "repo": "ekko", "commit": "2ee3bd583f7511371e14ab7c12c1a403f3bdcac2", "seconds": 3.7, "exit": 0, "nodes": 2523, "edges": 8740, "private": false}
+{"tool": "graphify-0.9.61", "repo": "ekko", "commit": "397550098eff51921ae880443d2d886fce65bf18", "seconds": 2.8, "exit": 0, "nodes": 1934, "edges": 6519, "private": false}
+{"tool": "graphify-0.9.61", "repo": "ekko", "commit": "5e4bfc3504f8261841e495d6c2dc8f5a6d486793", "seconds": 2.0, "exit": 0, "nodes": 1392, "edges": 4810, "private": false}
+{"tool": "graphify-0.9.61", "repo": "ekko", "commit": "6284f88b210d9212cb71c1b6ca505c7bb5771b97", "seconds": 2.2, "exit": 0, "nodes": 1337, "edges": 4626, "private": false}
+{"tool": "graphify-0.9.61", "repo": "ekko", "commit": "65418aac54084cbe66151d84410bd43606fd27e7", "seconds": 3.0, "exit": 0, "nodes": 1967, "edges": 6702, "private": false}
+{"tool": "graphify-0.9.61", "repo": "ekko", "commit": "71f261851cf5262d0e5c744179050155d344b86b", "seconds": 2.2, "exit": 0, "nodes": 1919, "edges": 6309, "private": false}
+{"tool": "graphify-0.9.61", "repo": "ekko", "commit": "75117d777c5b96c30c5762debd1c2731c0506d5e", "seconds": 2.0, "exit": 0, "nodes": 1398, "edges": 4825, "private": false}
+{"tool": "graphify-0.9.61", "repo": "ekko", "commit": "78d9cfac46af8ab973aee0a17a1edb0beb477e0b", "seconds": 1.0, "exit": 0, "nodes": 600, "edges": 2101, "private": false}
+{"tool": "graphify-0.9.61", "repo": "ekko", "commit": "86772cd85b79549a568a86985d3863426f47c641", "seconds": 2.5, "exit": 0, "nodes": 1786, "edges": 6068, "private": false}
+{"tool": "graphify-0.9.61", "repo": "ekko", "commit": "8aeb6efec6ad7b07ccd11d4832a7f902cbceef26", "seconds": 3.1, "exit": 0, "nodes": 2419, "edges": 8354, "private": false}
+{"tool": "graphify-0.9.61", "repo": "ekko", "commit": "92ad9e453cafc6c46b7d40b1ea94341cb0706b22", "seconds": 2.4, "exit": 0, "nodes": 1573, "edges": 5482, "private": false}
+{"tool": "graphify-0.9.61", "repo": "ekko", "commit": "a6824a49839229654452cfd7ae5a5e338f5338c1", "seconds": 2.4, "exit": 0, "nodes": 1254, "edges": 4383, "private": false}
+{"tool": "graphify-0.9.61", "repo": "ekko", "commit": "a98119a30015c670f380f3cc8b38737d2c9b169b", "seconds": 3.3, "exit": 0, "nodes": 2226, "edges": 7721, "private": false}
+{"tool": "graphify-0.9.61", "repo": "ekko", "commit": "a98c69d30658c08f48bcb087c5ab06459dbb93fe", "seconds": 1.7, "exit": 0, "nodes": 1266, "edges": 4394, "private": false}
+{"tool": "graphify-0.9.61", "repo": "ekko", "commit": "d218eaa236c0060db074920d97b0df2e18ca7940", "seconds": 3.7, "exit": 0, "nodes": 2842, "edges": 9905, "private": false}
+{"tool": "graphify-0.9.61", "repo": "ekko", "commit": "dd3aa9b749b519d307fb78f7142f79ae493079bd", "seconds": 3.0, "exit": 0, "nodes": 2433, "edges": 8410, "private": false}
+{"tool": "graphify-0.9.61", "repo": "ekko", "commit": "e01e6d15894c9188d2c09f45a37ab817ecdb467b", "seconds": 2.7, "exit": 0, "nodes": 1500, "edges": 5294, "private": false}
+{"tool": "graphify-0.9.61", "repo": "ekko", "commit": "e84798a37b246b1a45b7b4ff5129cdfa1c23ee06", "seconds": 2.9, "exit": 0, "nodes": 1883, "edges": 6311, "private": false}
+{"tool": "graphify-0.9.61", "repo": "kimi-k3-in-c", "commit": "ac1584a70205c3a00d5346f736834818f4cc11b4", "seconds": 2.7, "exit": 0, "nodes": 714, "edges": 1615, "private": false}
+{"tool": "codebase-memory-mcp-0.11.0", "repo": "ctx", "commit": "5f0c70b6f538523c6d4c35819cbb4735a785b621", "seconds": 6.5, "exit": 0, "nodes": 425, "edges": 1155, "status": "indexed", "private": false}
+{"tool": "codebase-memory-mcp-0.11.0", "repo": "ctx", "commit": "5f926bd67750f98d339b529b5cf8051c77e6f61b", "seconds": 6.1, "exit": 0, "nodes": 364, "edges": 889, "status": "indexed", "private": false}
+{"tool": "codebase-memory-mcp-0.11.0", "repo": "ctx", "commit": "7706ea3a1c77615db04f4b2cbdb61b25e942ac5c", "seconds": 6.0, "exit": 0, "nodes": 219, "edges": 498, "status": "indexed", "private": false}
+{"tool": "codebase-memory-mcp-0.11.0", "repo": "ctx", "commit": "a6e6affaed62cfbc66039c7b57abaf23c83775a4", "seconds": 6.6, "exit": 0, "nodes": 559, "edges": 1625, "status": "indexed", "private": false}
+{"tool": "codebase-memory-mcp-0.11.0", "repo": "ctx", "commit": "ac97338dd67ce1326c4d83e14f4c7b818abf907b", "seconds": 6.5, "exit": 0, "nodes": 561, "edges": 1633, "status": "indexed", "private": false}
+{"tool": "codebase-memory-mcp-0.11.0", "repo": "ctx", "commit": "bbe6e70efea8ab83a6e8a2f72488f8f3cd32e19c", "seconds": 7.6, "exit": 0, "nodes": 561, "edges": 1632, "status": "indexed", "private": false}
+{"tool": "codebase-memory-mcp-0.11.0", "repo": "ctx", "commit": "d301a2719c41a366baaccff2ce4b4586ee900a9f", "seconds": 6.3, "exit": 0, "nodes": 284, "edges": 658, "status": "indexed", "private": false}
+{"tool": "codebase-memory-mcp-0.11.0", "repo": "ekko", "commit": "199eb141886cbeda970517fd5de2d7f18e5af036", "seconds": 7.0, "exit": 0, "nodes": 2609, "edges": 15592, "status": "indexed", "private": false}
+{"tool": "codebase-memory-mcp-0.11.0", "repo": "ekko", "commit": "25acda0fa9a57ef2ff21e35a63ad2f66ae874fb1", "seconds": 6.5, "exit": 0, "nodes": 2379, "edges": 14765, "status": "indexed", "private": false}
+{"tool": "codebase-memory-mcp-0.11.0", "repo": "ekko", "commit": "2ee3bd583f7511371e14ab7c12c1a403f3bdcac2", "seconds": 7.6, "exit": 0, "nodes": 4779, "edges": 22023, "status": "indexed", "private": false}
+{"tool": "codebase-memory-mcp-0.11.0", "repo": "ekko", "commit": "397550098eff51921ae880443d2d886fce65bf18", "seconds": 7.1, "exit": 0, "nodes": 2544, "edges": 15019, "status": "indexed", "private": false}
+{"tool": "codebase-memory-mcp-0.11.0", "repo": "ekko", "commit": "5e4bfc3504f8261841e495d6c2dc8f5a6d486793", "seconds": 8.0, "exit": 0, "nodes": 1793, "edges": 10322, "status": "indexed", "private": false}
+{"tool": "codebase-memory-mcp-0.11.0", "repo": "ekko", "commit": "6284f88b210d9212cb71c1b6ca505c7bb5771b97", "seconds": 7.5, "exit": 0, "nodes": 1701, "edges": 9882, "status": "indexed", "private": false}
+{"tool": "codebase-memory-mcp-0.11.0", "repo": "ekko", "commit": "65418aac54084cbe66151d84410bd43606fd27e7", "seconds": 7.3, "exit": 0, "nodes": 2592, "edges": 15435, "status": "indexed", "private": false}
+{"tool": "codebase-memory-mcp-0.11.0", "repo": "ekko", "commit": "71f261851cf5262d0e5c744179050155d344b86b", "seconds": 7.1, "exit": 0, "nodes": 2386, "edges": 14795, "status": "indexed", "private": false}
+{"tool": "codebase-memory-mcp-0.11.0", "repo": "ekko", "commit": "75117d777c5b96c30c5762debd1c2731c0506d5e", "seconds": 7.5, "exit": 0, "nodes": 1801, "edges": 10347, "status": "indexed", "private": false}
+{"tool": "codebase-memory-mcp-0.11.0", "repo": "ekko", "commit": "78d9cfac46af8ab973aee0a17a1edb0beb477e0b", "seconds": 6.2, "exit": 0, "nodes": 777, "edges": 4312, "status": "indexed", "private": false}
+{"tool": "codebase-memory-mcp-0.11.0", "repo": "ekko", "commit": "86772cd85b79549a568a86985d3863426f47c641", "seconds": 6.7, "exit": 0, "nodes": 2334, "edges": 13619, "status": "indexed", "private": false}
+{"tool": "codebase-memory-mcp-0.11.0", "repo": "ekko", "commit": "8aeb6efec6ad7b07ccd11d4832a7f902cbceef26", "seconds": 7.6, "exit": 0, "nodes": 3196, "edges": 19504, "status": "indexed", "private": false}
+{"tool": "codebase-memory-mcp-0.11.0", "repo": "ekko", "commit": "92ad9e453cafc6c46b7d40b1ea94341cb0706b22", "seconds": 8.7, "exit": 0, "nodes": 2059, "edges": 12020, "status": "indexed", "private": false}
+{"tool": "codebase-memory-mcp-0.11.0", "repo": "ekko", "commit": "a6824a49839229654452cfd7ae5a5e338f5338c1", "seconds": 8.1, "exit": 0, "nodes": 1611, "edges": 9237, "status": "indexed", "private": false}
+{"tool": "codebase-memory-mcp-0.11.0", "repo": "ekko", "commit": "a98119a30015c670f380f3cc8b38737d2c9b169b", "seconds": 7.7, "exit": 0, "nodes": 2940, "edges": 17662, "status": "indexed", "private": false}
+{"tool": "codebase-memory-mcp-0.11.0", "repo": "ekko", "commit": "a98c69d30658c08f48bcb087c5ab06459dbb93fe", "seconds": 7.0, "exit": 0, "nodes": 1608, "edges": 9965, "status": "indexed", "private": false}
+{"tool": "codebase-memory-mcp-0.11.0", "repo": "ekko", "commit": "d218eaa236c0060db074920d97b0df2e18ca7940", "seconds": 7.2, "exit": 0, "nodes": 5147, "edges": 25288, "status": "indexed", "private": false}
+{"tool": "codebase-memory-mcp-0.11.0", "repo": "ekko", "commit": "dd3aa9b749b519d307fb78f7142f79ae493079bd", "seconds": 7.0, "exit": 0, "nodes": 4635, "edges": 21099, "status": "indexed", "private": false}
+{"tool": "codebase-memory-mcp-0.11.0", "repo": "ekko", "commit": "e01e6d15894c9188d2c09f45a37ab817ecdb467b", "seconds": 8.0, "exit": 0, "nodes": 1964, "edges": 11614, "status": "indexed", "private": false}
+{"tool": "codebase-memory-mcp-0.11.0", "repo": "ekko", "commit": "e84798a37b246b1a45b7b4ff5129cdfa1c23ee06", "seconds": 6.8, "exit": 0, "nodes": 2460, "edges": 14339, "status": "indexed", "private": false}
+{"tool": "codebase-memory-mcp-0.11.0", "repo": "kimi-k3-in-c", "commit": "ac1584a70205c3a00d5346f736834818f4cc11b4", "seconds": 9.4, "exit": 0, "nodes": 2613, "edges": 5013, "status": "indexed", "private": false}
+{"tool": "graphify-0.9.66", "repo": "ctx", "commit": "5f0c70b6f538523c6d4c35819cbb4735a785b621", "seconds": 2.4, "exit": 0, "nodes": 223, "edges": 409, "private": false}
+{"tool": "graphify-0.9.66", "repo": "ctx", "commit": "5f926bd67750f98d339b529b5cf8051c77e6f61b", "seconds": 1.6, "exit": 0, "nodes": 162, "edges": 263, "private": false}
+{"tool": "graphify-0.9.66", "repo": "ctx", "commit": "7706ea3a1c77615db04f4b2cbdb61b25e942ac5c", "seconds": 0.7, "exit": 0, "nodes": 94, "edges": 140, "private": false}
+{"tool": "graphify-0.9.66", "repo": "ctx", "commit": "a6e6affaed62cfbc66039c7b57abaf23c83775a4", "seconds": 1.7, "exit": 0, "nodes": 325, "edges": 637, "private": false}
+{"tool": "graphify-0.9.66", "repo": "ctx", "commit": "ac97338dd67ce1326c4d83e14f4c7b818abf907b", "seconds": 1.9, "exit": 0, "nodes": 326, "edges": 639, "private": false}
+{"tool": "graphify-0.9.66", "repo": "ctx", "commit": "bbe6e70efea8ab83a6e8a2f72488f8f3cd32e19c", "seconds": 2.2, "exit": 0, "nodes": 326, "edges": 638, "private": false}
+{"tool": "graphify-0.9.66", "repo": "ctx", "commit": "d301a2719c41a366baaccff2ce4b4586ee900a9f", "seconds": 0.8, "exit": 0, "nodes": 115, "edges": 175, "private": false}
+{"tool": "graphify-0.9.66", "repo": "ekko", "commit": "199eb141886cbeda970517fd5de2d7f18e5af036", "seconds": 3.6, "exit": 0, "nodes": 2032, "edges": 6956, "private": false}
+{"tool": "graphify-0.9.66", "repo": "ekko", "commit": "25acda0fa9a57ef2ff21e35a63ad2f66ae874fb1", "seconds": 3.9, "exit": 0, "nodes": 1975, "edges": 6492, "private": false}
+{"tool": "graphify-0.9.66", "repo": "ekko", "commit": "2ee3bd583f7511371e14ab7c12c1a403f3bdcac2", "seconds": 5.1, "exit": 0, "nodes": 2577, "edges": 8972, "private": false}
+{"tool": "graphify-0.9.66", "repo": "ekko", "commit": "397550098eff51921ae880443d2d886fce65bf18", "seconds": 4.7, "exit": 0, "nodes": 1983, "edges": 6703, "private": false}
+{"tool": "graphify-0.9.66", "repo": "ekko", "commit": "5e4bfc3504f8261841e495d6c2dc8f5a6d486793", "seconds": 4.0, "exit": 0, "nodes": 1435, "edges": 4937, "private": false}
+{"tool": "graphify-0.9.66", "repo": "ekko", "commit": "6284f88b210d9212cb71c1b6ca505c7bb5771b97", "seconds": 3.3, "exit": 0, "nodes": 1378, "edges": 4748, "private": false}
+{"tool": "graphify-0.9.66", "repo": "ekko", "commit": "65418aac54084cbe66151d84410bd43606fd27e7", "seconds": 3.7, "exit": 0, "nodes": 2016, "edges": 6886, "private": false}
+{"tool": "graphify-0.9.66", "repo": "ekko", "commit": "71f261851cf5262d0e5c744179050155d344b86b", "seconds": 3.5, "exit": 0, "nodes": 1981, "edges": 6511, "private": false}
+{"tool": "graphify-0.9.66", "repo": "ekko", "commit": "75117d777c5b96c30c5762debd1c2731c0506d5e", "seconds": 3.0, "exit": 0, "nodes": 1441, "edges": 4952, "private": false}
+{"tool": "graphify-0.9.66", "repo": "ekko", "commit": "78d9cfac46af8ab973aee0a17a1edb0beb477e0b", "seconds": 1.2, "exit": 0, "nodes": 625, "edges": 2158, "private": false}
+{"tool": "graphify-0.9.66", "repo": "ekko", "commit": "86772cd85b79549a568a86985d3863426f47c641", "seconds": 2.6, "exit": 0, "nodes": 1832, "edges": 6235, "private": false}
+{"tool": "graphify-0.9.66", "repo": "ekko", "commit": "8aeb6efec6ad7b07ccd11d4832a7f902cbceef26", "seconds": 3.1, "exit": 0, "nodes": 2472, "edges": 8581, "private": false}
+{"tool": "graphify-0.9.66", "repo": "ekko", "commit": "92ad9e453cafc6c46b7d40b1ea94341cb0706b22", "seconds": 2.4, "exit": 0, "nodes": 1616, "edges": 5604, "private": false}
+{"tool": "graphify-0.9.66", "repo": "ekko", "commit": "a6824a49839229654452cfd7ae5a5e338f5338c1", "seconds": 2.3, "exit": 0, "nodes": 1293, "edges": 4497, "private": false}
+{"tool": "graphify-0.9.66", "repo": "ekko", "commit": "a98119a30015c670f380f3cc8b38737d2c9b169b", "seconds": 3.1, "exit": 0, "nodes": 2278, "edges": 7921, "private": false}
+{"tool": "graphify-0.9.66", "repo": "ekko", "commit": "a98c69d30658c08f48bcb087c5ab06459dbb93fe", "seconds": 1.9, "exit": 0, "nodes": 1307, "edges": 4509, "private": false}
+{"tool": "graphify-0.9.66", "repo": "ekko", "commit": "d218eaa236c0060db074920d97b0df2e18ca7940", "seconds": 3.7, "exit": 0, "nodes": 2896, "edges": 10153, "private": false}
+{"tool": "graphify-0.9.66", "repo": "ekko", "commit": "dd3aa9b749b519d307fb78f7142f79ae493079bd", "seconds": 3.5, "exit": 0, "nodes": 2486, "edges": 8637, "private": false}
+{"tool": "graphify-0.9.66", "repo": "ekko", "commit": "e01e6d15894c9188d2c09f45a37ab817ecdb467b", "seconds": 2.7, "exit": 0, "nodes": 1543, "edges": 5414, "private": false}
+{"tool": "graphify-0.9.66", "repo": "ekko", "commit": "e84798a37b246b1a45b7b4ff5129cdfa1c23ee06", "seconds": 3.0, "exit": 0, "nodes": 1933, "edges": 6500, "private": false}
+{"tool": "graphify-0.9.66", "repo": "kimi-k3-in-c", "commit": "ac1584a70205c3a00d5346f736834818f4cc11b4", "seconds": 2.6, "exit": 0, "nodes": 764, "edges": 1857, "private": false}

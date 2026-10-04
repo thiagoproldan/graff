@@ -1,0 +1,278 @@
+{
+ "run": {
+  "date": "2026-10-04T14:53:12-03:00",
+  "rules": {
+   "tokens": 2000,
+   "chars_per_token": 4,
+   "k": 5
+  },
+  "questions": {
+   "all": 52,
+   "private": 11
+  },
+  "corpora": 37,
+  "tools": {
+   "graphify-0.9.61": {
+    "package": "github:NixOS/nixpkgs/e94cb152ed51bd6e24eb4a41f1460252beb52cd2#graphify",
+    "store": "/nix/store/3z3701h1ch4y7m22yz10bgbrjlv9mxc7-graphify-0.9.61",
+    "version": "graphify 0.9.61",
+    "decides": true,
+    "index": "graphify . --code-only --no-viz  (in the corpus)",
+    "ask": "graphify query QUESTION --budget 2000  (in the corpus)",
+    "env": {}
+   },
+   "codebase-memory-mcp-0.11.0": {
+    "package": "github:NixOS/nixpkgs/e94cb152ed51bd6e24eb4a41f1460252beb52cd2#codebase-memory-mcp",
+    "store": "/nix/store/w4h668ln3w13pq74jfq0fnsyfq52c6dm-codebase-memory-mcp-0.11.0",
+    "version": "codebase-memory-mcp 0.11.0",
+    "decides": true,
+    "index": "codebase-memory-mcp cli --quiet index_repository --repo-path CORPUS --mode full --name projects-REPO",
+    "ask": "codebase-memory-mcp cli --quiet search_graph '{\"project\": \"projects-REPO\", \"query\": QUESTION, \"max_output_tokens\": 2000}'",
+    "env": {}
+   },
+   "graphify-0.9.66": {
+    "package": "github:NixOS/nixpkgs/c59305bab2065cfecc4944690d9eedbb56f3a9fa#graphify",
+    "store": "/nix/store/grwxqfv4c7ij7ccbykynpi97k5p9szcn-graphify-0.9.66",
+    "version": "graphify 0.9.66",
+    "decides": false,
+    "index": "graphify . --code-only --no-viz  (in the corpus)",
+    "ask": "graphify query QUESTION --budget 2000  (in the corpus)",
+    "env": {
+     "PYTHONHASHSEED": "0"
+    }
+   }
+  }
+ },
+ "tools": {
+  "graphify-0.9.61": {
+   "all": {
+    "questions": 46,
+    "recall@5": 0.065,
+    "file@5": 0.435,
+    "recall_in_answer": 0.134,
+    "no_answer": 6,
+    "said_nothing": 2
+   },
+   "public": {
+    "questions": 37,
+    "recall@5": 0.054,
+    "file@5": 0.514,
+    "recall_in_answer": 0.14,
+    "no_answer": 4,
+    "said_nothing": 1
+   },
+   "by_language": {
+    "rust": {
+     "questions": 16,
+     "recall@5": 0.062,
+     "file@5": 0.688,
+     "recall_in_answer": 0.188,
+     "no_answer": 1,
+     "said_nothing": 0
+    },
+    "nix": {
+     "questions": 7,
+     "recall@5": 0.0,
+     "file@5": 0.0,
+     "recall_in_answer": 0.0,
+     "no_answer": 2,
+     "said_nothing": 1
+    },
+    "bash": {
+     "questions": 5,
+     "recall@5": 0.4,
+     "file@5": 1.0,
+     "recall_in_answer": 0.4,
+     "no_answer": 1,
+     "said_nothing": 0
+    },
+    "python": {
+     "questions": 5,
+     "recall@5": 0.0,
+     "file@5": 0.8,
+     "recall_in_answer": 0.1,
+     "no_answer": 0,
+     "said_nothing": 0
+    },
+    "c": {
+     "questions": 3,
+     "recall@5": 0.0,
+     "file@5": 0.0,
+     "recall_in_answer": 0.222,
+     "no_answer": 2,
+     "said_nothing": 1
+    },
+    "markdown": {
+     "questions": 10,
+     "recall@5": 0.0,
+     "file@5": 0.0,
+     "recall_in_answer": 0.0,
+     "no_answer": 0,
+     "said_nothing": 0
+    }
+   },
+   "median_tokens": 1645.0,
+   "median_emitted_tokens": 1645.0,
+   "errors": 0
+  },
+  "codebase-memory-mcp-0.11.0": {
+   "all": {
+    "questions": 46,
+    "recall@5": 0.12,
+    "file@5": 0.464,
+    "recall_in_answer": 0.272,
+    "no_answer": 6,
+    "said_nothing": 0
+   },
+   "public": {
+    "questions": 37,
+    "recall@5": 0.068,
+    "file@5": 0.441,
+    "recall_in_answer": 0.23,
+    "no_answer": 4,
+    "said_nothing": 0
+   },
+   "by_language": {
+    "rust": {
+     "questions": 16,
+     "recall@5": 0.0,
+     "file@5": 0.438,
+     "recall_in_answer": 0.312,
+     "no_answer": 1,
+     "said_nothing": 0
+    },
+    "nix": {
+     "questions": 7,
+     "recall@5": 0.286,
+     "file@5": 0.429,
+     "recall_in_answer": 0.429,
+     "no_answer": 2,
+     "said_nothing": 0
+    },
+    "bash": {
+     "questions": 5,
+     "recall@5": 0.4,
+     "file@5": 0.8,
+     "recall_in_answer": 0.4,
+     "no_answer": 1,
+     "said_nothing": 0
+    },
+    "python": {
+     "questions": 5,
+     "recall@5": 0.1,
+     "file@5": 0.8,
+     "recall_in_answer": 0.1,
+     "no_answer": 0,
+     "said_nothing": 0
+    },
+    "c": {
+     "questions": 3,
+     "recall@5": 0.0,
+     "file@5": 0.111,
+     "recall_in_answer": 0.0,
+     "no_answer": 2,
+     "said_nothing": 0
+    },
+    "markdown": {
+     "questions": 10,
+     "recall@5": 0.1,
+     "file@5": 0.3,
+     "recall_in_answer": 0.2,
+     "no_answer": 0,
+     "said_nothing": 0
+    }
+   },
+   "median_tokens": 1313.0,
+   "median_emitted_tokens": 1313.0,
+   "errors": 0
+  },
+  "graphify-0.9.66": {
+   "all": {
+    "questions": 46,
+    "recall@5": 0.065,
+    "file@5": 0.435,
+    "recall_in_answer": 0.134,
+    "no_answer": 6,
+    "said_nothing": 2
+   },
+   "public": {
+    "questions": 37,
+    "recall@5": 0.054,
+    "file@5": 0.514,
+    "recall_in_answer": 0.14,
+    "no_answer": 4,
+    "said_nothing": 1
+   },
+   "by_language": {
+    "rust": {
+     "questions": 16,
+     "recall@5": 0.062,
+     "file@5": 0.688,
+     "recall_in_answer": 0.188,
+     "no_answer": 1,
+     "said_nothing": 0
+    },
+    "nix": {
+     "questions": 7,
+     "recall@5": 0.0,
+     "file@5": 0.0,
+     "recall_in_answer": 0.0,
+     "no_answer": 2,
+     "said_nothing": 1
+    },
+    "bash": {
+     "questions": 5,
+     "recall@5": 0.4,
+     "file@5": 1.0,
+     "recall_in_answer": 0.4,
+     "no_answer": 1,
+     "said_nothing": 0
+    },
+    "python": {
+     "questions": 5,
+     "recall@5": 0.0,
+     "file@5": 0.8,
+     "recall_in_answer": 0.1,
+     "no_answer": 0,
+     "said_nothing": 0
+    },
+    "c": {
+     "questions": 3,
+     "recall@5": 0.0,
+     "file@5": 0.0,
+     "recall_in_answer": 0.222,
+     "no_answer": 2,
+     "said_nothing": 1
+    },
+    "markdown": {
+     "questions": 10,
+     "recall@5": 0.0,
+     "file@5": 0.0,
+     "recall_in_answer": 0.0,
+     "no_answer": 0,
+     "said_nothing": 0
+    }
+   },
+   "median_tokens": 1648.5,
+   "median_emitted_tokens": 1648.5,
+   "errors": 0
+  }
+ },
+ "indexing": {
+  "graphify-0.9.61": {
+   "corpora": 37,
+   "failed": 0,
+   "seconds": 71.6
+  },
+  "codebase-memory-mcp-0.11.0": {
+   "corpora": 37,
+   "failed": 0,
+   "seconds": 258.2
+  },
+  "graphify-0.9.66": {
+   "corpora": 37,
+   "failed": 0,
+   "seconds": 88.9
+  }
+ }
+}

@@ -101,7 +101,7 @@ def language(path):
 
 def project(cwd):
     """The repository a call ran in, by its working folder."""
-    for root in (os.path.join(HOME, "Projetos"), "/projects"):
+    for root in (os.path.join(HOME, "Projetos"), os.path.join(HOME, "Projects"), "/projects"):
         if cwd.startswith(root + "/"):
             return cwd[len(root) + 1:].split("/")[0]
     if cwd.startswith(os.path.join(HOME, "NixOS")):

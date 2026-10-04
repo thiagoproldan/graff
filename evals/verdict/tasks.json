@@ -1,0 +1,277 @@
+{
+ "task": 46,
+ "protocol": "evals/verdict/PROTOCOL.md",
+ "script": "evals/verdict/draw.py",
+ "seed": 4,
+ "window": {
+  "since": "2026-08-27T19:30:00-03:00",
+  "until": "2026-09-26T19:30:00-03:00"
+ },
+ "pool": {
+  "sessions": 178,
+  "requests": 158,
+  "eligible": {
+   "rust": 24,
+   "nix": 17,
+   "bash": 3
+  },
+  "not_eligible": {
+   "no edit of the repository in the main thread since the session's previous commit there": 25,
+   "N lines changed in graff's languages, outside 5-400": 19,
+   "a version bump": 15,
+   "the request was answered by 2 commits": 10,
+   "the request was answered by 4 commits": 8,
+   "another session edited the same files between the two commits": 8,
+   "a resumed session: the request was typed in an earlier one": 7,
+   "the request was answered by 3 commits": 6,
+   "the request was answered by 5 commits": 5,
+   "another request's edits of the same files landed between the two commits": 4,
+   "the work cost xM units, outside 0.2M-3M": 4,
+   "a commit made by hand bounds the edits; the commit links its own request": 2,
+   "its language is X, none of gate B's strata": 1
+  },
+  "commits_linked_to_no_call": {
+   "ekko": 38,
+   "ctx": 1,
+   "NixOS": 2
+  }
+ },
+ "strata": {
+  "rust": {
+   "eligible": 24,
+   "decided": 13,
+   "wanted": 2,
+   "kept": [
+    "ekko-394",
+    "ekko-121"
+   ]
+  },
+  "nix": {
+   "eligible": 17,
+   "decided": 2,
+   "wanted": 1,
+   "kept": [
+    "nixos-789"
+   ]
+  },
+  "bash": {
+   "eligible": 3,
+   "decided": 3,
+   "wanted": 1,
+   "kept": [],
+   "short": "3 of 3 eligible decided, 0 kept: filled from rust with ekko-397"
+  }
+ },
+ "tasks": [
+  {
+   "id": "ekko-394",
+   "slot": "rust-1",
+   "drawn": "rust-07",
+   "request": "55445341-79-ekko",
+   "repo": "ekko",
+   "board": "ekko",
+   "prompt": "faz a 394",
+   "asked": "2026-09-23T20:32:20.347000-03:00",
+   "asked_ms": 1790206340347,
+   "base": "e01e6d15894c9188d2c09f45a37ab817ecdb467b",
+   "reference": "2779afb49bc4e16fd06390617bd2b155d7b32920",
+   "subject": "feat(batch): a text's $N is named in the reply, and kept as written (task 394)",
+   "lines": {
+    "markdown": 2,
+    "rust": 128
+   },
+   "original": {
+    "profile": "claude",
+    "session": "55445341",
+    "units": 658364,
+    "followups": 0
+   },
+   "checks": {
+    "checklist": {
+     "path": "checklists/ekko-394.md",
+     "sha256": "927c4f9c11e0d6197f721dcdb32b725070a754bd6fb5e3377ed8d92f39a3cb42",
+     "written": "by ekko's grade.py on 2026-09-24 for ekko's own pilot, from the spec alone"
+    },
+    "hidden": "ekko's evals/paired/grade.py, hidden_394: validated on 2026-09-24 (ekko's target/evals/paired/hidden/394.json), 2 new checks and 2 guards"
+   }
+  },
+  {
+   "id": "ekko-121",
+   "slot": "rust-2",
+   "drawn": "rust-09",
+   "request": "bb04549e-17-ekko",
+   "repo": "ekko",
+   "board": "ekko",
+   "prompt": "sim, segue com o 121",
+   "asked": "2026-09-21T07:43:35.336000-03:00",
+   "asked_ms": 1789987415336,
+   "base": "25acda0fa9a57ef2ff21e35a63ad2f66ae874fb1",
+   "reference": "71f261851cf5262d0e5c744179050155d344b86b",
+   "subject": "feat(cli): a lone - reads the description from stdin (task 121)",
+   "lines": {
+    "markdown": 12,
+    "rust": 104
+   },
+   "original": {
+    "profile": "claude-trabalho",
+    "session": "bb04549e",
+    "units": 462519,
+    "followups": 1
+   },
+   "checks": {
+    "checklist": {
+     "path": "checklists/ekko-121.md",
+     "sha256": "73a7702f1900d80c4b536b91253366c2290e932e9d389b024abc96c5cd3eff00",
+     "written": "by checks.py, from the spec alone"
+    },
+    "hidden": null,
+    "why_no_hidden": "The reference's test drives a lone '-' on the command line; task 121 says to read a description from stdin and leaves how open, so no test the reference added drives a surface the spec fixes. The judge's correctness decides whether a run resolves it."
+   }
+  },
+  {
+   "id": "nixos-789",
+   "slot": "nix-1",
+   "drawn": "nix-02",
+   "repo": "NixOS",
+   "private": true,
+   "sha256": "29d8494da7916c739233e8a3a3d52bedda325549411d29ba2688c98da36b07ab"
+  },
+  {
+   "id": "ekko-397",
+   "slot": "bash-1",
+   "drawn": "rust-10",
+   "request": "55445341-11-ekko",
+   "repo": "ekko",
+   "board": "ekko",
+   "prompt": "ta vamos fazendo outros e depois vemos isso, faz a 397",
+   "asked": "2026-09-23T20:15:58.820000-03:00",
+   "asked_ms": 1790205358820,
+   "base": "eedeca28c67572d4b1d6dc969f56fbc67f723211",
+   "reference": "e01e6d15894c9188d2c09f45a37ab817ecdb467b",
+   "subject": "feat(search): the stash is reached by a filter, and counted when left out (task 397)",
+   "lines": {
+    "markdown": 5,
+    "rust": 176
+   },
+   "original": {
+    "profile": "claude",
+    "session": "55445341",
+    "units": 1076527,
+    "followups": 0
+   },
+   "filled_from": "rust",
+   "checks": {
+    "checklist": {
+     "path": "checklists/ekko-397.md",
+     "sha256": "2b0176288735f9f89ac79dfad97454d41172a039bcd930b721bedecea8d9885a",
+     "written": "by ekko's grade.py on 2026-09-24 for ekko's own pilot, from the spec alone"
+    },
+    "hidden": "ekko's evals/paired/grade.py, hidden_397: validated on 2026-09-24 (ekko's target/evals/paired/hidden/397.json), 4 new checks"
+   }
+  },
+  {
+   "id": "ekko-593",
+   "slot": "probe",
+   "drawn": "rust-13",
+   "request": "5cf94fb7-18-ekko",
+   "repo": "ekko",
+   "board": "ekko",
+   "prompt": "pode fazer a 593",
+   "asked": "2026-09-24T21:45:10.483000-03:00",
+   "asked_ms": 1790297110483,
+   "base": "3188070274f9137b999e8f6f1615de4753a1de46",
+   "reference": "1970e5686a7d4e420c7f8086a9e6771c9205b177",
+   "subject": "fix(menu): a key typed as the menu opens answers nothing (task 593)",
+   "lines": {
+    "markdown": 2,
+    "rust": 84
+   },
+   "original": {
+    "profile": "claude",
+    "session": "5cf94fb7",
+    "units": 1415416,
+    "followups": 0
+   }
+  }
+ ],
+ "dropped": [
+  {
+   "draw": "rust-01",
+   "request": "a544f9dc-223-ekko",
+   "repo": "ekko",
+   "why": "The prompt asks what board item 107 says; the commit does task 174, which the prompt does not name."
+  },
+  {
+   "draw": "rust-02",
+   "request": "e13c1562-91-ekko",
+   "repo": "ekko",
+   "why": "The prompt ('let's look at the title') names no item and leans on the conversation before it; the commit does task 260."
+  },
+  {
+   "draw": "rust-03",
+   "request": "dccf828e-113-ekko",
+   "repo": "ekko",
+   "why": "The prompt asks to put ctx's stop hook on the board and move on to another task; the commit does task 331, which the prompt does not name."
+  },
+  {
+   "draw": "rust-04",
+   "request": "a6b026e6-524-ekko",
+   "repo": "ekko",
+   "why": "The prompt ('you can apply it now too') names no item and leans on the conversation before it."
+  },
+  {
+   "draw": "rust-05",
+   "request": "e3011485-217-ekko",
+   "repo": "ekko",
+   "why": "The prompt asks to close task 312 first; the commit does task 393."
+  },
+  {
+   "draw": "rust-06",
+   "request": "dccf828e-70-ekko",
+   "repo": "ekko",
+   "why": "The prompt asks to remove --calendar; the commit does task 322, which the prompt does not name."
+  },
+  {
+   "draw": "rust-08",
+   "request": "9fe2f6c2-0-ekko",
+   "repo": "ekko",
+   "why": "The prompt asks what the board's items say; the commit does task 705, which the prompt does not name."
+  },
+  {
+   "draw": "rust-11",
+   "request": "13e56236-0-ekko",
+   "repo": "ekko",
+   "why": "The prompt asks where the work stopped; the commit does task 469, which the prompt does not name."
+  },
+  {
+   "draw": "rust-12",
+   "request": "a544f9dc-118-ekko",
+   "repo": "ekko",
+   "why": "The prompt ('let's do the @ test now') names no item and leans on the conversation before it; the commit does task 174."
+  },
+  {
+   "draw": "nix-01",
+   "repo": "NixOS",
+   "private": true,
+   "sha256": "8b850c9a49aa90cbc44cf958e55fbb0c8eeec9cf8d98dadbf7eb4a2f9fbee068"
+  },
+  {
+   "draw": "bash-01",
+   "request": "e37067fb-51-ctx",
+   "repo": "ctx",
+   "why": "The prompt ('you can start') names no item and leans on the conversation before it."
+  },
+  {
+   "draw": "bash-02",
+   "request": "876869f5-0-ctx",
+   "repo": "ctx",
+   "why": "The prompt reports a rebuild the user ran; what to fix is in the conversation before it."
+  },
+  {
+   "draw": "bash-03",
+   "request": "3cfa9201-15-ctx",
+   "repo": "ctx",
+   "why": "The prompt approves 'the 4 recommended' options set out in the conversation before it, and two follow-ups changed the work."
+  }
+ ]
+}

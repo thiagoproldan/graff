@@ -1,17 +1,21 @@
 # The verdict protocol (task 4)
 
 What counts as graff working, fixed on 2026-09-26 before graff's first line of
-code. Task 25 runs it as written. Nothing here moves after a result is seen;
-the one thing the pilot may change, the number of pairs, changes only from the
-noise between two control runs, and only as said under "Pilot".
+code. On 2026-10-04 the user chose a lean gate B (task 49): four pairs that
+check graff gets used and does no harm, in place of the 24 pairs that would
+have measured its cut in cost (this protocol's first version, commit 154c268).
+Task 25 runs it as written. Nothing here moves after a result is seen.
 
 ## What is decided
 
 Task 26: graff replaces graphify in ctx's hooks, in ~/NixOS and in the global
 CLAUDE.md, or a note says where graff lost and what would change that.
 
-Two gates, in order. A, the map: offline, no quota (task 19). B, the sessions:
-paired runs (task 25), only if A passes.
+Two gates, in order, then a reading. A, the map: offline, no quota (task 19).
+B, the sessions: four paired runs (task 25), only if A passes. After B passes
+and graff has been installed for 30 days, the bill of those days says whether
+navigation's share fell (task 51); that reading confirms or questions, it does
+not decide.
 
 ## Gate A: the map
 
@@ -40,6 +44,14 @@ If A fails there are no paired runs: task 26 writes, question by question,
 what the better tool found.
 
 ## Gate B: the sessions
+
+B asks two things: does the agent call graff when graff is there, and does the
+work come out no worse and no dearer? It does not ask whether graff makes a
+task cheaper. The bill leaves little to cut (7.8% at most, task 1), and paired
+runs need many pairs to see a cut: 24 pairs, ~81M units, see one from ~16% up;
+four pairs, only from ~34% up (`power.py`). Gate A carries the evidence
+that the map answers better and in fewer tokens; B checks that it is used and
+does no harm; the bill after install says whether navigation fell.
 
 ### Cells
 
@@ -81,10 +93,11 @@ cell, and the navigation measure below.
   cost 0.2M to 3M units (short tasks); not a merge, revert, version bump,
   formatting, or generated file.
 - **Drawn** by a script with seed 4, in random order within each stratum:
-  Rust 14, Nix 6, Bash 4. A stratum that runs short is filled from Rust, and
-  that is said before any run. A drawn task is dropped only for a reason
-  written next to it before any run (a prompt that leans on a conversation
-  the run cannot see, say).
+  Rust 2, Nix 1, Bash 1, and one more Rust task for the probe. A stratum that
+  runs short is filled from Rust, and that is said before any run. A drawn
+  task is dropped only for a reason written next to it before any run (a
+  prompt that leans on a conversation the run cannot see, say), and the next
+  one drawn in its stratum takes its place.
 - **Checks** written per task before any run: the judge's checklist from the
   spec (grade.py); hidden tests where the reference added tests that drive a
   surface the spec fixes (CLI flags, MCP tools); for Nix, the flake's
@@ -92,23 +105,13 @@ cell, and the navigation measure below.
 - The list and its checks land in `evals/verdict/tasks.json` before task 8,
   graff's first code, starts.
 
-### Pilot
+### Runs
 
-1. **Probe**: one short task in the graff cell at effort low. It checks that
+1. **Probe**: the probe task in the graff cell at effort low. It checks that
    graff's MCP server answers, its SessionStart hook speaks, ctx offers
    graff's outline on a denied read, graff's tools get called, and the
    transcripts land. Nothing from it is kept.
-2. **A/A and use**: the first 4 tasks of the draw, control twice and graff
-   once each.
-   - graff called in fewer than 3 of its 4 runs: stop. That is a funnel
-     problem (the announcement, the tool descriptions), fixed and piloted
-     again; those runs are discarded.
-   - `power.py` with the new A/A pairs: if the planned pairs cannot detect a
-     20% cut, the user hears the detectable cut before the main run and
-     decides the pairs. The thresholds do not move. The pilot's graff against
-     control difference is not read for this.
-   - The pilot's 4 pairs count in the main run if graff did not change after
-     them.
+2. **Pairs**: the 4 tasks, control once and graff once each.
 
 ### Measures
 
@@ -121,81 +124,79 @@ A task is **resolved** by a run when the repository's checks and the hidden
 tests pass; where a task has no hidden test, when the judge's correctness
 averages 4 of 5 or more.
 
-- **Primary**: units per task, graff over control, over the tasks both cells
-  resolved. Estimate: the Hodges-Lehmann median of the paired log-ratios,
-  with a 90% interval. Test: Wilcoxon signed-rank, one-sided.
-- **Mechanism**: the same ratio for navigation units.
+- **Use**: the graff runs that called graff at least once.
 - **Quality**: tasks resolved per cell; the judge's preference per pair
   (grade.py, both orders; a pair counts for a cell when both orders prefer
-  it), exact sign test over the pairs not tied.
-- Also reported: units per resolved task per cell (sum of units over tasks
-  resolved), with a bootstrap interval over tasks; each language apart,
-  descriptive only.
+  it).
+- **Cost**: per task, graff's units over control's; over the 4 tasks, the
+  geometric mean of those ratios.
+- Also reported, task by task and descriptive only: the same ratio for
+  navigation units, calls, and calls to the first edit.
 
 ### Decision
 
-**Win**, when all hold:
+**Not called**, when graff was called in fewer than 3 of its 4 runs: nothing
+else is read. That is a funnel problem (the announcement, the tool
+descriptions): it is fixed and graff's four runs are done again; control's
+stand if the Claude Code version has not changed. The discarded runs are
+listed with the results. A second miss is a fail.
 
-1. The units ratio is 0.90 or less, at one-sided p <= 0.05.
-2. The navigation ratio is 0.80 or less: the saving comes through the path
-   graff acts on. A cheaper run with navigation unchanged is not graff's doing.
-3. graff was called in at least 3 of every 4 graff runs.
-4. Quality held: graff resolves at least as many tasks as control, less one;
-   the judge's sign test does not favour control at one-sided p <= 0.10.
+**Pass**, when graff was called in at least 3 of its 4 runs and:
 
-Then task 26 retires graphify.
+1. Quality held: graff resolves at least as many tasks as control, less one,
+   and the judge's exact sign test over the pairs not tied does not favour
+   control at one-sided p <= 0.10. With four pairs, that test fails only when
+   the judge prefers control in all four.
+2. No dearer: the geometric mean of graff's cost ratios is 1.30 or less.
 
-**Loss**, when quality fails, or the units ratio is above 1.0 at one-sided
-p <= 0.05: graff leaves the default setup.
+Then task 26 retires graphify, and graff joins the default setup.
 
-**No win** otherwise: task 26's other branch. A note from the per-task results
-on where the saving did not come, graff stays opt-in, and nothing is built on
-it (phases triad and semantic) until that note says what would change.
+**Fail**, when either fails: graff stays out of the default setup, and task
+26 writes, task by task, where it lost and what would change that; nothing
+more is built on graff until then.
 
-### Why 0.90
+### The bounds
 
-Task 1's ceiling, cutting every run of navigation calls to its first call, is
-7.8% of the user's bill. Headless runs start cold and navigate more: the same
-classifier on ekko's four paired runs at max under the live practice puts
-navigation at 31-51% of a run and the ceiling at 17-41% (394: 17%, 397: 35%,
-396: 39% and 41%; median 37%). A 10% cut asks graff for about a quarter of
-the typical run's ceiling and a bit more than half of the smallest.
+- Quality: the first version's rule, on four pairs.
+- 1.30: with the noise of the one A/A pair measured (sigma_d 0.33), the guard
+  trips about 6% of the time on an unchanged cost, 31% on a true ratio of
+  1.2, 81% on 1.5 and nearly always on 2.0 (`power.py`). It catches a gross
+  rise in cost, not a small one.
 
-The 0.90 bound keeps a small cut that happens to be significant from counting
-as a win. With 24 pairs, a cut is seen reliably only from ~16% up (below):
-a smaller true cut will mostly come out as no win.
+## After: the bill
 
-What a run's saving is worth on the bill is an estimate, reported as one: the
-navigation cut times the bill's navigation share (18.6%), at most the 7.8%
-ceiling. After a win, `ceiling.py` over the 30 days after graff is installed
-shows whether the navigation share fell; the work changes from month to
-month, so that reading confirms or questions, it does not decide.
+After a pass and 30 days of graff installed in both profiles (task 24),
+`ceiling.py` over those 30 days (task 51): navigation's share of the bill and
+the ceiling, against 18.6% and 7.8% for 2026-08-27 to 09-26, with graff's
+calls counted as searches, and each window's navigation cost by language
+beside them, since a month heavy in Rust navigates more. The work changes
+from month to month: this reading confirms or questions; it does not decide.
 
-### Budget and account
+## Budget and account
 
-Settled by the user on 2026-09-26 (answers 43 and 44).
+Settled by the user on 2026-09-26 (answer 44: the account) and on 2026-10-04
+(task 49: the lean gate).
 
-- **24 pairs**, strata as above. At max, a short run took 1.30M units in
-  ekko's pilot (394, 397), so ~62M for the pairs. On top: the judge, 0.53M a
-  task of two runs in the same pilot, ~13M; the pilot's 4 extra control runs,
-  ~5M; the probe, under 1M. The whole, ~81M units.
+- 4 pairs at ~1.30M units a run (a short run at max in ekko's pilot, 394 and
+  397): ~10M; the judge, 0.53M a task: ~2M; the probe, under 1M. ~14M units
+  in all, ~215 points of the default account's 5-hour window: about two full
+  windows.
 - **The default account**, at night, one run at a time, as ekko's decisions
-  741 and 744: ~63k units a point of its 5-hour window, so ~1,290 points,
-  about 13 full windows. The harness's guards hold: a run starts only if the
-  5-hour window can take it whole, the test pauses at 70% of the week unless
-  the user moves that, and a run cut by the usage limit is discarded and run
+  741 and 744. The harness's guards hold: a run starts only if the 5-hour
+  window can take it whole, the test pauses at 70% of the week unless the
+  user moves that, and a run cut by the usage limit is discarded and run
   again.
 - **Caps**: a run is stopped at twice its expected units (3M for a short
-  one); the whole test stops at 100M units.
+  one); the whole stops at 30M units, which leaves room for one funnel retry.
 
 ## What it cannot tell
 
-- With 24 pairs, a cut under ~16% in units per task may not show
-  (`power.py`, from the one A/A pair measured: sigma_d 0.33); the pilot
-  measures the noise better.
+- Whether graff makes a task cheaper. Four pairs see a cut only from ~34% up,
+  the cost guard catches a gross rise and not a small one, and the bill after
+  install is observational.
 - Short tasks only. Long ones, with handoffs in the middle, cost 3-4 times as
   much a pair and are left out.
 - Headless runs start cold and nobody corrects them; the user's sessions start
   from a handoff, with the user there.
-- The set leans on Rust; each language apart is descriptive.
+- Four tasks: one each for Nix and Bash, so a language apart says nothing.
 - One model and one Claude Code version: those of the day it runs.

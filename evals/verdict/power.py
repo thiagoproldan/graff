@@ -1,5 +1,6 @@
 """How many paired runs the verdict needs (task 4), from the noise measured so
-far. Re-run it after the pilot: the A/A pairs it adds replace the estimates.
+far, and what the lean gate B's four pairs can see (task 49): the smallest cut
+they detect, and how often their cost guard trips.
 
 Noise is the standard deviation of the paired log-difference of units per task
 between two cells, sigma_d. Measured: every task and cell that ekko's paired
@@ -14,7 +15,11 @@ approximation divided by the Wilcoxon test's efficiency against the t test
 
     n = ((z_alpha + z_beta) * sigma_d / delta)^2 / 0.955
 
-    python3 evals/verdict/power.py [--runs ~/Projetos/ekko/target/evals/paired/runs]
+The cost guard fails graff when the geometric mean of its units over
+control's, over the lean gate's PAIRS tasks, is above GUARD. The log of that
+mean spreads as sigma_d / sqrt(PAIRS) around the log of the true ratio.
+
+    python3 evals/verdict/power.py [--runs ~/Projects/ekko/target/evals/paired/runs]
 """
 
 import argparse
@@ -31,6 +36,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import ceiling  # noqa: E402
 
 ALPHA, POWER, ARE = 0.05, 0.80, 0.955
+# The lean gate B (task 49): four pairs, and the bound on graff's cost ratio.
+PAIRS, GUARD = 4, 1.30
 RTK_SIGMA = 0.073 * math.sqrt(80) / 2.94
 # Units a point of each account's 5-hour window (ekko's evals/paired/harness.py,
 # POINTS, measured 2026-09-24 and 26).
@@ -65,7 +72,7 @@ def detectable(sigma, n):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--runs", default=os.path.expanduser("~/Projetos/ekko/target/evals/paired/runs"))
+    parser.add_argument("--runs", default=os.path.expanduser("~/Projects/ekko/target/evals/paired/runs"))
     opts = parser.parse_args()
     cells = measure(opts.runs)
 
@@ -98,10 +105,18 @@ def main():
         print(f"  {name:18} {sigma:.2f}  " + "".join(f"{pairs_needed(sigma, -math.log(1 - c)):>8}" for c in cuts))
 
     print("-- the smallest cut detectable, by pairs")
-    sizes = (12, 24, 40)
+    sizes = (PAIRS, 12, 24, 40)
     print("  " + " " * 24 + "".join(f"{n:>8}" for n in sizes))
     for name, sigma in sigmas.items():
         print(f"  {name:18} {sigma:.2f}  " + "".join(f"{1 - math.exp(-detectable(sigma, n)):>8.0%}" for n in sizes))
+
+    print(f"-- the cost guard: how often the geometric mean of {PAIRS} pairs comes out above {GUARD}, by the true ratio")
+    ratios = (1.0, 1.2, 1.5, 2.0)
+    print("  " + " " * 24 + "".join(f"{r:>8.1f}" for r in ratios))
+    norm = statistics.NormalDist()
+    for name, sigma in sigmas.items():
+        spread = sigma / math.sqrt(PAIRS)
+        print(f"  {name:18} {sigma:.2f}  " + "".join(f"{1 - norm.cdf(math.log(GUARD / r) / spread):>8.0%}" for r in ratios))
 
     if short:
         pair = 2 * statistics.fmean(short)

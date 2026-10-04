@@ -34,6 +34,9 @@
 
           cargoLock.lockFile = ./Cargo.lock;
 
+          # The index's tests make git repositories.
+          nativeCheckInputs = [ pkgs.git ];
+
           meta = with pkgs.lib; {
             inherit (cargoToml.package) description;
             homepage = cargoToml.package.repository;

@@ -9,4 +9,5 @@ evals/verdict/work/
 evals/verdict/private/
 evals/bar/work/
 evals/bar/private/
+evals/store/bench/target/
 evals/extract/registry*.txt

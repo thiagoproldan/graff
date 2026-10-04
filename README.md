@@ -10,8 +10,11 @@ Bash, Python, C and Markdown.
 
 ## Status
 
-None of that exists yet: this is the crate's skeleton, a binary that answers
-`--version` and `--help`. What counts as graff working was fixed before its
+graff reads Rust so far: definitions, calls, references and use items, each
+with its lines (`src/extract/`), kept in an index in `~/.cache/graff` that
+each query will bring up to date by itself, reading again only what changed
+(`src/store.rs`). `graff index` runs that check now and says what it did;
+the queries come next. What counts as graff working was fixed before its
 first line of code, in `evals/`:
 
 - `evals/ceiling/`: what code navigation costs today, read off the transcripts.
@@ -21,6 +24,13 @@ first line of code, in `evals/`:
   graff has to clear.
 - `evals/verdict/`: the protocol that judges graff, and the tasks its paired
   runs will redo.
+
+What graff does so far is measured there too:
+
+- `evals/extract/`: the Rust extractor against a reading of its own, on ekko
+  and on a cargo registry's 17,112 files.
+- `evals/store/`: what keeping the index fresh costs a query, about 7 ms, and
+  what a cold build costs.
 
 ## Building
 

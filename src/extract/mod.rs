@@ -131,9 +131,105 @@ pub struct Import {
     pub line: u32,
 }
 
+impl Kind {
+    pub const ALL: [Kind; 12] = [
+        Kind::Function,
+        Kind::Method,
+        Kind::Struct,
+        Kind::Enum,
+        Kind::Union,
+        Kind::Trait,
+        Kind::Impl,
+        Kind::Module,
+        Kind::Const,
+        Kind::Static,
+        Kind::Macro,
+        Kind::TypeAlias,
+    ];
+
+    /// Its name as stored and shown, the same as serde's.
+    pub fn name(self) -> &'static str {
+        match self {
+            Kind::Function => "function",
+            Kind::Method => "method",
+            Kind::Struct => "struct",
+            Kind::Enum => "enum",
+            Kind::Union => "union",
+            Kind::Trait => "trait",
+            Kind::Impl => "impl",
+            Kind::Module => "module",
+            Kind::Const => "const",
+            Kind::Static => "static",
+            Kind::Macro => "macro",
+            Kind::TypeAlias => "type_alias",
+        }
+    }
+}
+
+impl CallKind {
+    pub const ALL: [CallKind; 4] = [
+        CallKind::Free,
+        CallKind::Method,
+        CallKind::Path,
+        CallKind::Macro,
+    ];
+
+    /// Its name as stored and shown, the same as serde's.
+    pub fn name(self) -> &'static str {
+        match self {
+            CallKind::Free => "free",
+            CallKind::Method => "method",
+            CallKind::Path => "path",
+            CallKind::Macro => "macro",
+        }
+    }
+}
+
+impl RefKind {
+    pub const ALL: [RefKind; 3] = [RefKind::Type, RefKind::Path, RefKind::Value];
+
+    /// Its name as stored and shown, the same as serde's.
+    pub fn name(self) -> &'static str {
+        match self {
+            RefKind::Type => "type",
+            RefKind::Path => "path",
+            RefKind::Value => "value",
+        }
+    }
+}
+
 /// Everything `source` holds, read as `language`.
 pub fn extract(language: Language, source: &[u8]) -> Extraction {
     match language {
         Language::Rust => rust::extract(source),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every kind's name, for each of the three kinds of kind, is serde's.
+    #[test]
+    fn each_name_is_the_one_serde_writes() {
+        let serde = |value: serde_json::Value| value.as_str().map(String::from);
+        for kind in Kind::ALL {
+            assert_eq!(
+                Some(kind.name().to_string()),
+                serde(serde_json::to_value(kind).unwrap())
+            );
+        }
+        for kind in CallKind::ALL {
+            assert_eq!(
+                Some(kind.name().to_string()),
+                serde(serde_json::to_value(kind).unwrap())
+            );
+        }
+        for kind in RefKind::ALL {
+            assert_eq!(
+                Some(kind.name().to_string()),
+                serde(serde_json::to_value(kind).unwrap())
+            );
+        }
     }
 }

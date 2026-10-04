@@ -1,0 +1,15 @@
+[package]
+name = "graff-store-bench"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Task 9's measurement: the freshness check and a cold parse, on the repositories graff targets"
+
+[dependencies]
+tree-sitter = "0.27"
+tree-sitter-rust = "0.24.2"
+tree-sitter-nix = "0.3.0"
+tree-sitter-bash = "0.25.1"
+tree-sitter-python = "0.25.0"
+tree-sitter-c = "0.24.2"
+tree-sitter-md = "0.5.3"

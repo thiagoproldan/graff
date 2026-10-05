@@ -1,0 +1,3 @@
+graff 7c8faa5-dirty, ekko v0.37.0-8-g1b25853-dirty, 34 Rust files
+control, each answer against the next definition's edges: 2 of 1701 the same
+1701 of 1701 definitions with the same edges, 13948 edges; 0 different, 0 refused

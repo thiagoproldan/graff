@@ -296,7 +296,9 @@ impl<'s> Reader<'s> {
             }
             "type_identifier" => {
                 let name = self.text(node);
-                if name != "Self" && !self.is_generic(name) {
+                // `Self`, `_` (a type left to inference) and a generic
+                // parameter name no type of their own.
+                if name != "Self" && name != "_" && !self.is_generic(name) {
                     self.reference(node, name, None, RefKind::Type);
                 }
             }
@@ -1455,6 +1457,15 @@ mod tests {
         }
         let paths = references(&out, RefKind::Path);
         assert!(paths.contains(&("Kind::Task".to_string(), 61)), "{paths:?}");
+    }
+
+    #[test]
+    fn a_type_left_to_inference_is_no_reference() {
+        let out = extract(b"fn f(row: Row) { let x: Vec<_> = row.get::<_, String>(1); }");
+        assert_eq!(
+            names(&references(&out, RefKind::Type)),
+            vec!["Row", "Vec", "String"]
+        );
     }
 
     #[test]

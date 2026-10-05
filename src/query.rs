@@ -1,0 +1,1541 @@
+//! The questions graff answers about a worktree's code: where a symbol is
+//! defined (def), what reaches it (callers), what it reaches (callees), what
+//! a file holds (outline), and what reaches it from afar (impact). An answer
+//! gives places as file:line ranges, fits a budget of tokens, and says what
+//! it left out and the budget that would hold it all.
+//!
+//! A question brings the index up to date, builds the index of names from
+//! the worktree's definitions and use items, and resolves only the calls and
+//! references it needs: those named as the symbol, for its callers; those
+//! inside it, for its callees.
+
+use std::cmp::Reverse;
+use std::collections::{HashMap, HashSet};
+use std::fmt;
+use std::fs;
+use std::path::Path;
+
+use serde_json::{Value, json};
+
+use crate::extract::{CallKind, Kind, RefKind, Symbol};
+use crate::resolve::{self, Definition, Edge, File, Library, Resolution, Use};
+use crate::store::{self, Sites, Store, Worktree};
+
+/// Bytes to a token, as a budget counts them and evals/bar scores answers:
+/// an estimate, not a tokenizer's count.
+pub const BYTES_PER_TOKEN: usize = 4;
+
+/// The most levels of callers `impact` follows.
+pub const DEEPEST: usize = 5;
+
+/// How a question is answered.
+pub struct Options {
+    /// The tokens the answer may take.
+    pub budget: usize,
+    pub json: bool,
+}
+
+#[derive(Debug)]
+pub enum Error {
+    Store(store::Error),
+    /// A question graff cannot answer, and why: a name or a file it does not know.
+    Refused(String),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::Store(error) => write!(f, "{error}"),
+            Error::Refused(why) => write!(f, "{why}"),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
+
+impl From<store::Error> for Error {
+    fn from(error: store::Error) -> Error {
+        Error::Store(error)
+    }
+}
+
+/// The kinds whose impl blocks `def` lists.
+const IMPLEMENTED: [Kind; 5] = [
+    Kind::Struct,
+    Kind::Enum,
+    Kind::Union,
+    Kind::Trait,
+    Kind::TypeAlias,
+];
+
+/// Where a symbol is defined: each definition the name matches, with its
+/// doc's first sentence, its signature, and a type's or trait's impl blocks.
+pub fn def(
+    store: &mut Store,
+    root: &Path,
+    symbol: &str,
+    options: &Options,
+) -> Result<String, Error> {
+    let mut code = Code::open(store, root)?;
+    let found = code.find(symbol)?;
+    let impls = code.impls(&found)?;
+    let mut lines = Vec::new();
+    for (n, &d) in found.iter().enumerate() {
+        let defined = code.symbol(d);
+        let blocks = impls.get(&d).map_or(&[][..], Vec::as_slice);
+        let doc = defined.doc.as_deref().and_then(first_sentence);
+        let signature = code.signature(d);
+        let mut text = code.describe(d);
+        let mut item = json!({"definition": code.json(d), "doc": doc, "signature": signature});
+        if IMPLEMENTED.contains(&defined.kind) {
+            text.push_str(&format!(", {}", count(blocks.len(), "impl block")));
+            item["impl_blocks"] = json!(blocks.len());
+        }
+        if let Some(doc) = doc {
+            text.push_str(&format!("\n  /// {doc}"));
+        }
+        if let Some(signature) = &signature {
+            text.push_str(&format!("\n  {signature}"));
+        }
+        lines.push(Line::new(text, item, rank(5, n), "definitions"));
+        for &block in blocks {
+            let text = format!(
+                "  {} {}",
+                code.range(block),
+                impl_label(&code.symbol(block).qualified)
+            );
+            let item = json!({"impl": code.json(block), "of": defined.qualified});
+            lines.push(Line::new(text, item, rank(2, n), "impl blocks"));
+        }
+    }
+    Ok(render(&format!("def {symbol}"), root, &lines, options))
+}
+
+/// What reaches a symbol: the calls, references and use items tied to it,
+/// by the definition each is in; then those that may reach it, by name alone.
+pub fn callers(
+    store: &mut Store,
+    root: &Path,
+    symbol: &str,
+    options: &Options,
+) -> Result<String, Error> {
+    let mut code = Code::open(store, root)?;
+    let targets = code.find_targets(symbol)?;
+    let edges = code.edges_named(&targets)?;
+    let mut lines = Vec::new();
+    for (n, &target) in targets.iter().enumerate() {
+        let of = code.symbol(target).qualified.as_str();
+        let sure = code.by_caller(edges.iter().filter(|edge| reaches(edge, target)));
+        let possible = code.by_caller(edges.iter().filter(|edge| may_reach(edge, target)));
+        let text = format!(
+            "{}: {}, {} possible",
+            code.describe(target),
+            count(sure.len(), "caller"),
+            possible.len()
+        );
+        let item =
+            json!({"target": code.json(target), "callers": sure.len(), "possible": possible.len()});
+        lines.push(Line::new(text, item, rank(5, n), "definitions"));
+        for (caller, uses) in &sure {
+            let text = format!("  {}: {}", code.caller_text(*caller), uses_text(uses));
+            let item =
+                json!({"caller": code.caller_json(*caller), "uses": uses_json(uses), "of": of});
+            lines.push(Line::new(text, item, rank(4, n), "callers"));
+        }
+        for (caller, uses) in &possible {
+            let text = format!(
+                "  possible: {}: {}",
+                code.caller_text(*caller),
+                uses_text(uses)
+            );
+            let item = json!({"caller": code.caller_json(*caller), "uses": uses_json(uses), "of": of, "possible": true});
+            lines.push(Line::new(text, item, rank(2, n), "possible callers"));
+        }
+    }
+    Ok(render(&format!("callers {symbol}"), root, &lines, options))
+}
+
+/// What a symbol reaches: the definitions its calls and references are tied
+/// to, those they may reach, and the names it uses from outside the crate.
+pub fn callees(
+    store: &mut Store,
+    root: &Path,
+    symbol: &str,
+    options: &Options,
+) -> Result<String, Error> {
+    let mut code = Code::open(store, root)?;
+    let sources = code.find_targets(symbol)?;
+    let mut lines = Vec::new();
+    for (n, &source) in sources.iter().enumerate() {
+        let path = code.path(source).to_string();
+        let from = code.symbol(source).qualified.clone();
+        let edges = code.edges(Sites::In {
+            path: &path,
+            from: &from,
+        })?;
+        let mut sure: Vec<(Definition, Vec<Used>)> = Vec::new();
+        let mut possible: Vec<(&str, Vec<Used>)> = Vec::new();
+        let mut outside: Vec<String> = Vec::new();
+        for edge in &edges {
+            if code.worktree.files[edge.file].0 != path || edge.from.as_deref() != Some(&from) {
+                continue;
+            }
+            match &edge.resolution {
+                Resolution::Resolved(d, _) => group(&mut sure, *d, Used::of(edge)),
+                Resolution::Ambiguous(_) => {
+                    group(&mut possible, edge.name.as_str(), Used::of(edge))
+                }
+                // The type a path goes through is in the path itself.
+                Resolution::External if edge.used == Use::Qualifier => {}
+                Resolution::External => {
+                    let name = outside_name(edge);
+                    if !outside.contains(&name) {
+                        outside.push(name);
+                    }
+                }
+            }
+        }
+        sure.sort_by(|a, b| code.order(a.0).cmp(&code.order(b.0)));
+        let text = format!(
+            "{}: {}, {} possible, {} outside the crate",
+            code.describe(source),
+            count(sure.len(), "callee"),
+            possible.len(),
+            outside.len()
+        );
+        let item = json!({"source": code.json(source), "callees": sure.len(), "possible": possible.len(), "outside": outside.len()});
+        lines.push(Line::new(text, item, rank(5, n), "definitions"));
+        for (d, uses) in &mut sure {
+            uses.sort_by_key(|used| (used.how, used.line));
+            let text = format!("  {}: {}", code.describe(*d), uses_text(uses));
+            let item = json!({"callee": code.json(*d), "uses": uses_json(uses), "from": from});
+            lines.push(Line::new(text, item, rank(4, n), "callees"));
+        }
+        for (name, uses) in &mut possible {
+            uses.sort_by_key(|used| (used.how, used.line));
+            let text = format!("  possible: {name}: {}", uses_text(uses));
+            let item =
+                json!({"name": name, "uses": uses_json(uses), "from": from, "possible": true});
+            lines.push(Line::new(text, item, rank(2, n), "possible callees"));
+        }
+        if !outside.is_empty() {
+            let text = format!("  outside the crate: {}", outside.join(", "));
+            lines.push(Line::new(
+                text,
+                json!({"outside": outside, "from": from}),
+                rank(1, n),
+                "outside names",
+            ));
+        }
+    }
+    Ok(render(&format!("callees {symbol}"), root, &lines, options))
+}
+
+/// The symbols a file defines, with their lines, nested as they are: an
+/// impl's functions under it, an enum's variants on its line.
+pub fn outline(
+    store: &mut Store,
+    root: &Path,
+    file: &str,
+    options: &Options,
+) -> Result<String, Error> {
+    let code = Code::open(store, root)?;
+    let f = code.file(file)?;
+    let (path, extraction) = &code.worktree.files[f];
+    let symbols = &extraction.symbols;
+    let mut order: Vec<usize> = (0..symbols.len()).collect();
+    order.sort_by_key(|&s| (symbols[s].start, Reverse(symbols[s].end), s));
+    // The definitions open around the one at hand, outermost first.
+    let mut open: Vec<usize> = Vec::new();
+    let mut shown: Vec<(usize, usize)> = Vec::new();
+    let mut variants: HashMap<usize, Vec<&str>> = HashMap::new();
+    for s in order {
+        while let Some(&top) = open.last()
+            && symbols[s].end > symbols[top].end
+        {
+            open.pop();
+        }
+        if symbols[s].kind == Kind::Variant
+            && let Some(&top) = open.last()
+            && symbols[top].kind == Kind::Enum
+        {
+            variants.entry(top).or_default().push(&symbols[s].name);
+            continue;
+        }
+        shown.push((s, open.len()));
+        open.push(s);
+    }
+    let length =
+        fs::read(root.join(path)).map_or(0, |bytes| bytes.iter().filter(|&&b| b == b'\n').count());
+    let text = format!("{path}: {length} lines, {}", count(symbols.len(), "symbol"));
+    let item = json!({"file": path, "lines": length, "symbols": symbols.len()});
+    let mut lines = vec![Line::new(text, item, rank(5, 0), "headers")];
+    for (s, depth) in shown {
+        let symbol = &symbols[s];
+        // An impl block's label says what it is: `impl Display for Storage`.
+        let label = if symbol.kind == Kind::Impl {
+            impl_label(&symbol.qualified).to_string()
+        } else {
+            format!("{} {}", symbol.kind.name(), symbol.name)
+        };
+        let held = variants.get(&s);
+        let text = format!(
+            "{}{} {label}{}",
+            "  ".repeat(depth + 1),
+            span(symbol.start, symbol.end),
+            held.map(|names| format!(": {}", names.join(", ")))
+                .unwrap_or_default()
+        );
+        let mut item = json!({
+            "start": symbol.start, "end": symbol.end, "kind": symbol.kind.name(),
+            "qualified": symbol.qualified, "depth": depth,
+        });
+        if let Some(names) = held {
+            item["variants"] = json!(names);
+        }
+        let (tier, part) = match depth {
+            0 => (3, "symbols"),
+            1 => (2, "nested symbols"),
+            _ => (1, "nested symbols"),
+        };
+        lines.push(Line::new(text, item, rank(tier, 0), part));
+    }
+    Ok(render(&format!("outline {file}"), root, &lines, options))
+}
+
+/// What reaches a symbol from afar: its callers, their callers, and so on
+/// to a depth, through the uses tied to one definition. Those that may
+/// reach it, by name alone, are counted at each level but not followed.
+pub fn impact(
+    store: &mut Store,
+    root: &Path,
+    symbol: &str,
+    depth: usize,
+    options: &Options,
+) -> Result<String, Error> {
+    let depth = depth.clamp(1, DEEPEST);
+    let mut code = Code::open(store, root)?;
+    let targets = code.find_targets(symbol)?;
+    let mut lines: Vec<Line> = targets
+        .iter()
+        .enumerate()
+        .map(|(n, &t)| {
+            Line::new(
+                code.describe(t),
+                json!({"target": code.json(t)}),
+                rank(6, n),
+                "definitions",
+            )
+        })
+        .collect();
+    let mut seen: HashSet<Caller> = targets.iter().map(|&t| Caller::In(t)).collect();
+    let mut frontier = targets.clone();
+    let (mut total, mut files, mut levels) = (0, HashSet::new(), 0);
+    while levels < depth && !frontier.is_empty() {
+        levels += 1;
+        let goal: HashSet<Definition> = frontier.iter().copied().collect();
+        let edges = code.edges_named(&frontier)?;
+        let mut reached: Vec<Caller> = Vec::new();
+        let mut possible: HashSet<Caller> = HashSet::new();
+        for edge in edges.iter().filter(|edge| edge.used != Use::Import) {
+            match &edge.resolution {
+                Resolution::Resolved(d, _) if goal.contains(d) => {
+                    let caller = code.caller(edge);
+                    if seen.insert(caller) {
+                        reached.push(caller);
+                    }
+                }
+                Resolution::Ambiguous(found) if found.iter().any(|d| goal.contains(d)) => {
+                    possible.insert(code.caller(edge));
+                }
+                _ => {}
+            }
+        }
+        possible.retain(|caller| !seen.contains(caller));
+        reached.sort_by(|a, b| code.caller_order(*a).cmp(&code.caller_order(*b)));
+        let mut text = format!("depth {levels}: {}", count(reached.len(), "caller"));
+        if !possible.is_empty() {
+            text.push_str(&format!(", {} possible not followed", possible.len()));
+        }
+        let item = json!({"depth": levels, "callers": reached.len(), "possible": possible.len()});
+        lines.push(Line::new(text, item, rank(5, 2 * levels), "depth lines"));
+        for caller in &reached {
+            files.insert(code.caller_file(*caller));
+            let item = json!({"depth": levels, "caller": code.caller_json(*caller)});
+            lines.push(Line::new(
+                format!("  {}", code.caller_text(*caller)),
+                item,
+                rank(5, 2 * levels + 1),
+                "callers",
+            ));
+        }
+        total += reached.len();
+        frontier = reached
+            .iter()
+            .filter_map(|caller| {
+                if let Caller::In(d) = caller {
+                    Some(*d)
+                } else {
+                    None
+                }
+            })
+            .collect();
+    }
+    let mut text = format!(
+        "{} in {}, to depth {levels}",
+        count(total, "caller"),
+        count(files.len(), "file")
+    );
+    if levels < depth {
+        text.push_str(&format!("; nothing reaches depth {}", levels + 1));
+    }
+    let item = json!({"callers": total, "files": files.len(), "depth": levels});
+    lines.push(Line::new(text, item, rank(6, 0), "summaries"));
+    Ok(render(&format!("impact {symbol}"), root, &lines, options))
+}
+
+/// A worktree as a question reads it.
+struct Code<'s> {
+    store: &'s Store,
+    root: &'s Path,
+    worktree: Worktree,
+    /// Each package's library, by the name its other crates give it.
+    libraries: Vec<(String, String)>,
+    /// Each file's definitions, by qualified name.
+    defined: Vec<HashMap<String, usize>>,
+    /// Each file's crate and module path.
+    places: Vec<(String, Vec<String>)>,
+}
+
+/// What a use of a name is in: a definition, or the top of a file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Caller {
+    In(Definition),
+    Top(usize),
+}
+
+/// A use of a name, as an answer gives it: how, at which line; and for one
+/// that may reach one of several definitions, how many the crate has, and
+/// whether it may reach one outside the crate instead, as a method call of a
+/// name std's types have too may.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Used {
+    how: &'static str,
+    line: u32,
+    candidates: usize,
+    outside: bool,
+}
+
+impl Used {
+    fn of(edge: &Edge) -> Used {
+        let how = match edge.used {
+            Use::Call(_) => "call",
+            Use::Reference(_) | Use::Qualifier => "ref",
+            Use::Import => "use",
+        };
+        let candidates = match &edge.resolution {
+            Resolution::Ambiguous(found) => found.len(),
+            _ => 0,
+        };
+        let outside = candidates > 0
+            && edge.used == Use::Call(CallKind::Method)
+            && resolve::std_method(&edge.name);
+        Used {
+            how,
+            line: edge.line,
+            candidates,
+            outside,
+        }
+    }
+}
+
+impl<'s> Code<'s> {
+    fn open(store: &'s mut Store, root: &'s Path) -> Result<Code<'s>, Error> {
+        store.check(root)?;
+        let store: &Store = store;
+        let worktree = store.read(root)?;
+        let libraries = worktree
+            .files
+            .iter()
+            .filter_map(|(path, _)| path.strip_suffix("src/lib.rs"))
+            .filter_map(|package| {
+                let manifest = fs::read_to_string(root.join(package).join("Cargo.toml")).ok()?;
+                Some((
+                    package.trim_end_matches('/').to_string(),
+                    resolve::library_name(&manifest)?,
+                ))
+            })
+            .collect();
+        let defined = worktree
+            .files
+            .iter()
+            .map(|(_, extraction)| {
+                extraction
+                    .symbols
+                    .iter()
+                    .enumerate()
+                    .map(|(s, symbol)| (symbol.qualified.clone(), s))
+                    .collect()
+            })
+            .collect();
+        let paths: Vec<&str> = worktree
+            .files
+            .iter()
+            .map(|(path, _)| path.as_str())
+            .collect();
+        let places = resolve::places(&paths);
+        Ok(Code {
+            store,
+            root,
+            worktree,
+            libraries,
+            defined,
+            places,
+        })
+    }
+
+    /// The edges of the calls and references `which` names, of every use
+    /// item, and of the types their paths go through.
+    fn edges(&mut self, which: Sites) -> Result<Vec<Edge>, Error> {
+        self.store.sites(&mut self.worktree, which)?;
+        let files: Vec<File> = self
+            .worktree
+            .files
+            .iter()
+            .map(|(path, extraction)| File { path, extraction })
+            .collect();
+        let libraries: Vec<Library> = self
+            .libraries
+            .iter()
+            .map(|(package, name)| Library { package, name })
+            .collect();
+        Ok(resolve::resolve(&files, &libraries))
+    }
+
+    /// The edges that may reach some definitions: those of the uses named
+    /// as they are, or as a use item brings them in under another name
+    /// (`use store::Storage as Db;`), or whose paths go through those names.
+    fn edges_named(&mut self, found: &[Definition]) -> Result<Vec<Edge>, Error> {
+        let mut names: Vec<String> = Vec::new();
+        for &d in found {
+            let name = &self.symbol(d).name;
+            if !names.contains(name) {
+                names.push(name.clone());
+            }
+        }
+        let mut i = 0;
+        while i < names.len() {
+            let name = names[i].clone();
+            let imports = self
+                .worktree
+                .files
+                .iter()
+                .flat_map(|(_, extraction)| &extraction.imports);
+            for import in imports {
+                if let Some(alias) = &import.alias
+                    && resolve::last(&import.path) == name
+                    && !names.contains(alias)
+                {
+                    names.push(alias.clone());
+                }
+            }
+            i += 1;
+        }
+        self.edges(Sites::Named(
+            &names.iter().map(String::as_str).collect::<Vec<_>>(),
+        ))
+    }
+
+    fn symbol(&self, d: Definition) -> &Symbol {
+        &self.worktree.files[d.file].1.symbols[d.symbol]
+    }
+
+    fn path(&self, d: Definition) -> &str {
+        &self.worktree.files[d.file].0
+    }
+
+    /// `src/store.rs:120-145`, or `src/store.rs:12` for one line.
+    fn range(&self, d: Definition) -> String {
+        let symbol = self.symbol(d);
+        format!("{}:{}", self.path(d), span(symbol.start, symbol.end))
+    }
+
+    /// `src/store.rs:120-145 method Storage::load`, `src/store.rs:100-160
+    /// impl Storage`.
+    fn describe(&self, d: Definition) -> String {
+        let symbol = self.symbol(d);
+        match symbol.kind {
+            // Its qualified name says it is one: `impl Display for Storage`.
+            Kind::Impl => format!("{} {}", self.range(d), symbol.qualified),
+            kind => format!("{} {} {}", self.range(d), kind.name(), symbol.qualified),
+        }
+    }
+
+    fn json(&self, d: Definition) -> Value {
+        let symbol = self.symbol(d);
+        json!({
+            "path": self.path(d), "start": symbol.start, "end": symbol.end,
+            "kind": symbol.kind.name(), "qualified": symbol.qualified,
+        })
+    }
+
+    /// Where a definition comes in an answer: by file, then line.
+    fn order(&self, d: Definition) -> (&str, u32, usize) {
+        (self.path(d), self.symbol(d).start, d.symbol)
+    }
+
+    /// A definition's code, as its file has it now, to where its body
+    /// starts: a function's signature, the first line of anything else.
+    fn signature(&self, d: Definition) -> Option<String> {
+        let symbol = self.symbol(d);
+        let text = fs::read_to_string(self.root.join(self.path(d))).ok()?;
+        let lines: Vec<&str> = text
+            .lines()
+            .skip(symbol.start.checked_sub(1)? as usize)
+            .take((symbol.end - symbol.start + 1) as usize)
+            .collect();
+        signature(&lines, matches!(symbol.kind, Kind::Function | Kind::Method))
+    }
+
+    /// The impl blocks of the types and traits among some definitions: those
+    /// whose type, or trait, is tied to one of them.
+    fn impls(
+        &mut self,
+        found: &[Definition],
+    ) -> Result<HashMap<Definition, Vec<Definition>>, Error> {
+        let held: Vec<Definition> = found
+            .iter()
+            .copied()
+            .filter(|&d| IMPLEMENTED.contains(&self.symbol(d).kind))
+            .collect();
+        let mut impls: HashMap<Definition, Vec<Definition>> = HashMap::new();
+        if held.is_empty() {
+            return Ok(impls);
+        }
+        for edge in self.edges_named(&held)? {
+            let (Use::Reference(RefKind::Type), Resolution::Resolved(d, _)) =
+                (edge.used, &edge.resolution)
+            else {
+                continue;
+            };
+            let Caller::In(block) = self.caller(&edge) else {
+                continue;
+            };
+            let symbol = self.symbol(block);
+            // The impl's type or trait, not a type in their generic arguments.
+            let (ty, tr) = impl_parts(&symbol.qualified);
+            let named = resolve::last(ty) == edge.name
+                || tr.is_some_and(|tr| resolve::last(tr) == edge.name);
+            if symbol.kind == Kind::Impl && named && held.contains(d) {
+                let blocks = impls.entry(*d).or_default();
+                if !blocks.contains(&block) {
+                    blocks.push(block);
+                }
+            }
+        }
+        for blocks in impls.values_mut() {
+            blocks.sort_by(|a, b| self.order(*a).cmp(&self.order(*b)));
+        }
+        Ok(impls)
+    }
+
+    /// The file of the worktree a question names: by its path from the
+    /// top, from the current folder, or the one path that ends so.
+    fn file(&self, written: &str) -> Result<usize, Error> {
+        let files = &self.worktree.files;
+        let at = |path: &str| files.iter().position(|(p, _)| p == path);
+        let plain = written.strip_prefix("./").unwrap_or(written);
+        if let Some(f) = at(plain) {
+            return Ok(f);
+        }
+        let here = fs::canonicalize(written).ok();
+        if let Some(f) = here
+            .as_deref()
+            .and_then(|full| full.strip_prefix(self.root).ok()?.to_str())
+            .and_then(at)
+        {
+            return Ok(f);
+        }
+        let ending = format!("/{plain}");
+        let found: Vec<usize> = (0..files.len())
+            .filter(|&f| files[f].0.ends_with(&ending))
+            .collect();
+        match found[..] {
+            [f] => Ok(f),
+            [] => Err(Error::Refused(format!(
+                "{written} is no file graff reads in {}",
+                self.root.display()
+            ))),
+            _ => {
+                let paths: Vec<&str> = found.iter().map(|&f| files[f].0.as_str()).collect();
+                Err(Error::Refused(format!(
+                    "{written} could be {}: name one",
+                    paths.join(", ")
+                )))
+            }
+        }
+    }
+
+    /// Each definition a written name names, the whole name first; an error
+    /// that gives the nearest names when none does.
+    fn find(&self, written: &str) -> Result<Vec<Definition>, Error> {
+        let named = Named::parse(written);
+        let file = named.file.map(|file| self.file(file)).transpose()?;
+        if let (Some(f), [line]) = (file, &named.parts[..])
+            && let Ok(line) = line.parse::<u32>()
+        {
+            return self.around(f, line).map(|d| vec![d]).ok_or_else(|| {
+                Error::Refused(format!(
+                    "no definition holds line {line} of {}",
+                    self.worktree.files[f].0
+                ))
+            });
+        }
+        if named.parts.iter().any(|part| part.is_empty()) {
+            return Err(Error::Refused(format!(
+                "{written} names no symbol: write load, Storage::load, src/store.rs:Storage::load or src/store.rs:120"
+            )));
+        }
+        // `crate::`, or a library's name, holds the rest to a crate's top.
+        let top = match &named.parts[..] {
+            [first, _, ..] if *first == "crate" => Some(None),
+            [first, _, ..] => self
+                .libraries
+                .iter()
+                .find(|(_, name)| name == first)
+                .map(|(package, _)| Some(package.as_str())),
+            _ => None,
+        };
+        let parts = &named.parts[usize::from(top.is_some())..];
+        let mut found: Vec<Definition> = self
+            .definitions(file)
+            .filter(|&d| {
+                let in_crate = top
+                    .flatten()
+                    .is_none_or(|package| self.places[d.file].0 == package);
+                in_crate && names(parts, &self.full_name(d), top.is_some())
+            })
+            .collect();
+        // Those the name names more of first: `load` before `Storage::load`.
+        found.sort_by_key(|&d| {
+            let qualified = resolve::segments(&self.symbol(d).qualified).len();
+            (qualified.saturating_sub(parts.len()), self.order(d))
+        });
+        if !found.is_empty() {
+            return Ok(found);
+        }
+        let near: Vec<String> = self
+            .nearest(&named, file)
+            .iter()
+            .map(|&d| format!("{} ({})", self.full_name(d).join("::"), self.range(d)))
+            .collect();
+        let place = match file {
+            Some(f) => self.worktree.files[f].0.clone(),
+            None => self.root.display().to_string(),
+        };
+        let said = if near.is_empty() {
+            ", nor a name near it".to_string()
+        } else {
+            format!("; nearest: {}", near.join(", "))
+        };
+        Err(Error::Refused(format!(
+            "no definition named {} in {place}{said}",
+            named.name
+        )))
+    }
+
+    /// The definitions a written name names that uses are tied to: not a
+    /// module, which graff ties none to.
+    fn find_targets(&self, written: &str) -> Result<Vec<Definition>, Error> {
+        let found = self.find(written)?;
+        let targets: Vec<Definition> = found
+            .iter()
+            .copied()
+            .filter(|&d| self.symbol(d).kind != Kind::Module)
+            .collect();
+        if targets.is_empty() {
+            let modules: Vec<String> = found.iter().map(|&d| self.describe(d)).collect();
+            return Err(Error::Refused(format!(
+                "{written} names a module ({}), and graff ties no uses to modules: graff outline FILE lists what one holds",
+                modules.join(", ")
+            )));
+        }
+        Ok(targets)
+    }
+
+    /// A definition's module path in its crate, then its qualified name, by
+    /// segment: `store`, `Storage`, `load`.
+    fn full_name(&self, d: Definition) -> Vec<&str> {
+        let module = self.places[d.file].1.iter().map(String::as_str);
+        module
+            .chain(resolve::segments(&self.symbol(d).qualified))
+            .collect()
+    }
+
+    /// The innermost definition, but an impl block, around a line of a file.
+    fn around(&self, file: usize, line: u32) -> Option<Definition> {
+        let symbols = &self.worktree.files[file].1.symbols;
+        (0..symbols.len())
+            .filter(|&s| {
+                symbols[s].start <= line && line <= symbols[s].end && symbols[s].kind != Kind::Impl
+            })
+            .max_by_key(|&s| (symbols[s].start, Reverse(symbols[s].end)))
+            .map(|symbol| Definition { file, symbol })
+    }
+
+    /// Every definition, but impl blocks, of one file or of all.
+    fn definitions(&self, file: Option<usize>) -> impl Iterator<Item = Definition> + '_ {
+        let files = self
+            .worktree
+            .files
+            .iter()
+            .enumerate()
+            .filter(move |(f, _)| file.is_none_or(|only| only == *f));
+        files.flat_map(|(f, (_, extraction))| {
+            let symbols = extraction.symbols.iter().enumerate();
+            symbols
+                .filter(|(_, symbol)| symbol.kind != Kind::Impl)
+                .map(move |(s, _)| Definition { file: f, symbol: s })
+        })
+    }
+
+    /// The definitions whose names are nearest a written one's last: holding
+    /// it, held in it, or a few edits from it.
+    fn nearest(&self, named: &Named, file: Option<usize>) -> Vec<Definition> {
+        let wanted = named
+            .parts
+            .last()
+            .copied()
+            .unwrap_or_default()
+            .to_lowercase();
+        let most = (wanted.chars().count() / 3).max(1);
+        let mut near: Vec<(usize, Definition)> = self
+            .definitions(file)
+            .filter_map(|d| {
+                let name = self.symbol(d).name.to_lowercase();
+                let held =
+                    name.contains(&wanted) || (name.chars().count() >= 3 && wanted.contains(&name));
+                let distance = if held { 0 } else { edits(&wanted, &name) };
+                (distance <= most).then_some((distance, d))
+            })
+            .collect();
+        near.sort_by_key(|&(distance, d)| {
+            (distance, self.symbol(d).qualified.len(), self.order(d))
+        });
+        near.into_iter().take(8).map(|(_, d)| d).collect()
+    }
+
+    /// What an edge is in: the definition its `from` names, else the
+    /// innermost one around its line, as for a use item in a function or an
+    /// inline module, else its file's top.
+    fn caller(&self, edge: &Edge) -> Caller {
+        let file = edge.file;
+        match edge
+            .from
+            .as_deref()
+            .and_then(|from| self.defined[file].get(from))
+        {
+            Some(&symbol) => Caller::In(Definition { file, symbol }),
+            None => self
+                .around(file, edge.line)
+                .map_or(Caller::Top(file), Caller::In),
+        }
+    }
+
+    fn caller_file(&self, caller: Caller) -> usize {
+        match caller {
+            Caller::In(d) => d.file,
+            Caller::Top(f) => f,
+        }
+    }
+
+    fn caller_order(&self, caller: Caller) -> (&str, u32, usize) {
+        match caller {
+            Caller::In(d) => self.order(d),
+            Caller::Top(f) => (&self.worktree.files[f].0, 0, 0),
+        }
+    }
+
+    fn caller_text(&self, caller: Caller) -> String {
+        match caller {
+            Caller::In(d) => self.describe(d),
+            Caller::Top(f) => format!("{} (top level)", self.worktree.files[f].0),
+        }
+    }
+
+    fn caller_json(&self, caller: Caller) -> Value {
+        match caller {
+            Caller::In(d) => self.json(d),
+            Caller::Top(f) => json!({"path": self.worktree.files[f].0, "top": true}),
+        }
+    }
+
+    /// Edges by what they are in, in the answer's order, each with its uses.
+    fn by_caller<'e>(&self, edges: impl Iterator<Item = &'e Edge>) -> Vec<(Caller, Vec<Used>)> {
+        let mut groups = Vec::new();
+        for edge in edges {
+            group(&mut groups, self.caller(edge), Used::of(edge));
+        }
+        for (_, uses) in &mut groups {
+            uses.sort_by_key(|used| (used.how, used.line));
+        }
+        groups.sort_by(|a, b| self.caller_order(a.0).cmp(&self.caller_order(b.0)));
+        groups
+    }
+}
+
+fn reaches(edge: &Edge, target: Definition) -> bool {
+    matches!(&edge.resolution, Resolution::Resolved(d, _) if *d == target)
+}
+
+fn may_reach(edge: &Edge, target: Definition) -> bool {
+    matches!(&edge.resolution, Resolution::Ambiguous(found) if found.contains(&target))
+}
+
+/// Adds a use to the group of its key, once.
+fn group<K: PartialEq>(groups: &mut Vec<(K, Vec<Used>)>, key: K, used: Used) {
+    match groups.iter_mut().find(|(seen, _)| *seen == key) {
+        Some((_, uses)) => {
+            if !uses.contains(&used) {
+                uses.push(used);
+            }
+        }
+        None => groups.push((key, vec![used])),
+    }
+}
+
+/// A symbol as a question names it: `load`, `Storage::load`, with its
+/// module path, `store::Storage::load` or `crate::store::Storage::load`, with
+/// its file, `src/store.rs:Storage::load`, or by a line, `src/store.rs:120`.
+struct Named<'q> {
+    file: Option<&'q str>,
+    name: &'q str,
+    parts: Vec<&'q str>,
+}
+
+impl<'q> Named<'q> {
+    fn parse(written: &'q str) -> Named<'q> {
+        // A `:` on its own, not half of `::`, ends the file.
+        let bytes = written.as_bytes();
+        let colon = (0..bytes.len()).find(|&i| {
+            bytes[i] == b':' && bytes.get(i + 1) != Some(&b':') && (i == 0 || bytes[i - 1] != b':')
+        });
+        let (file, name) = match colon {
+            Some(i) => (Some(&written[..i]), &written[i + 1..]),
+            None => (None, written),
+        };
+        Named {
+            file,
+            name,
+            parts: resolve::segments(name),
+        }
+    }
+}
+
+/// Whether written segments name a definition's full name, segment by
+/// segment: its end, or all of it when held to the crate's top.
+fn names(parts: &[&str], full: &[&str], top: bool) -> bool {
+    let fits = if top {
+        parts.len() == full.len()
+    } else {
+        parts.len() <= full.len()
+    };
+    fits && parts
+        .iter()
+        .rev()
+        .zip(full.iter().rev())
+        .all(|(written, segment)| names_segment(written, segment))
+}
+
+/// Whether a written segment names one of a qualified name: `load` names
+/// `load#2`, and `load#2` only it; `Storage` and `Render` both name
+/// `<Storage as Render>`.
+fn names_segment(written: &str, segment: &str) -> bool {
+    if written == segment {
+        return true;
+    }
+    let segment = segment.split('#').next().unwrap_or(segment);
+    if written == segment {
+        return true;
+    }
+    let (ty, tr) = resolve::container(segment);
+    ty != segment
+        && (written == resolve::last(ty) || tr.is_some_and(|tr| written == resolve::last(tr)))
+}
+
+/// How many single-character edits make one word the other.
+fn edits(a: &str, b: &str) -> usize {
+    let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for i in 1..=a.len() {
+        let mut diagonal = row[0];
+        row[0] = i;
+        for j in 1..=b.len() {
+            let above = row[j];
+            row[j] = (diagonal + usize::from(a[i - 1] != b[j - 1]))
+                .min(row[j] + 1)
+                .min(row[j - 1] + 1);
+            diagonal = above;
+        }
+    }
+    row[b.len()]
+}
+
+/// A function's signature out of its lines, joined to where its body
+/// starts; the first line of anything else.
+fn signature(lines: &[&str], function: bool) -> Option<String> {
+    let mut joined = String::new();
+    for line in lines.iter().take(if function { 8 } else { 1 }) {
+        let line = line.trim();
+        if !joined.is_empty() && !joined.ends_with('(') && !line.starts_with(')') {
+            joined.push(' ');
+        }
+        joined.push_str(line);
+        if line.ends_with('{') || line.ends_with(';') {
+            break;
+        }
+    }
+    let joined = joined.replace(",)", ")");
+    let joined = joined
+        .strip_suffix('{')
+        .unwrap_or(&joined)
+        .trim_end()
+        .trim_end_matches(',');
+    if joined.is_empty() {
+        return None;
+    }
+    Some(if joined.chars().count() > 200 {
+        format!("{}…", joined.chars().take(200).collect::<String>())
+    } else {
+        joined.to_string()
+    })
+}
+
+/// A doc's first sentence, out of its first paragraph, at most 200 characters.
+fn first_sentence(doc: &str) -> Option<String> {
+    let paragraph: Vec<&str> = doc
+        .lines()
+        .map(str::trim)
+        .skip_while(|line| line.is_empty())
+        .take_while(|line| !line.is_empty())
+        .collect();
+    let paragraph = paragraph.join(" ");
+    let sentence = match paragraph.find(". ") {
+        Some(end) => &paragraph[..=end],
+        None => paragraph.as_str(),
+    };
+    match sentence.char_indices().nth(200) {
+        _ if sentence.is_empty() => None,
+        Some((cut, _)) => Some(format!("{}…", &sentence[..cut])),
+        None => Some(sentence.to_string()),
+    }
+}
+
+/// `120-145`, or `12` for one line.
+fn span(start: u32, end: u32) -> String {
+    if start == end {
+        start.to_string()
+    } else {
+        format!("{start}-{end}")
+    }
+}
+
+/// `1 caller`, `2 callers`.
+fn count(n: usize, word: &str) -> String {
+    if n == 1 {
+        format!("1 {word}")
+    } else {
+        format!("{n} {word}s")
+    }
+}
+
+/// `impl Display for Storage`, out of `tests::impl Display for Storage#2`.
+fn impl_label(qualified: &str) -> &str {
+    let at = if qualified.starts_with("impl ") {
+        0
+    } else {
+        qualified.find("::impl ").map_or(0, |i| i + 2)
+    };
+    qualified[at..].split('#').next().unwrap_or_default()
+}
+
+/// An impl block's type and trait: `Storage` and `Display` out of
+/// `tests::impl Display for Storage#2`.
+fn impl_parts(qualified: &str) -> (&str, Option<&str>) {
+    let label = impl_label(qualified);
+    let written = label.strip_prefix("impl ").unwrap_or(label);
+    match written.split_once(" for ") {
+        Some((tr, ty)) => (ty, Some(tr)),
+        None => (written, None),
+    }
+}
+
+/// `call 205, 231; ref 210`; for uses that may reach one of several, with
+/// `(one of 3)` after each line, or once at the end when all share it.
+fn uses_text(uses: &[Used]) -> String {
+    let shared = uses
+        .iter()
+        .all(|used| (used.candidates, used.outside) == (uses[0].candidates, uses[0].outside));
+    let mut parts: Vec<(&str, Vec<String>)> = Vec::new();
+    for used in uses {
+        let at = if used.candidates > 0 && !shared {
+            format!("{} {}", used.line, candidates(used))
+        } else {
+            used.line.to_string()
+        };
+        match parts.iter_mut().find(|(how, _)| *how == used.how) {
+            Some((_, lines)) => lines.push(at),
+            None => parts.push((used.how, vec![at])),
+        }
+    }
+    let mut text = parts
+        .iter()
+        .map(|(how, lines)| format!("{how} {}", lines.join(", ")))
+        .collect::<Vec<_>>()
+        .join("; ");
+    if shared && uses[0].candidates > 0 {
+        text.push_str(&format!(" {}", candidates(&uses[0])));
+    }
+    text
+}
+
+/// `(one of 3)`, `(one of 3, or outside the crate)`, or `(or outside the
+/// crate)` for a crate's only method of a name std's types have too.
+fn candidates(used: &Used) -> String {
+    match (used.candidates, used.outside) {
+        (1, true) => "(or outside the crate)".to_string(),
+        (n, true) => format!("(one of {n}, or outside the crate)"),
+        (n, false) => format!("(one of {n})"),
+    }
+}
+
+fn uses_json(uses: &[Used]) -> Value {
+    let item = |used: &Used| match used.candidates {
+        0 => json!({"use": used.how, "line": used.line}),
+        n if used.outside => {
+            json!({"use": used.how, "line": used.line, "candidates": n, "outside": true})
+        }
+        n => json!({"use": used.how, "line": used.line, "candidates": n}),
+    };
+    uses.iter().map(item).collect()
+}
+
+/// A name the crate does not define, as written: `fs::write`, `.unwrap`, `println!`.
+fn outside_name(edge: &Edge) -> String {
+    match edge.used {
+        Use::Call(CallKind::Method) => format!(".{}", edge.name),
+        Use::Call(CallKind::Macro) => format!("{}!", edge.path.as_deref().unwrap_or(&edge.name)),
+        _ => edge.path.clone().unwrap_or_else(|| edge.name.clone()),
+    }
+}
+
+/// The rank of the `n`th section's lines of a tier: lines of a higher tier
+/// are kept first, and within a tier, earlier sections.
+fn rank(tier: u32, n: usize) -> u32 {
+    tier * 100_000 - n.min(99_999) as u32
+}
+
+/// A line of an answer: its text, its JSON, and how much it matters.
+struct Line {
+    text: String,
+    json: Value,
+    /// Lines are kept highest first.
+    rank: u32,
+    /// What the line is, as a cut names it: `callers`.
+    part: &'static str,
+}
+
+impl Line {
+    fn new(text: String, json: Value, rank: u32, part: &'static str) -> Line {
+        Line {
+            text,
+            json,
+            rank,
+            part,
+        }
+    }
+}
+
+/// An answer that fits its budget: its first line, then the lines that
+/// matter most, to the first that does not fit, in their order; then what was
+/// left out and the budget that would hold it all, in the budget too. Only
+/// the first line and that last one are given when nothing else fits.
+fn render(query: &str, root: &Path, lines: &[Line], options: &Options) -> String {
+    let head = format!("{query} in {}", root.display());
+    let envelope =
+        json!({"query": query, "root": root.display().to_string(), "results": [], "cut": null});
+    let start = 1 + if options.json {
+        envelope.to_string().len()
+    } else {
+        head.len()
+    };
+    let sizes: Vec<usize> = lines
+        .iter()
+        .map(|line| {
+            1 + if options.json {
+                line.json.to_string().len()
+            } else {
+                line.text.len()
+            }
+        })
+        .collect();
+    let needed = (start + sizes.iter().sum::<usize>()).div_ceil(BYTES_PER_TOKEN);
+    let mut order: Vec<usize> = (0..lines.len()).collect();
+    order.sort_by_key(|&i| Reverse(lines[i].rank));
+    let fit = |room: usize| {
+        let mut kept = vec![false; lines.len()];
+        let mut used = start;
+        for &i in &order {
+            if used + sizes[i] > room {
+                break;
+            }
+            kept[i] = true;
+            used += sizes[i];
+        }
+        kept
+    };
+    let cut = |kept: &[bool]| -> Option<(String, Value)> {
+        let mut left: Vec<(&str, usize)> = Vec::new();
+        for (line, _) in lines.iter().zip(kept).filter(|(_, kept)| !**kept) {
+            match left.iter_mut().find(|(part, _)| *part == line.part) {
+                Some((_, n)) => *n += 1,
+                None => left.push((line.part, 1)),
+            }
+        }
+        if left.is_empty() {
+            return None;
+        }
+        let parts = left
+            .iter()
+            .map(|(part, n)| format!("{part} {n}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let text = format!(
+            "cut to {}, leaving out {parts}; --budget {needed} holds it all",
+            count(options.budget, "token")
+        );
+        let left_out: serde_json::Map<String, Value> = left
+            .iter()
+            .map(|(part, n)| (part.replace(' ', "_"), json!(n)))
+            .collect();
+        Some((
+            text,
+            json!({"budget": options.budget, "left_out": left_out, "needed": needed}),
+        ))
+    };
+    // Room for the last line, as long as the cut it tells of; a smaller room
+    // only cuts more, so this ends.
+    let room = options.budget.saturating_mul(BYTES_PER_TOKEN);
+    let mut reserve = 0;
+    let (kept, cut) = loop {
+        let kept = fit(room.saturating_sub(reserve));
+        let cut = cut(&kept);
+        let size = cut.as_ref().map_or(0, |(text, json)| {
+            1 + if options.json {
+                json.to_string().len()
+            } else {
+                text.len()
+            }
+        });
+        if size <= reserve {
+            break (kept, cut);
+        }
+        reserve = size;
+    };
+    if options.json {
+        let results: Vec<&Value> = lines
+            .iter()
+            .zip(&kept)
+            .filter(|(_, kept)| **kept)
+            .map(|(line, _)| &line.json)
+            .collect();
+        let cut = cut.map(|(_, json)| json);
+        let answer = json!({"query": query, "root": root.display().to_string(), "results": results, "cut": cut});
+        return format!("{answer}\n");
+    }
+    let mut out = format!("{head}\n");
+    for (line, _) in lines.iter().zip(&kept).filter(|(_, kept)| **kept) {
+        out.push_str(&line.text);
+        out.push('\n');
+    }
+    if let Some((text, _)) = cut {
+        out.push_str(&text);
+        out.push('\n');
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_written_name_names_the_end_of_a_full_one() {
+        // A full name: the module path, then the qualified name.
+        let named = |written: &str, full: &str, top: bool| {
+            names(&resolve::segments(written), &resolve::segments(full), top)
+        };
+        assert!(named("load", "store::Storage::load", false));
+        assert!(named("Storage::load", "store::Storage::load", false));
+        assert!(named("store::Storage::load", "store::Storage::load", false));
+        assert!(named("store::Storage::load", "store::Storage::load", true));
+        assert!(!named("Storage::load", "store::Storage::load", true));
+        assert!(named("load", "Storage::load#2", false));
+        assert!(named("load#2", "Storage::load#2", false));
+        assert!(!named("load#2", "Storage::load", false));
+        assert!(!named("load#2", "Storage::load#3", false));
+        assert!(named("Storage::load", "<Storage>::load", false));
+        assert!(named("render", "<Storage as Render>::render", false));
+        assert!(named(
+            "Storage::render",
+            "<Storage as fmt::Render>::render",
+            false
+        ));
+        assert!(named(
+            "Render::render",
+            "<Storage as fmt::Render>::render",
+            false
+        ));
+        assert!(named("Storage::load", "<store::Storage>::load", false));
+        assert!(named("Task", "Kind::Task", false));
+        assert!(!named("Storage::load", "load", false));
+        assert!(!named("Store::load", "Storage::load", false));
+        assert!(!named("loa", "Storage::load", false));
+        assert!(!named(
+            "fmt::Render::render",
+            "<Storage as fmt::Render>::render",
+            false
+        ));
+    }
+
+    #[test]
+    fn a_file_ends_at_a_lone_colon() {
+        let named = Named::parse("src/store.rs:Storage::load");
+        assert_eq!(
+            (named.file, named.parts),
+            (Some("src/store.rs"), vec!["Storage", "load"])
+        );
+        let named = Named::parse("<Storage as fmt::Display>::fmt");
+        assert_eq!(
+            (named.file, named.parts),
+            (None, vec!["<Storage as fmt::Display>", "fmt"])
+        );
+        let named = Named::parse("src/store.rs:120");
+        assert_eq!(
+            (named.file, named.parts),
+            (Some("src/store.rs"), vec!["120"])
+        );
+    }
+
+    #[test]
+    fn edits_count_insertions_deletions_and_changes() {
+        assert_eq!(edits("load", "load"), 0);
+        assert_eq!(edits("lod", "load"), 1);
+        assert_eq!(edits("laod", "load"), 2);
+        assert_eq!(edits("", "abc"), 3);
+        assert_eq!(edits("kitten", "sitting"), 3);
+    }
+
+    #[test]
+    fn an_impl_block_is_named_by_its_type_and_trait() {
+        assert_eq!(
+            impl_label("tests::impl Display for Storage#2"),
+            "impl Display for Storage"
+        );
+        assert_eq!(
+            impl_parts("tests::impl Display for Storage#2"),
+            ("Storage", Some("Display"))
+        );
+        assert_eq!(impl_parts("impl store::Storage"), ("store::Storage", None));
+        assert_eq!(
+            impl_parts("impl std::fmt::Display for Storage"),
+            ("Storage", Some("std::fmt::Display"))
+        );
+    }
+
+    #[test]
+    fn a_signature_runs_to_the_body() {
+        let lines = [
+            "    pub fn sites(",
+            "        &self,",
+            "        which: Sites,",
+            "    ) -> Result<(), Error> {",
+            "        x",
+        ];
+        assert_eq!(
+            signature(&lines, true).as_deref(),
+            Some("pub fn sites(&self, which: Sites) -> Result<(), Error>")
+        );
+        let lines = [
+            "fn f<T>(x: T) -> T",
+            "where",
+            "    T: Clone,",
+            "{",
+            "    x",
+            "}",
+        ];
+        assert_eq!(
+            signature(&lines, true).as_deref(),
+            Some("fn f<T>(x: T) -> T where T: Clone")
+        );
+        assert_eq!(
+            signature(&["    fn size(&self) -> u32;"], true).as_deref(),
+            Some("fn size(&self) -> u32;")
+        );
+        assert_eq!(
+            signature(&["pub struct Storage {", "    path: String,"], false).as_deref(),
+            Some("pub struct Storage")
+        );
+    }
+
+    #[test]
+    fn a_doc_is_given_by_its_first_sentence() {
+        let doc = "Reads the calls and references\n`which` names. Then more.\n\nAnother paragraph.";
+        assert_eq!(
+            first_sentence(doc).as_deref(),
+            Some("Reads the calls and references `which` names.")
+        );
+        assert_eq!(
+            first_sentence("\nOne line, no stop\n\nNext.").as_deref(),
+            Some("One line, no stop")
+        );
+        assert_eq!(
+            first_sentence(&"a".repeat(300)),
+            Some(format!("{}…", "a".repeat(200)))
+        );
+        assert_eq!(first_sentence("\n\n"), None);
+    }
+
+    #[test]
+    fn uses_name_their_candidates_once_when_they_share_them() {
+        let used = |how, line, candidates, outside| Used {
+            how,
+            line,
+            candidates,
+            outside,
+        };
+        assert_eq!(
+            uses_text(&[
+                used("call", 3, 0, false),
+                used("call", 9, 0, false),
+                used("ref", 4, 0, false)
+            ]),
+            "call 3, 9; ref 4"
+        );
+        assert_eq!(
+            uses_text(&[used("call", 3, 2, false), used("call", 9, 2, false)]),
+            "call 3, 9 (one of 2)"
+        );
+        assert_eq!(
+            uses_text(&[used("call", 3, 2, false), used("call", 9, 4, false)]),
+            "call 3 (one of 2), 9 (one of 4)"
+        );
+        assert_eq!(
+            uses_text(&[used("call", 3, 1, true), used("call", 9, 2, true)]),
+            "call 3 (or outside the crate), 9 (one of 2, or outside the crate)"
+        );
+    }
+
+    fn line(text: &str, rank: u32, part: &'static str) -> Line {
+        Line::new(text.to_string(), json!(text), rank, part)
+    }
+
+    #[test]
+    fn an_answer_keeps_what_matters_most_and_says_what_it_cut() {
+        let (a, b, c) = ("a".repeat(100), "b".repeat(100), "c".repeat(100));
+        let lines = [
+            line("target", 5, "definitions"),
+            line(&a, 3, "callers"),
+            line(&b, 3, "callers"),
+            line(&c, 1, "possible callers"),
+        ];
+        let render = |budget| {
+            render(
+                "callers x",
+                Path::new("/r"),
+                &lines,
+                &Options {
+                    budget,
+                    json: false,
+                },
+            )
+        };
+        // 16 bytes of first line, 7 of target, 101 for each other line: 326, 82 tokens.
+        assert_eq!(
+            render(82),
+            format!("callers x in /r\ntarget\n{a}\n{b}\n{c}\n")
+        );
+        // One short cuts the least, and the line that says so fits too.
+        let cut = render(81);
+        assert_eq!(
+            cut,
+            format!(
+                "callers x in /r\ntarget\n{a}\n{b}\ncut to 81 tokens, leaving out possible callers 1; --budget 82 holds it all\n"
+            )
+        );
+        // Here the cut's own line pushes out a caller that would fit without it.
+        let cut = render(60);
+        assert_eq!(
+            cut,
+            format!(
+                "callers x in /r\ntarget\n{a}\ncut to 60 tokens, leaving out callers 1, possible callers 1; --budget 82 holds it all\n"
+            )
+        );
+        assert!(cut.len() <= 60 * BYTES_PER_TOKEN);
+        // Too small a budget for anything gives the first line and the cut.
+        assert_eq!(
+            render(1),
+            "callers x in /r\ncut to 1 token, leaving out definitions 1, callers 2, possible callers 1; --budget 82 holds it all\n"
+        );
+    }
+
+    #[test]
+    fn a_cut_stops_at_the_first_line_that_does_not_fit() {
+        let lines = [
+            line(&"a".repeat(200), 3, "callers"),
+            line("b", 3, "callers"),
+        ];
+        let out = render(
+            "q",
+            Path::new("/r"),
+            &lines,
+            &Options {
+                budget: 30,
+                json: false,
+            },
+        );
+        assert_eq!(
+            out,
+            "q in /r\ncut to 30 tokens, leaving out callers 2; --budget 53 holds it all\n"
+        );
+    }
+
+    #[test]
+    fn a_json_answer_holds_the_same_lines_and_its_cut() {
+        let lines = [
+            line("target", 5, "definitions"),
+            line(&"a".repeat(200), 3, "possible callers"),
+        ];
+        let render = |budget| -> Value {
+            let out = render(
+                "callers x",
+                Path::new("/r"),
+                &lines,
+                &Options { budget, json: true },
+            );
+            assert!(out.len() <= budget * BYTES_PER_TOKEN, "{out}");
+            serde_json::from_str(&out).unwrap()
+        };
+        let answer = render(40);
+        assert_eq!(answer["query"], "callers x");
+        assert_eq!(answer["root"], "/r");
+        assert_eq!(answer["results"], json!(["target"]));
+        assert_eq!(
+            answer["cut"],
+            json!({"budget": 40, "left_out": {"possible_callers": 1}, "needed": 68})
+        );
+        let whole = render(68);
+        assert_eq!(whole["results"], json!(["target", "a".repeat(200)]));
+        assert_eq!(whole["cut"], Value::Null);
+    }
+}

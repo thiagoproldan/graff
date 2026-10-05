@@ -11,7 +11,7 @@ use crate::lang::Language;
 
 /// Bumped whenever what an extractor produces changes, so that results kept
 /// from an older extractor are read again rather than trusted.
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 3;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Extraction {
@@ -209,6 +209,27 @@ impl RefKind {
     }
 }
 
+impl Kind {
+    /// The kind `name` gives that name to.
+    pub fn from_name(name: &str) -> Option<Kind> {
+        Kind::ALL.into_iter().find(|kind| kind.name() == name)
+    }
+}
+
+impl CallKind {
+    /// The kind `name` gives that name to.
+    pub fn from_name(name: &str) -> Option<CallKind> {
+        CallKind::ALL.into_iter().find(|kind| kind.name() == name)
+    }
+}
+
+impl RefKind {
+    /// The kind `name` gives that name to.
+    pub fn from_name(name: &str) -> Option<RefKind> {
+        RefKind::ALL.into_iter().find(|kind| kind.name() == name)
+    }
+}
+
 /// Everything `source` holds, read as `language`.
 pub fn extract(language: Language, source: &[u8]) -> Extraction {
     match language {
@@ -242,5 +263,20 @@ mod tests {
                 serde(serde_json::to_value(kind).unwrap())
             );
         }
+    }
+
+    /// The index stores kinds by name and reads them back by it.
+    #[test]
+    fn each_kind_is_read_back_from_its_name() {
+        for kind in Kind::ALL {
+            assert_eq!(Kind::from_name(kind.name()), Some(kind));
+        }
+        for kind in CallKind::ALL {
+            assert_eq!(CallKind::from_name(kind.name()), Some(kind));
+        }
+        for kind in RefKind::ALL {
+            assert_eq!(RefKind::from_name(kind.name()), Some(kind));
+        }
+        assert_eq!(Kind::from_name("no such kind"), None);
     }
 }

@@ -18,7 +18,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
-use crate::extract::{self, Extraction};
+use crate::extract::{self, Call, CallKind, Extraction, Import, Kind, RefKind, Reference, Symbol};
 use crate::lang::Language;
 
 /// Bumped whenever the tables change: an index of another version is dropped
@@ -315,6 +315,25 @@ pub struct Store {
     connection: Connection,
 }
 
+/// What the index holds of a worktree: its files graff reads, by path, with
+/// what was read of each -- its definitions and use items, and the calls and
+/// references `Store::sites` read into it.
+pub struct Worktree {
+    pub files: Vec<(String, Extraction)>,
+    /// Each file's content, by the files' order.
+    contents: Vec<i64>,
+    id: i64,
+}
+
+/// Which calls and references `Store::sites` reads.
+pub enum Sites<'a> {
+    /// Those named one of these names, or whose path goes through one: the
+    /// uses of definitions so named.
+    Named(&'a [&'a str]),
+    /// Those in the definition of this qualified name, in this file.
+    In { path: &'a str, from: &'a str },
+}
+
 impl Store {
     /// Opens the index at `path`, making it if there is none. One of another
     /// schema is dropped and made again.
@@ -486,6 +505,162 @@ impl Store {
         Ok(checked)
     }
 
+    /// The files of the worktree at `root`, as the last check left them,
+    /// each with its definitions and use items; none for a worktree never
+    /// checked.
+    pub fn read(&self, root: &Path) -> Result<Worktree, Error> {
+        let id: i64 = self
+            .connection
+            .query_row(
+                "SELECT id FROM worktrees WHERE root = ?1",
+                [root.to_string_lossy()],
+                |row| row.get(0),
+            )
+            .optional()?
+            .unwrap_or(-1);
+        let files: Vec<(String, i64)> = self
+            .connection
+            .prepare("SELECT path, content FROM files WHERE worktree = ?1 ORDER BY path")?
+            .query_map([id], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<Result<_, _>>()?;
+        let mut worktree = Worktree {
+            files: files
+                .iter()
+                .map(|(path, _)| (path.clone(), Extraction::default()))
+                .collect(),
+            contents: files.iter().map(|(_, content)| *content).collect(),
+            id,
+        };
+        let holders = worktree.holders();
+        let mut query = self.connection.prepare(
+            "SELECT content, name, qualified, kind, start, end, doc FROM symbols
+             WHERE content IN (SELECT content FROM files WHERE worktree = ?1) ORDER BY rowid",
+        )?;
+        let mut rows = query.query([id])?;
+        while let Some(row) = rows.next()? {
+            let symbol = Symbol {
+                name: row.get(1)?,
+                qualified: row.get(2)?,
+                kind: known(Kind::from_name, &row.get::<_, String>(3)?)?,
+                start: row.get(4)?,
+                end: row.get(5)?,
+                doc: row.get(6)?,
+            };
+            for &f in holders.get(&row.get(0)?).into_iter().flatten() {
+                worktree.files[f].1.symbols.push(symbol.clone());
+            }
+        }
+        let mut query = self.connection.prepare(
+            "SELECT content, path, alias, glob, public, line FROM imports
+             WHERE content IN (SELECT content FROM files WHERE worktree = ?1) ORDER BY rowid",
+        )?;
+        let mut rows = query.query([id])?;
+        while let Some(row) = rows.next()? {
+            let import = Import {
+                path: row.get(1)?,
+                alias: row.get(2)?,
+                glob: row.get(3)?,
+                public: row.get(4)?,
+                line: row.get(5)?,
+            };
+            for &f in holders.get(&row.get(0)?).into_iter().flatten() {
+                worktree.files[f].1.imports.push(import.clone());
+            }
+        }
+        Ok(worktree)
+    }
+
+    /// Reads into a worktree's files the calls and references `which`
+    /// names, in place of those read before.
+    pub fn sites(&self, worktree: &mut Worktree, which: Sites) -> Result<(), Error> {
+        for (_, extraction) in &mut worktree.files {
+            extraction.calls.clear();
+            extraction.references.clear();
+        }
+        let (filter, values): (String, Vec<rusqlite::types::Value>) = match which {
+            Sites::Named(names) => {
+                let mut values: Vec<rusqlite::types::Value> = vec![worktree.id.into()];
+                let named = (0..names.len())
+                    .map(|i| format!("?{}", i + 2))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let through = (0..names.len())
+                    .map(|i| format!("path LIKE ?{}", names.len() + i + 2))
+                    .collect::<Vec<_>>()
+                    .join(" OR ");
+                values.extend(
+                    names
+                        .iter()
+                        .map(|name| rusqlite::types::Value::from(name.to_string())),
+                );
+                values.extend(
+                    names
+                        .iter()
+                        .map(|name| rusqlite::types::Value::from(format!("%{name}::%"))),
+                );
+                let through = if through.is_empty() {
+                    "0".to_string()
+                } else {
+                    through
+                };
+                (
+                    format!(
+                        "content IN (SELECT content FROM files WHERE worktree = ?1) AND (name IN ({named}) OR {through})"
+                    ),
+                    values,
+                )
+            }
+            Sites::In { path, from } => {
+                let Some(at) = worktree.files.iter().position(|(p, _)| p == path) else {
+                    return Ok(());
+                };
+                (
+                    "content = ?1 AND {from} = ?2".to_string(),
+                    vec![worktree.contents[at].into(), from.to_string().into()],
+                )
+            }
+        };
+        let holders = worktree.holders();
+        let calls = format!(
+            "SELECT content, name, path, kind, line, caller, receiver FROM calls WHERE {} ORDER BY rowid",
+            filter.replace("{from}", "caller")
+        );
+        let mut query = self.connection.prepare(&calls)?;
+        let mut rows = query.query(rusqlite::params_from_iter(&values))?;
+        while let Some(row) = rows.next()? {
+            let call = Call {
+                name: row.get(1)?,
+                path: row.get(2)?,
+                kind: known(CallKind::from_name, &row.get::<_, String>(3)?)?,
+                line: row.get(4)?,
+                from: row.get(5)?,
+                receiver: row.get(6)?,
+            };
+            for &f in holders.get(&row.get(0)?).into_iter().flatten() {
+                worktree.files[f].1.calls.push(call.clone());
+            }
+        }
+        let references = format!(
+            "SELECT content, name, path, kind, line, user FROM refs WHERE {} ORDER BY rowid",
+            filter.replace("{from}", "user")
+        );
+        let mut query = self.connection.prepare(&references)?;
+        let mut rows = query.query(rusqlite::params_from_iter(&values))?;
+        while let Some(row) = rows.next()? {
+            let reference = Reference {
+                name: row.get(1)?,
+                path: row.get(2)?,
+                kind: known(RefKind::from_name, &row.get::<_, String>(3)?)?,
+                line: row.get(4)?,
+                from: row.get(5)?,
+            };
+            for &f in holders.get(&row.get(0)?).into_iter().flatten() {
+                worktree.files[f].1.references.push(reference.clone());
+            }
+        }
+        Ok(())
+    }
+
     /// What the worktree at `root` last saw of each file, by path.
     fn records(&self, root: &str) -> Result<HashMap<String, Record>, Error> {
         let mut query = self.connection.prepare(
@@ -510,6 +685,26 @@ impl Store {
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
+}
+
+impl Worktree {
+    /// The files holding each content: two files with the same bytes share it.
+    fn holders(&self) -> HashMap<i64, Vec<usize>> {
+        let mut holders: HashMap<i64, Vec<usize>> = HashMap::new();
+        for (f, content) in self.contents.iter().enumerate() {
+            holders.entry(*content).or_default().push(f);
+        }
+        holders
+    }
+}
+
+/// A kind read back by its name; one this build does not know is an error.
+fn known<K>(parse: fn(&str) -> Option<K>, name: &str) -> Result<K, Error> {
+    parse(name).ok_or_else(|| {
+        Error::Io(io::Error::other(format!(
+            "the index holds a kind graff does not know: {name}"
+        )))
+    })
 }
 
 fn content_id(
@@ -928,6 +1123,96 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn a_worktree_reads_back_as_extracted_and_its_sites_as_asked() {
+        let source = "use crate::x::{Y as Z, w::*};\n/// Doc.\nfn a(s: S) -> u32 { s.load(); b(); load::c(); MAX }\nfn d() { b() }\n";
+        let folder = Folder::new();
+        let root = repository(folder.0.join("repo"));
+        write(&root, "src/a.rs", source, OLD);
+        write(&root, "src/copy.rs", source, OLD);
+        let mut store = Store::open(&folder.0.join("index.db")).unwrap();
+        store.check(&root).unwrap();
+        let read = extract::extract(Language::Rust, source.as_bytes());
+        let mut worktree = store.read(&root).unwrap();
+        let paths: Vec<&str> = worktree
+            .files
+            .iter()
+            .map(|(path, _)| path.as_str())
+            .collect();
+        assert_eq!(paths, ["src/a.rs", "src/b.rs", "src/copy.rs"]);
+        for f in [0, 2] {
+            let (_, held) = &worktree.files[f];
+            assert_eq!(
+                (&held.symbols, &held.imports),
+                (&read.symbols, &read.imports)
+            );
+            assert!(held.calls.is_empty() && held.references.is_empty());
+        }
+        // Every name the file uses: all its sites, in each file of its content.
+        let names: Vec<&str> = read
+            .calls
+            .iter()
+            .map(|call| call.name.as_str())
+            .chain(
+                read.references
+                    .iter()
+                    .map(|reference| reference.name.as_str()),
+            )
+            .collect();
+        store.sites(&mut worktree, Sites::Named(&names)).unwrap();
+        for f in [0, 2] {
+            let (_, held) = &worktree.files[f];
+            assert_eq!(
+                (&held.calls, &held.references),
+                (&read.calls, &read.references)
+            );
+        }
+        let calls =
+            |worktree: &Worktree, f: usize| -> Vec<(String, Option<String>, Option<String>)> {
+                worktree.files[f]
+                    .1
+                    .calls
+                    .iter()
+                    .map(|call| (call.name.clone(), call.path.clone(), call.from.clone()))
+                    .collect()
+            };
+        let a = Some("a".to_string());
+        // One name: the uses of it and the paths through it, in place of the others.
+        store.sites(&mut worktree, Sites::Named(&["load"])).unwrap();
+        assert_eq!(
+            calls(&worktree, 0),
+            [
+                ("load".to_string(), None, a.clone()),
+                ("c".to_string(), Some("load::c".to_string()), a)
+            ]
+        );
+        assert_eq!(calls(&worktree, 1), []);
+        assert!(worktree.files[0].1.references.is_empty());
+        // The sites in one definition.
+        store
+            .sites(
+                &mut worktree,
+                Sites::In {
+                    path: "src/a.rs",
+                    from: "d",
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            calls(&worktree, 0),
+            [("b".to_string(), None, Some("d".to_string()))]
+        );
+        assert_eq!(calls(&worktree, 1), []);
+        // A worktree never checked holds nothing.
+        assert!(
+            store
+                .read(&folder.0.join("elsewhere"))
+                .unwrap()
+                .files
+                .is_empty()
+        );
     }
 
     #[test]

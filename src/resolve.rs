@@ -28,6 +28,12 @@ static STD_METHODS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
         .collect()
 });
 
+/// Whether std's types have a method of this name, which a method call
+/// graff cannot tell the receiver's type of may reach instead of the crate's.
+pub fn std_method(name: &str) -> bool {
+    STD_METHODS.contains(name)
+}
+
 /// What Rust's prelude brings into every module, and the primitive types:
 /// where no definition of one of these names is in scope, the prelude's is
 /// meant, not one elsewhere in the crate.
@@ -228,12 +234,15 @@ pub struct Edge {
     pub name: String,
     pub path: Option<String>,
     pub used: Use,
+    /// The qualified name of the definition the use is in, or none at the
+    /// top of the file, as a use item is.
+    pub from: Option<String>,
     pub resolution: Resolution,
 }
 
 /// Splits a qualified name or a path at `::`, but not inside angle brackets:
 /// `<Storage as fmt::Display>::fmt` is `<Storage as fmt::Display>` and `fmt`.
-fn segments(text: &str) -> Vec<&str> {
+pub(crate) fn segments(text: &str) -> Vec<&str> {
     let (mut found, mut depth, mut start) = (Vec::new(), 0usize, 0);
     let bytes = text.as_bytes();
     let mut i = 0;
@@ -255,14 +264,14 @@ fn segments(text: &str) -> Vec<&str> {
     found
 }
 
-fn last(path: &str) -> &str {
+pub(crate) fn last(path: &str) -> &str {
     segments(path).last().copied().unwrap_or(path)
 }
 
 /// The type a segment of a qualified name stands for, and the trait:
 /// `<Storage as fmt::Display>` is `Storage` and `fmt::Display`,
 /// `<store::Storage>` is `store::Storage`, and `Storage` is itself.
-fn container(segment: &str) -> (&str, Option<&str>) {
+pub(crate) fn container(segment: &str) -> (&str, Option<&str>) {
     match segment
         .strip_prefix('<')
         .and_then(|inner| inner.strip_suffix('>'))
@@ -341,6 +350,21 @@ fn place(path: &str, libs: &HashSet<String>) -> Scope {
     }
 }
 
+/// The packages that have a library: those with a src/lib.rs, by folder.
+fn libs<'p>(paths: impl Iterator<Item = &'p str>) -> HashSet<String> {
+    paths
+        .filter_map(|path| path.strip_suffix("src/lib.rs"))
+        .map(|package| package.trim_end_matches('/').to_string())
+        .collect()
+}
+
+/// The crate each file belongs to and its module path there, as `place`
+/// reads them from Cargo's layout.
+pub fn places(paths: &[&str]) -> Vec<(String, Vec<String>)> {
+    let libs = libs(paths.iter().copied());
+    paths.iter().map(|path| place(path, &libs)).collect()
+}
+
 /// A file's part of a module path: `store` for `store.rs`, none for `mod.rs`.
 fn module_name(part: &str) -> String {
     let name = part.trim_end_matches(".rs");
@@ -406,14 +430,7 @@ const TYPES: [Kind; 5] = [
 
 impl<'a> Index<'a> {
     fn new(files: &'a [File<'a>], libraries: &[Library]) -> Index<'a> {
-        let libs: HashSet<String> = files
-            .iter()
-            .filter_map(|f| {
-                f.path
-                    .strip_suffix("src/lib.rs")
-                    .map(|p| p.trim_end_matches('/').to_string())
-            })
-            .collect();
+        let libs = libs(files.iter().map(|f| f.path));
         let mut index = Index {
             files,
             places: files.iter().map(|f| place(f.path, &libs)).collect(),
@@ -968,7 +985,7 @@ impl<'a> Index<'a> {
             })
             .copied()
             .collect();
-        if STD_METHODS.contains(name) && !found.is_empty() {
+        if std_method(name) && !found.is_empty() {
             return Resolution::Ambiguous(distinct(found));
         }
         one(found, Rule::Unique)
@@ -1105,6 +1122,7 @@ pub fn resolve(files: &[File], libraries: &[Library]) -> Vec<Edge> {
                     name: site.name.to_string(),
                     path: site.path.map(String::from),
                     used: site.used,
+                    from: site.from.map(String::from),
                     resolution,
                 });
             }
@@ -1118,6 +1136,7 @@ pub fn resolve(files: &[File], libraries: &[Library]) -> Vec<Edge> {
                         name,
                         path: Some(path.to_string()),
                         used: Use::Qualifier,
+                        from: site.from.map(String::from),
                         resolution,
                     },
                 ));
@@ -1132,6 +1151,7 @@ pub fn resolve(files: &[File], libraries: &[Library]) -> Vec<Edge> {
                     name,
                     path: Some(path.clone()),
                     used: Use::Qualifier,
+                    from: None,
                     resolution,
                 },
             ));

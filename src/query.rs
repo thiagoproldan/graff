@@ -18,6 +18,7 @@ use std::path::Path;
 use serde_json::{Value, json};
 
 use crate::extract::{CallKind, Kind, RefKind, Symbol};
+use crate::lang::Language;
 use crate::resolve::{self, Definition, Edge, File, Library, Resolution, Use};
 use crate::store::{self, Sites, Store, Worktree};
 
@@ -122,11 +123,20 @@ pub fn callers(
     let mut code = Code::open(store, root)?;
     let targets = code.find_targets(symbol)?;
     let edges = code.edges_named(&targets)?;
+    let written = Named::parse(symbol).parts;
     let mut lines = Vec::new();
     for (n, &target) in targets.iter().enumerate() {
         let of = code.symbol(target).qualified.as_str();
-        let sure = code.by_caller(edges.iter().filter(|edge| reaches(edge, target)));
-        let possible = code.by_caller(edges.iter().filter(|edge| may_reach(edge, target)));
+        let sure = code.by_caller(
+            edges
+                .iter()
+                .filter(|edge| reaches(edge, target) && as_named(edge, of, &written)),
+        );
+        let possible = code.by_caller(
+            edges
+                .iter()
+                .filter(|edge| may_reach(edge, target) && as_named(edge, of, &written)),
+        );
         let text = format!(
             "{}: {}, {} possible",
             code.describe(target),
@@ -169,15 +179,22 @@ pub fn callees(
     for (n, &source) in sources.iter().enumerate() {
         let path = code.path(source).to_string();
         let from = code.symbol(source).qualified.clone();
-        let edges = code.edges(Sites::In {
-            path: &path,
-            from: &from,
-        })?;
+        // A Nix file reaches what anything in it does.
+        let whole = code.symbol(source).kind == Kind::File;
+        let edges = if whole {
+            code.edges(Sites::File(&path))?
+        } else {
+            code.edges(Sites::In {
+                path: &path,
+                from: &from,
+            })?
+        };
         let mut sure: Vec<(Definition, Vec<Used>)> = Vec::new();
         let mut possible: Vec<(&str, Vec<Used>)> = Vec::new();
         let mut outside: Vec<String> = Vec::new();
         for edge in &edges {
-            if code.worktree.files[edge.file].0 != path || edge.from.as_deref() != Some(&from) {
+            let inside = whole || edge.from.as_deref() == Some(&from);
+            if code.worktree.files[edge.file].0 != path || !inside {
                 continue;
             }
             match &edge.resolution {
@@ -196,8 +213,13 @@ pub fn callees(
             }
         }
         sure.sort_by(|a, b| code.order(a.0).cmp(&code.order(b.0)));
+        let whole = if Language::of(&path, b"") == Some(Language::Rust) {
+            "crate"
+        } else {
+            "worktree"
+        };
         let text = format!(
-            "{}: {}, {} possible, {} outside the crate",
+            "{}: {}, {} possible, {} outside the {whole}",
             code.describe(source),
             count(sure.len(), "callee"),
             possible.len(),
@@ -219,7 +241,7 @@ pub fn callees(
             lines.push(Line::new(text, item, rank(2, n), "possible callees"));
         }
         if !outside.is_empty() {
-            let text = format!("  outside the crate: {}", outside.join(", "));
+            let text = format!("  outside the {whole}: {}", outside.join(", "));
             lines.push(Line::new(
                 text,
                 json!({"outside": outside, "from": from}),
@@ -247,8 +269,10 @@ pub fn outline(
     order.sort_by_key(|&s| (symbols[s].start, Reverse(symbols[s].end), s));
     // The definitions open around the one at hand, outermost first.
     let mut open: Vec<usize> = Vec::new();
-    let mut shown: Vec<(usize, usize)> = Vec::new();
+    let mut shown: Vec<(usize, usize, Option<usize>)> = Vec::new();
     let mut variants: HashMap<usize, Vec<&str>> = HashMap::new();
+    // A Nix file is a definition of its own, which holds the rest.
+    order.retain(|&s| symbols[s].kind != Kind::File);
     for s in order {
         while let Some(&top) = open.last()
             && symbols[s].end > symbols[top].end
@@ -262,19 +286,32 @@ pub fn outline(
             variants.entry(top).or_default().push(&symbols[s].name);
             continue;
         }
-        shown.push((s, open.len()));
+        shown.push((s, open.len(), open.last().copied()));
         open.push(s);
     }
     let length =
         fs::read(root.join(path)).map_or(0, |bytes| bytes.iter().filter(|&&b| b == b'\n').count());
-    let text = format!("{path}: {length} lines, {}", count(symbols.len(), "symbol"));
-    let item = json!({"file": path, "lines": length, "symbols": symbols.len()});
+    let defined = symbols.iter().filter(|s| s.kind != Kind::File).count();
+    let text = format!("{path}: {length} lines, {}", count(defined, "symbol"));
+    let item = json!({"file": path, "lines": length, "symbols": defined});
     let mut lines = vec![Line::new(text, item, rank(5, 0), "headers")];
-    for (s, depth) in shown {
+    let nix = Language::of(path, b"") == Some(Language::Nix);
+    for (s, depth, around) in shown {
         let symbol = &symbols[s];
         // An impl block's label says what it is: `impl Display for Storage`.
+        // A Nix binding's, its path from the one it is in, as written:
+        // `services.openssh.enable`.
         let label = if symbol.kind == Kind::Impl {
             impl_label(&symbol.qualified).to_string()
+        } else if nix {
+            let within = around
+                .and_then(|a| {
+                    symbol
+                        .qualified
+                        .strip_prefix(&format!("{}.", symbols[a].qualified))
+                })
+                .unwrap_or(&symbol.qualified);
+            format!("{} {within}", symbol.kind.name())
         } else {
             format!("{} {}", symbol.kind.name(), symbol.name)
         };
@@ -328,6 +365,7 @@ pub fn impact(
             )
         })
         .collect();
+    let written = Named::parse(symbol).parts;
     let mut seen: HashSet<Caller> = targets.iter().map(|&t| Caller::In(t)).collect();
     let mut frontier = targets.clone();
     let (mut total, mut files, mut levels) = (0, HashSet::new(), 0);
@@ -338,14 +376,19 @@ pub fn impact(
         let mut reached: Vec<Caller> = Vec::new();
         let mut possible: HashSet<Caller> = HashSet::new();
         for edge in edges.iter().filter(|edge| edge.used != Use::Import) {
+            // The first level's uses are of what the question names.
+            let named =
+                |d: &Definition| levels > 1 || as_named(edge, &code.symbol(*d).qualified, &written);
             match &edge.resolution {
-                Resolution::Resolved(d, _) if goal.contains(d) => {
+                Resolution::Resolved(d, _) if goal.contains(d) && named(d) => {
                     let caller = code.caller(edge);
                     if seen.insert(caller) {
                         reached.push(caller);
                     }
                 }
-                Resolution::Ambiguous(found) if found.iter().any(|d| goal.contains(d)) => {
+                Resolution::Ambiguous(found)
+                    if found.iter().any(|d| goal.contains(d) && named(d)) =>
+                {
                     possible.insert(code.caller(edge));
                 }
                 _ => {}
@@ -380,6 +423,15 @@ pub fn impact(
                 }
             })
             .collect();
+        // What reaches a Nix binding reaches its file, which a path imports:
+        // the file is followed too, once.
+        for caller in &reached {
+            if let Some(whole) = code.whole(code.caller_file(*caller))
+                && seen.insert(Caller::In(whole))
+            {
+                frontier.push(whole);
+            }
+        }
     }
     let mut text = format!(
         "{} in {}, to depth {levels}",
@@ -432,6 +484,8 @@ impl Used {
             Use::Call(_) => "call",
             Use::Reference(_) | Use::Qualifier => "ref",
             Use::Import => "use",
+            Use::File => "path",
+            Use::Setting => "set",
         };
         let candidates = match &edge.resolution {
             Resolution::Ambiguous(found) => found.len(),
@@ -550,6 +604,13 @@ impl<'s> Code<'s> {
         &self.worktree.files[d.file].1.symbols[d.symbol]
     }
 
+    /// A Nix file as a definition of its own.
+    fn whole(&self, file: usize) -> Option<Definition> {
+        let symbols = &self.worktree.files[file].1.symbols;
+        let s = symbols.iter().position(|s| s.kind == Kind::File)?;
+        Some(Definition { file, symbol: s })
+    }
+
     fn path(&self, d: Definition) -> &str {
         &self.worktree.files[d.file].0
     }
@@ -567,6 +628,7 @@ impl<'s> Code<'s> {
         match symbol.kind {
             // Its qualified name says it is one: `impl Display for Storage`.
             Kind::Impl => format!("{} {}", self.range(d), symbol.qualified),
+            Kind::File => format!("{} file", self.range(d)),
             kind => format!("{} {} {}", self.range(d), kind.name(), symbol.qualified),
         }
     }
@@ -679,6 +741,13 @@ impl<'s> Code<'s> {
     /// Each definition a written name names, the whole name first; an error
     /// that gives the nearest names when none does.
     fn find(&self, written: &str) -> Result<Vec<Definition>, Error> {
+        // A Nix file is named by its path, as `graff outline` names one.
+        if written.ends_with(".nix")
+            && let Ok(f) = self.file(written)
+            && let Some(whole) = self.whole(f)
+        {
+            return Ok(vec![whole]);
+        }
         let named = Named::parse(written);
         let file = named.file.map(|file| self.file(file)).transpose()?;
         if let (Some(f), [line]) = (file, &named.parts[..])
@@ -716,10 +785,32 @@ impl<'s> Code<'s> {
                 in_crate && names(parts, &self.full_name(d), top.is_some())
             })
             .collect();
-        // Those the name names more of first: `load` before `Storage::load`.
+        // A Nix binding defines each attrset its own path passes through:
+        // `users.users.alice = { .. };` defines `users.users`.
+        let mut implicit = HashSet::new();
+        if top.is_none() {
+            let named: HashSet<Definition> = found.iter().copied().collect();
+            for d in self.definitions(file) {
+                if !named.contains(&d) && self.passes_through(d, parts) {
+                    implicit.insert(d);
+                    found.push(d);
+                }
+            }
+        }
+        // A Nix option's declaration first, then the bindings that set it,
+        // which say nothing more once one is found; then those the name
+        // names more of: `load` before `Storage::load`.
+        if found.iter().any(|&d| self.symbol(d).kind == Kind::Option) {
+            found.retain(|&d| self.symbol(d).kind != Kind::Attribute);
+        }
         found.sort_by_key(|&d| {
             let qualified = resolve::segments(&self.symbol(d).qualified).len();
-            (qualified.saturating_sub(parts.len()), self.order(d))
+            (
+                precedence(self.symbol(d).kind),
+                implicit.contains(&d),
+                qualified.saturating_sub(parts.len()),
+                self.order(d),
+            )
         });
         if !found.is_empty() {
             return Ok(found);
@@ -727,7 +818,14 @@ impl<'s> Code<'s> {
         let near: Vec<String> = self
             .nearest(&named, file)
             .iter()
-            .map(|&d| format!("{} ({})", self.full_name(d).join("::"), self.range(d)))
+            .map(|&d| {
+                let joint = if Language::of(self.path(d), b"") == Some(Language::Nix) {
+                    "."
+                } else {
+                    "::"
+                };
+                format!("{} ({})", self.full_name(d).join(joint), self.range(d))
+            })
             .collect();
         let place = match file {
             Some(f) => self.worktree.files[f].0.clone(),
@@ -763,6 +861,28 @@ impl<'s> Code<'s> {
         Ok(targets)
     }
 
+    /// Whether a Nix binding's own path -- the names it writes, after those
+    /// of the binding it is in -- passes through written names to more:
+    /// `users.users.alice` passes through `users.users`, but `home` inside
+    /// it does not, nor does `users.users` itself.
+    fn passes_through(&self, d: Definition, parts: &[&str]) -> bool {
+        let symbol = self.symbol(d);
+        let binding = matches!(
+            symbol.kind,
+            Kind::Attribute | Kind::Variable | Kind::Function
+        );
+        if !binding || Language::of(self.path(d), b"") != Some(Language::Nix) {
+            return false;
+        }
+        let full = resolve::segments(&symbol.qualified);
+        let own = (1..full.len())
+            .rev()
+            .find(|&n| self.defined[d.file].contains_key(&full[..n].join(".")))
+            .unwrap_or(0);
+        (parts.len().max(own + 1)..full.len())
+            .any(|end| names_run(parts, &full[end - parts.len()..end]))
+    }
+
     /// A definition's module path in its crate, then its qualified name, by
     /// segment: `store`, `Storage`, `load`.
     fn full_name(&self, d: Definition) -> Vec<&str> {
@@ -777,7 +897,9 @@ impl<'s> Code<'s> {
         let symbols = &self.worktree.files[file].1.symbols;
         (0..symbols.len())
             .filter(|&s| {
-                symbols[s].start <= line && line <= symbols[s].end && symbols[s].kind != Kind::Impl
+                symbols[s].start <= line
+                    && line <= symbols[s].end
+                    && !matches!(symbols[s].kind, Kind::Impl | Kind::File)
             })
             .max_by_key(|&s| (symbols[s].start, Reverse(symbols[s].end)))
             .map(|symbol| Definition { file, symbol })
@@ -794,7 +916,7 @@ impl<'s> Code<'s> {
         files.flat_map(|(f, (_, extraction))| {
             let symbols = extraction.symbols.iter().enumerate();
             symbols
-                .filter(|(_, symbol)| symbol.kind != Kind::Impl)
+                .filter(|(_, symbol)| !matches!(symbol.kind, Kind::Impl | Kind::File))
                 .map(move |(s, _)| Definition { file: f, symbol: s })
         })
     }
@@ -884,6 +1006,27 @@ impl<'s> Code<'s> {
     }
 }
 
+/// Whether a use is of what a question names, when the definition it
+/// reaches stands for many: a Nix declaration under an interpolated name,
+/// `options.sys.${name}.enable`, is reached by `sys.audio.enable` and by
+/// `sys.video.enable`, and `sys.audio.enable` names only the first. A path
+/// may go on past what it uses, into the option's value.
+fn as_named(edge: &Edge, qualified: &str, written: &[&str]) -> bool {
+    if !qualified.contains("${") {
+        return true;
+    }
+    let Some(path) = &edge.path else {
+        return false;
+    };
+    let used = resolve::segments(path);
+    (written.len()..=used.len()).any(|end| {
+        written
+            .iter()
+            .zip(&used[end - written.len()..end])
+            .all(|(w, u)| w == u || w.starts_with("${"))
+    })
+}
+
 fn reaches(edge: &Edge, target: Definition) -> bool {
     matches!(&edge.resolution, Resolution::Resolved(d, _) if *d == target)
 }
@@ -940,18 +1083,43 @@ fn names(parts: &[&str], full: &[&str], top: bool) -> bool {
     } else {
         parts.len() <= full.len()
     };
-    fits && parts
-        .iter()
-        .rev()
-        .zip(full.iter().rev())
-        .all(|(written, segment)| names_segment(written, segment))
+    fits && names_run(parts, &full[full.len() - parts.len()..])
+}
+
+/// Whether written segments name as many of a definition's, one by one. A
+/// Nix name interpolated, `${name}`, stands for any written between two it
+/// names as written: `sys.audio.enable` names `sys.${name}.enable`, but
+/// neither `audio.enable` nor `sys.audio` does.
+fn names_run(parts: &[&str], run: &[&str]) -> bool {
+    parts.len() == run.len()
+        && parts
+            .iter()
+            .zip(run)
+            .enumerate()
+            .all(|(i, (written, segment))| {
+                names_segment(written, segment)
+                    && (!segment.starts_with("${") || (i > 0 && i + 1 < parts.len()))
+            })
+}
+
+/// Where a Nix definition comes among those a name names: an option's
+/// declaration first, the bindings that may set it last. Rust's all come
+/// alike.
+fn precedence(kind: Kind) -> u8 {
+    match kind {
+        Kind::Input => 1,
+        Kind::Function => 2,
+        Kind::Variable => 3,
+        Kind::Attribute => 4,
+        _ => 0,
+    }
 }
 
 /// Whether a written segment names one of a qualified name: `load` names
 /// `load#2`, and `load#2` only it; `Storage` and `Render` both name
-/// `<Storage as Render>`.
+/// `<Storage as Render>`; any names a Nix name interpolated, `${name}`.
 fn names_segment(written: &str, segment: &str) -> bool {
-    if written == segment {
+    if written == segment || segment.starts_with("${") {
         return true;
     }
     let segment = segment.split('#').next().unwrap_or(segment);
@@ -1304,6 +1472,20 @@ mod tests {
         assert!(!named(
             "fmt::Render::render",
             "<Storage as fmt::Render>::render",
+            false
+        ));
+        // A Nix name interpolated stands for one written between two named.
+        assert!(named(
+            "sys.audio.enable",
+            "options.sys.${name}.enable",
+            false
+        ));
+        assert!(named("enable", "options.sys.${name}.enable", false));
+        assert!(!named("audio.enable", "options.sys.${name}.enable", false));
+        assert!(!named("sys.audio", "options.sys.${name}", false));
+        assert!(!named(
+            "dconf.settings",
+            "body.sites.${site}.settings",
             false
         ));
     }

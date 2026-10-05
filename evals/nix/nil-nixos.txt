@@ -1,0 +1,8 @@
+run 2026-10-05
+graff e054547 with uncommitted changes
+corpus nixos: a git repository at f7eef58 (git archive), ., 158 .nix files
+truth nil 2026-07-23: 1947 names asked, 544 with no definition nil finds; 262 bound by let, 149 bound by other, 973 bound by parameter, 19 bound by rec
+
+broken resolver: precision 0.074, recall 0.075
+graff: precision 1.000 (283 of 283 judged; 10 unjudged), recall 1.000 (281 of 281 references to let and rec bindings)
+missed, by what graff did: 

@@ -23,7 +23,7 @@ use crate::lang::Language;
 
 /// Bumped whenever the tables change: an index of another version is dropped
 /// and built again, as a cache may be.
-const SCHEMA: i64 = 2;
+const SCHEMA: i64 = 3;
 
 /// A file written this close before graff saw it may be written again within
 /// the same tick of the file system's clock and keep its stat, so it is hashed
@@ -64,7 +64,8 @@ const TABLES: &str = "
         kind TEXT NOT NULL,
         line INTEGER NOT NULL,
         caller TEXT,
-        receiver TEXT
+        receiver TEXT,
+        local TEXT
     );
     CREATE INDEX calls_by_content ON calls (content);
     CREATE INDEX calls_by_name ON calls (name);
@@ -74,7 +75,8 @@ const TABLES: &str = "
         path TEXT,
         kind TEXT NOT NULL,
         line INTEGER NOT NULL,
-        user TEXT
+        user TEXT,
+        local TEXT
     );
     CREATE INDEX refs_by_content ON refs (content);
     CREATE INDEX refs_by_name ON refs (name);
@@ -84,7 +86,9 @@ const TABLES: &str = "
         alias TEXT,
         glob INTEGER NOT NULL,
         public INTEGER NOT NULL,
-        line INTEGER NOT NULL
+        line INTEGER NOT NULL,
+        importer TEXT,
+        via TEXT
     );
     CREATE INDEX imports_by_content ON imports (content);
     CREATE TABLE worktrees (
@@ -332,6 +336,8 @@ pub enum Sites<'a> {
     Named(&'a [&'a str]),
     /// Those in the definition of this qualified name, in this file.
     In { path: &'a str, from: &'a str },
+    /// Those anywhere in this file.
+    File(&'a str),
 }
 
 impl Store {
@@ -551,7 +557,7 @@ impl Store {
             }
         }
         let mut query = self.connection.prepare(
-            "SELECT content, path, alias, glob, public, line FROM imports
+            "SELECT content, path, alias, glob, public, line, importer, via FROM imports
              WHERE content IN (SELECT content FROM files WHERE worktree = ?1) ORDER BY rowid",
         )?;
         let mut rows = query.query([id])?;
@@ -562,6 +568,8 @@ impl Store {
                 glob: row.get(3)?,
                 public: row.get(4)?,
                 line: row.get(5)?,
+                from: row.get(6)?,
+                via: row.get(7)?,
             };
             for &f in holders.get(&row.get(0)?).into_iter().flatten() {
                 worktree.files[f].1.imports.push(import.clone());
@@ -584,7 +592,8 @@ impl Store {
                     .map(|i| format!("?{}", i + 2))
                     .collect::<Vec<_>>()
                     .join(", ");
-                let through = (0..names.len())
+                // A Rust path goes through a name before `::`, a Nix one before `.`.
+                let through = (0..2 * names.len())
                     .map(|i| format!("path LIKE ?{}", names.len() + i + 2))
                     .collect::<Vec<_>>()
                     .join(" OR ");
@@ -597,6 +606,11 @@ impl Store {
                     names
                         .iter()
                         .map(|name| rusqlite::types::Value::from(format!("%{name}::%"))),
+                );
+                values.extend(
+                    names
+                        .iter()
+                        .map(|name| rusqlite::types::Value::from(format!("%{name}.%"))),
                 );
                 let through = if through.is_empty() {
                     "0".to_string()
@@ -619,10 +633,19 @@ impl Store {
                     vec![worktree.contents[at].into(), from.to_string().into()],
                 )
             }
+            Sites::File(path) => {
+                let Some(at) = worktree.files.iter().position(|(p, _)| p == path) else {
+                    return Ok(());
+                };
+                (
+                    "content = ?1".to_string(),
+                    vec![worktree.contents[at].into()],
+                )
+            }
         };
         let holders = worktree.holders();
         let calls = format!(
-            "SELECT content, name, path, kind, line, caller, receiver FROM calls WHERE {} ORDER BY rowid",
+            "SELECT content, name, path, kind, line, caller, receiver, local FROM calls WHERE {} ORDER BY rowid",
             filter.replace("{from}", "caller")
         );
         let mut query = self.connection.prepare(&calls)?;
@@ -635,13 +658,14 @@ impl Store {
                 line: row.get(4)?,
                 from: row.get(5)?,
                 receiver: row.get(6)?,
+                local: row.get(7)?,
             };
             for &f in holders.get(&row.get(0)?).into_iter().flatten() {
                 worktree.files[f].1.calls.push(call.clone());
             }
         }
         let references = format!(
-            "SELECT content, name, path, kind, line, user FROM refs WHERE {} ORDER BY rowid",
+            "SELECT content, name, path, kind, line, user, local FROM refs WHERE {} ORDER BY rowid",
             filter.replace("{from}", "user")
         );
         let mut query = self.connection.prepare(&references)?;
@@ -653,6 +677,7 @@ impl Store {
                 kind: known(RefKind::from_name, &row.get::<_, String>(3)?)?,
                 line: row.get(4)?,
                 from: row.get(5)?,
+                local: row.get(6)?,
             };
             for &f in holders.get(&row.get(0)?).into_iter().flatten() {
                 worktree.files[f].1.references.push(reference.clone());
@@ -737,9 +762,12 @@ impl<'t> Inserts<'t> {
                 "INSERT INTO contents (blob, language, extractor, syntax_error, too_deep, released) VALUES (?1, ?2, ?3, ?4, ?5, 0)",
             )?,
             symbol: transaction.prepare("INSERT INTO symbols VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")?,
-            call: transaction.prepare("INSERT INTO calls VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")?,
-            reference: transaction.prepare("INSERT INTO refs VALUES (?1, ?2, ?3, ?4, ?5, ?6)")?,
-            import: transaction.prepare("INSERT INTO imports VALUES (?1, ?2, ?3, ?4, ?5, ?6)")?,
+            call: transaction
+                .prepare("INSERT INTO calls VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)")?,
+            reference: transaction
+                .prepare("INSERT INTO refs VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)")?,
+            import: transaction
+                .prepare("INSERT INTO imports VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)")?,
         })
     }
 
@@ -777,16 +805,25 @@ impl<'t> Inserts<'t> {
                 c.kind.name(),
                 c.line,
                 c.from,
-                c.receiver
+                c.receiver,
+                c.local
             ])?;
         }
         for r in &extraction.references {
-            self.reference
-                .execute(params![id, r.name, r.path, r.kind.name(), r.line, r.from])?;
+            self.reference.execute(params![
+                id,
+                r.name,
+                r.path,
+                r.kind.name(),
+                r.line,
+                r.from,
+                r.local
+            ])?;
         }
         for i in &extraction.imports {
-            self.import
-                .execute(params![id, i.path, i.alias, i.glob, i.public, i.line])?;
+            self.import.execute(params![
+                id, i.path, i.alias, i.glob, i.public, i.line, i.from, i.via
+            ])?;
         }
         Ok(id)
     }
@@ -1031,7 +1068,7 @@ mod tests {
             "symbols" => ("symbols", &[]),
             "calls" => ("calls", &[("from", "caller")]),
             "references" => ("refs", &[("from", "user")]),
-            "imports" => ("imports", &[]),
+            "imports" => ("imports", &[("from", "importer")]),
             "syntax_error" | "too_deep" => ("contents", &[]),
             other => panic!("the store keeps no {other}"),
         }
@@ -1050,26 +1087,34 @@ mod tests {
     }
 
     /// Every part of an extraction, and every field of its records, as serde
-    /// lists them: a field the store does not keep fails here.
+    /// lists them, in each language: a field the store does not keep fails
+    /// here.
     #[test]
     fn everything_an_extraction_holds_is_kept() {
-        let source =
+        let rust =
             "use crate::x::{Y as Z, w::*};\n/// Doc.\nfn a(s: S) -> u32 { s.load(); b(); MAX }\n";
+        let nix = "{ myLib, ... }:\n# Doc.\nlet cfg = myLib.x; in { imports = [ ./a.nix ]; b = myLib.mkSys { n = cfg.y; }; }\n";
+        for (path, language, source) in [
+            ("src/a.rs", Language::Rust, rust),
+            ("a/b.nix", Language::Nix, nix),
+        ] {
+            kept(path, language, source);
+        }
+    }
+
+    fn kept(path: &str, language: Language, source: &str) {
         let folder = Folder::new();
         let root = repository(folder.0.join("repo"));
-        write(&root, "src/a.rs", source, OLD);
+        write(&root, path, source, OLD);
         let mut store = Store::open(&folder.0.join("index.db")).unwrap();
         store.check(&root).unwrap();
         let connection = &store.connection;
         let content: i64 = connection
-            .query_row(
-                "SELECT content FROM files WHERE path = 'src/a.rs'",
-                [],
-                |row| row.get(0),
-            )
+            .query_row("SELECT content FROM files WHERE path = ?1", [path], |row| {
+                row.get(0)
+            })
             .unwrap();
-        let read =
-            serde_json::to_value(extract::extract(Language::Rust, source.as_bytes())).unwrap();
+        let read = serde_json::to_value(extract::extract(language, source.as_bytes())).unwrap();
         for (part, value) in read.as_object().unwrap() {
             let (table, renamed) = kept_in(part);
             let column = |field: &str| {

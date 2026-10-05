@@ -14,10 +14,13 @@
 //! an edge, and so is the type a path goes through: `Storage` in
 //! `Storage::open()`.
 
+pub mod nix;
+
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
 use crate::extract::{CallKind, Extraction, Kind, RefKind, Symbol};
+use crate::lang::Language;
 
 /// The names of the methods std's types have, as evals/resolve/std_methods.py
 /// wrote them.
@@ -160,6 +163,10 @@ pub enum Use {
     Import,
     /// `Storage` in `Storage::open()`, `Kind` in `item::Kind::Task`.
     Qualifier,
+    /// A Nix path, which names a file: `./hosts/x.nix`, `import ./lib`.
+    File,
+    /// A Nix binding that sets an option: `services.foo.enable = true;`.
+    Setting,
 }
 
 impl Use {
@@ -169,6 +176,8 @@ impl Use {
             Use::Reference(kind) => format!("reference {}", kind.name()),
             Use::Import => "import".to_string(),
             Use::Qualifier => "qualifier".to_string(),
+            Use::File => "file".to_string(),
+            Use::Setting => "setting".to_string(),
         }
     }
 }
@@ -192,6 +201,16 @@ pub enum Rule {
     Receiver,
     /// The only definition of that name in the crate.
     Unique,
+    /// Nix: the binding the name is bound to in its file.
+    Scope,
+    /// Nix: the file a path names, or its folder's default.nix.
+    File,
+    /// Nix: a file of a folder a function lists with `builtins.readDir`.
+    Folder,
+    /// Nix: an input of the flake above the file.
+    Input,
+    /// Nix: an option the worktree declares where the path ends.
+    Option,
 }
 
 impl Rule {
@@ -204,6 +223,11 @@ impl Rule {
             Rule::Path => "path",
             Rule::Receiver => "receiver",
             Rule::Unique => "unique",
+            Rule::Scope => "scope",
+            Rule::File => "file",
+            Rule::Folder => "folder",
+            Rule::Input => "input",
+            Rule::Option => "option",
         }
     }
 }
@@ -242,7 +266,12 @@ pub struct Edge {
 
 /// Splits a qualified name or a path at `::`, but not inside angle brackets:
 /// `<Storage as fmt::Display>::fmt` is `<Storage as fmt::Display>` and `fmt`.
+/// One with no `::` is Nix's, or one name: split at each `.` but those
+/// quoted or interpolated.
 pub(crate) fn segments(text: &str) -> Vec<&str> {
+    if !text.contains("::") {
+        return crate::extract::nix::segments(text);
+    }
     let (mut found, mut depth, mut start) = (Vec::new(), 0usize, 0);
     let bytes = text.as_bytes();
     let mut i = 0;
@@ -359,10 +388,17 @@ fn libs<'p>(paths: impl Iterator<Item = &'p str>) -> HashSet<String> {
 }
 
 /// The crate each file belongs to and its module path there, as `place`
-/// reads them from Cargo's layout.
+/// reads them from Cargo's layout; a file in another language is its own,
+/// with no module.
 pub fn places(paths: &[&str]) -> Vec<(String, Vec<String>)> {
     let libs = libs(paths.iter().copied());
-    paths.iter().map(|path| place(path, &libs)).collect()
+    paths
+        .iter()
+        .map(|path| match Language::of(path, b"") {
+            Some(Language::Rust) => place(path, &libs),
+            _ => (path.to_string(), Vec::new()),
+        })
+        .collect()
 }
 
 /// A file's part of a module path: `store` for `store.rs`, none for `mod.rs`.
@@ -1065,9 +1101,44 @@ struct Site<'a> {
 }
 
 /// Every call and reference of the files, each use item and each type a
-/// path goes through, and what each reaches. `libraries` names the
-/// packages' libraries, for their other crates' paths.
+/// path goes through, and what each reaches: each language's files among
+/// themselves. `libraries` names the packages' libraries, for their other
+/// crates' paths.
 pub fn resolve(files: &[File], libraries: &[Library]) -> Vec<Edge> {
+    let rust: Vec<usize> = (0..files.len())
+        .filter(|&f| Language::of(files[f].path, b"") == Some(Language::Rust))
+        .collect();
+    let crates: Vec<File> = rust
+        .iter()
+        .map(|&f| File {
+            path: files[f].path,
+            extraction: files[f].extraction,
+        })
+        .collect();
+    let back = |d: Definition| Definition {
+        file: rust[d.file],
+        symbol: d.symbol,
+    };
+    let mut edges: Vec<Edge> = resolve_rust(&crates, libraries)
+        .into_iter()
+        .map(|edge| Edge {
+            file: rust[edge.file],
+            resolution: match edge.resolution {
+                Resolution::Resolved(d, rule) => Resolution::Resolved(back(d), rule),
+                Resolution::Ambiguous(found) => {
+                    Resolution::Ambiguous(found.into_iter().map(back).collect())
+                }
+                Resolution::External => Resolution::External,
+            },
+            ..edge
+        })
+        .collect();
+    edges.extend(nix::resolve(files));
+    edges
+}
+
+/// What `resolve` does for a crate's files.
+fn resolve_rust(files: &[File], libraries: &[Library]) -> Vec<Edge> {
     let index = Index::new(files, libraries);
     let mut edges = Vec::new();
     for (f, file) in files.iter().enumerate() {

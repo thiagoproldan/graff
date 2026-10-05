@@ -3,6 +3,7 @@
 //! one file alone; tying a call to the definition it reaches is resolution's
 //! work, across files.
 
+pub mod nix;
 pub mod rust;
 
 use serde::{Deserialize, Serialize};
@@ -11,7 +12,7 @@ use crate::lang::Language;
 
 /// Bumped whenever what an extractor produces changes, so that results kept
 /// from an older extractor are read again rather than trusted.
-pub const VERSION: u32 = 3;
+pub const VERSION: u32 = 4;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Extraction {
@@ -71,6 +72,17 @@ pub enum Kind {
     TypeAlias,
     /// An enum's variant, inside it: `State::Pending`.
     Variant,
+    /// A Nix attrset's binding: `services.openssh.enable = true;`.
+    Attribute,
+    /// A Nix `let` binding.
+    Variable,
+    /// A NixOS option a binding declares with mkOption, mkEnableOption or
+    /// mkPackageOption.
+    Option,
+    /// A flake's input: `nixpkgs` in `inputs.nixpkgs.url = ...;`.
+    Input,
+    /// A Nix file as a whole, which a path imports.
+    File,
 }
 
 /// A call: what is called, by name as written, from where.
@@ -89,6 +101,9 @@ pub struct Call {
     /// A method call's receiver, when it is `self` or a name: `self` in
     /// `self.load()`, `store` in `store.load()`; none for anything longer.
     pub receiver: Option<String>,
+    /// Nix: the qualified name of the binding in the file the name, or the
+    /// start of the path, is bound to, when one is.
+    pub local: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -114,6 +129,9 @@ pub struct Reference {
     pub kind: RefKind,
     pub line: u32,
     pub from: Option<String>,
+    /// Nix: the qualified name of the binding in the file the name, or the
+    /// start of the path, is bound to, when one is.
+    pub local: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -128,20 +146,26 @@ pub enum RefKind {
 }
 
 /// One name a `use` item brings in, its tree flattened: `use a::{b, c as d};`
-/// is `a::b` and `a::c` as `d`.
+/// is `a::b` and `a::c` as `d`. In Nix, a path as written, `./hosts/x.nix`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Import {
     /// The full path; for a glob, the path it opens (`a` for `use a::*`).
+    /// Empty for a folder Nix's `builtins.readDir` lists, named by a value.
     pub path: String,
     pub alias: Option<String>,
     pub glob: bool,
     /// `pub use`: a re-export.
     pub public: bool,
     pub line: u32,
+    /// Nix: the qualified name of the definition the path is in.
+    pub from: Option<String>,
+    /// Nix: the function the path is passed to, as written: `import`,
+    /// `pkgs.callPackage`, `myLib.importDir`.
+    pub via: Option<String>,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 13] = [
+    pub const ALL: [Kind; 18] = [
         Kind::Function,
         Kind::Method,
         Kind::Struct,
@@ -155,6 +179,11 @@ impl Kind {
         Kind::Macro,
         Kind::TypeAlias,
         Kind::Variant,
+        Kind::Attribute,
+        Kind::Variable,
+        Kind::Option,
+        Kind::Input,
+        Kind::File,
     ];
 
     /// Its name as stored and shown, the same as serde's.
@@ -173,6 +202,11 @@ impl Kind {
             Kind::Macro => "macro",
             Kind::TypeAlias => "type_alias",
             Kind::Variant => "variant",
+            Kind::Attribute => "attribute",
+            Kind::Variable => "variable",
+            Kind::Option => "option",
+            Kind::Input => "input",
+            Kind::File => "file",
         }
     }
 }
@@ -230,10 +264,27 @@ impl RefKind {
     }
 }
 
+/// A node's first line, 1-based.
+pub(crate) fn line(node: tree_sitter::Node) -> u32 {
+    node.start_position().row as u32 + 1
+}
+
+/// A node's last line: one that ends at the start of a line ends on the line
+/// before.
+pub(crate) fn end_line(node: tree_sitter::Node) -> u32 {
+    let end = node.end_position();
+    if end.column == 0 && end.row > node.start_position().row {
+        end.row as u32
+    } else {
+        end.row as u32 + 1
+    }
+}
+
 /// Everything `source` holds, read as `language`.
 pub fn extract(language: Language, source: &[u8]) -> Extraction {
     match language {
         Language::Rust => rust::extract(source),
+        Language::Nix => nix::extract(source),
     }
 }
 

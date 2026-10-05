@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "lowercase")]
 pub enum Language {
     Rust,
+    Nix,
 }
 
 impl Language {
@@ -16,6 +17,7 @@ impl Language {
         let name = path.rsplit('/').next().unwrap_or(path);
         match name.rsplit_once('.').map(|(_, extension)| extension) {
             Some("rs") => Some(Language::Rust),
+            Some("nix") => Some(Language::Nix),
             _ => None,
         }
     }
@@ -23,6 +25,7 @@ impl Language {
     pub fn name(self) -> &'static str {
         match self {
             Language::Rust => "rust",
+            Language::Nix => "nix",
         }
     }
 }
@@ -32,8 +35,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_rust_file_is_rust_and_others_are_not_read() {
+    fn a_rust_file_is_rust_a_nix_file_nix_and_others_are_not_read() {
         assert_eq!(Language::of("src/main.rs", b""), Some(Language::Rust));
+        assert_eq!(
+            Language::of("hosts/x/default.nix", b""),
+            Some(Language::Nix)
+        );
+        assert_eq!(Language::of("flake.nix", b""), Some(Language::Nix));
+        assert_eq!(Language::of("flake.lock", b""), None);
         assert_eq!(Language::of("src/main.rs.orig", b""), None);
         assert_eq!(Language::of("Cargo.toml", b""), None);
         assert_eq!(Language::of("rs", b""), None);

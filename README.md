@@ -10,12 +10,18 @@ Bash, Python, C and Markdown.
 
 ## Status
 
-graff reads Rust so far: definitions, calls, references and use items, each
-with its lines (`src/extract/`), kept in an index in `~/.cache/graff` that
-each query will bring up to date by itself, reading again only what changed
-(`src/store.rs`). It ties each call and reference to the definition it
-reaches, by Rust's rules for names rather than by types, and says what stays
-ambiguous (`src/resolve.rs`). It answers five questions (`src/query.rs`):
+graff reads Rust and Nix so far: definitions, calls, references and use
+items, each with its lines (`src/extract/`), kept in an index in
+`~/.cache/graff` that each query will bring up to date by itself, reading
+again only what changed (`src/store.rs`). It ties each call and reference to
+the definition it reaches, by Rust's rules for names rather than by types,
+and says what stays ambiguous (`src/resolve.rs`). In Nix, by its syntax
+alone, each binding is a definition named by its path, a NixOS option
+declared with mkOption one too, and a file one, which a path imports: a name
+is tied to the `let` or `rec` binding it is bound to, a path to its file (a
+folder a `builtins.readDir` function lists to what it lists), `inputs.x` to
+the flake's input, and a binding to the option of the worktree it sets
+(`src/resolve/nix.rs`). It answers five questions (`src/query.rs`):
 
     graff def Storage::load        # its lines, doc, signature, a type's impl blocks
     graff callers Storage::load    # what reaches it, by the definition each use is in
@@ -55,6 +61,9 @@ What graff does so far is measured there too:
   on graff's own source.
 - `evals/query/`: the edges a question resolves for itself against those of
   the whole worktree resolved, the same for each of ekko's 1,701 definitions.
+- `evals/nix/`: Nix against nix's evaluation of a NixOS host (options
+  declared and set, the module graph) and against nil's ties of names, on a
+  NixOS flake and on nixpkgs.
 
 ## Building
 

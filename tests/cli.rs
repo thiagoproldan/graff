@@ -188,9 +188,21 @@ struct Demo {
 
 impl Demo {
     fn new(name: &str) -> Demo {
+        Demo::of(
+            name,
+            &[
+                ("Cargo.toml", DEMO_MANIFEST),
+                ("src/lib.rs", DEMO_LIB),
+                ("src/store.rs", DEMO_STORE),
+            ],
+        )
+    }
+
+    /// A worktree of these files.
+    fn of(name: &str, files: &[(&str, &str)]) -> Demo {
         let top = folder(name);
         let repo = top.join("repo");
-        fs::create_dir_all(repo.join("src")).unwrap();
+        fs::create_dir_all(&repo).unwrap();
         assert!(
             Command::new("git")
                 .args(["init", "-q"])
@@ -199,9 +211,11 @@ impl Demo {
                 .unwrap()
                 .success()
         );
-        fs::write(repo.join("Cargo.toml"), DEMO_MANIFEST).unwrap();
-        fs::write(repo.join("src/lib.rs"), DEMO_LIB).unwrap();
-        fs::write(repo.join("src/store.rs"), DEMO_STORE).unwrap();
+        for (path, text) in files {
+            let path = repo.join(path);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, text).unwrap();
+        }
         let repo = fs::canonicalize(&repo).unwrap();
         Demo { top, repo }
     }
@@ -505,5 +519,235 @@ fn a_name_graff_does_not_know_is_refused_with_the_nearest() {
     assert_eq!(
         demo.refused(&["def", "src/store.rs:"]),
         "graff: src/store.rs: names no symbol: write load, Storage::load, src/store.rs:Storage::load or src/store.rs:120\n"
+    );
+}
+
+/// A flake with a host, a folder of modules and functions of its own.
+const NIX_DEMO: &[(&str, &str)] = &[
+    (
+        "flake.nix",
+        r#"{
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  outputs = { self, nixpkgs, ... }@inputs: {
+    nixosConfigurations.box = nixpkgs.lib.nixosSystem {
+      specialArgs = { myLib = import ./lib { inherit (nixpkgs) lib; }; };
+      modules = [ ./hosts/box ./modules ];
+    };
+  };
+}
+"#,
+    ),
+    (
+        "lib/default.nix",
+        r#"{ lib }:
+{
+  importDir = import ./importDir.nix { inherit lib; };
+  mkSys = import ./mkSys.nix { inherit lib; };
+}
+"#,
+    ),
+    (
+        "lib/importDir.nix",
+        r#"# Every module of a folder.
+{ lib }:
+dir: map (name: dir + "/${name}") (builtins.attrNames (builtins.readDir dir))
+"#,
+    ),
+    (
+        "lib/mkSys.nix",
+        r#"{ lib }:
+{ config, name, body ? { } }:
+{
+  # Turns the module on.
+  options.sys.${name}.enable = lib.mkEnableOption name;
+  config = lib.mkIf config.sys.${name}.enable body;
+}
+"#,
+    ),
+    (
+        "hosts/box/default.nix",
+        r#"{ ... }:
+{
+  sys.audio.enable = true;
+  sys.video = {
+    enable = false;
+  };
+  services.openssh.enable = true;
+  home-manager.users.alice = _: { };
+}
+"#,
+    ),
+    (
+        "modules/default.nix",
+        r#"{ myLib, ... }:
+{
+  imports = myLib.importDir ./.;
+}
+"#,
+    ),
+    (
+        "modules/audio.nix",
+        r#"{ config, myLib, pkgs, ... }:
+myLib.mkSys {
+  inherit config;
+  name = "audio";
+  body.services.pipewire.enable = true;
+  body.environment.systemPackages = [ pkgs.pavucontrol ];
+}
+"#,
+    ),
+    (
+        "modules/video.nix",
+        r#"{ config, myLib, ... }:
+myLib.mkSys {
+  inherit config;
+  name = "video";
+}
+"#,
+    ),
+];
+
+#[test]
+fn nix_def_gives_an_options_declaration_before_what_sets_it() {
+    let demo = Demo::of("nix-def", NIX_DEMO);
+    assert_eq!(
+        demo.ask(&["def", "sys.audio.enable"]),
+        demo.rooted(
+            "def sys.audio.enable in ROOT
+lib/mkSys.nix:5 option options.sys.${name}.enable
+  /// Turns the module on.
+  options.sys.${name}.enable = lib.mkEnableOption name;
+"
+        )
+    );
+    // What the worktree declares nowhere: the bindings that set it.
+    assert_eq!(
+        demo.ask(&["def", "services.openssh.enable"]),
+        demo.rooted(
+            "def services.openssh.enable in ROOT
+hosts/box/default.nix:7 attribute services.openssh.enable
+  services.openssh.enable = true;
+"
+        )
+    );
+    assert_eq!(
+        demo.ask(&["def", "nixpkgs"]),
+        demo.rooted(
+            "def nixpkgs in ROOT
+flake.nix:2 input inputs.nixpkgs
+  inputs.nixpkgs.url = \"github:NixOS/nixpkgs/nixos-unstable\";
+"
+        )
+    );
+    // A binding defines each attrset its own path passes through.
+    assert_eq!(
+        demo.ask(&["def", "services.pipewire"]),
+        demo.rooted(
+            "def services.pipewire in ROOT
+modules/audio.nix:5 attribute body.services.pipewire.enable
+  body.services.pipewire.enable = true;
+"
+        )
+    );
+    // A function's binding too.
+    assert_eq!(
+        demo.ask(&["def", "home-manager.users"]),
+        demo.rooted(
+            "def home-manager.users in ROOT
+hosts/box/default.nix:8 function home-manager.users.alice
+  home-manager.users.alice = _: { };
+"
+        )
+    );
+    // `${name}` stands for a name written between two named as they are:
+    // `pipewire.enable` names no `sys.${name}.enable`.
+    assert_eq!(
+        demo.ask(&["def", "pipewire.enable"]),
+        demo.rooted(
+            "def pipewire.enable in ROOT
+modules/audio.nix:5 attribute body.services.pipewire.enable
+  body.services.pipewire.enable = true;
+"
+        )
+    );
+}
+
+#[test]
+fn nix_callers_give_where_an_option_is_set_and_who_imports_a_file() {
+    let demo = Demo::of("nix-callers", NIX_DEMO);
+    // One declaration serves every `sys.*.enable`: the answer keeps the one asked.
+    assert_eq!(
+        demo.ask(&["callers", "sys.video.enable"]),
+        demo.rooted(
+            "callers sys.video.enable in ROOT
+lib/mkSys.nix:5 option options.sys.${name}.enable: 1 caller, 0 possible
+  hosts/box/default.nix:4-6 attribute sys.video: set 5
+"
+        )
+    );
+    // A folder `importDir` lists with builtins.readDir imports each module in it.
+    assert_eq!(
+        demo.ask(&["callers", "modules/audio.nix"]),
+        demo.rooted(
+            "callers modules/audio.nix in ROOT
+modules/audio.nix:1-7 file: 1 caller, 0 possible
+  modules/default.nix:3 attribute imports: path 3
+"
+        )
+    );
+    assert_eq!(
+        demo.ask(&["callers", "nixpkgs"]),
+        demo.rooted(
+            "callers nixpkgs in ROOT
+flake.nix:2 input inputs.nixpkgs: 2 callers, 0 possible
+  flake.nix:4-7 attribute outputs.nixosConfigurations.box: call 4
+  flake.nix:5 attribute outputs.nixosConfigurations.box.specialArgs.myLib: ref 5
+"
+        )
+    );
+}
+
+#[test]
+fn nix_outline_callees_and_impact() {
+    let demo = Demo::of("nix-outline", NIX_DEMO);
+    assert_eq!(
+        demo.ask(&["outline", "hosts/box/default.nix"]),
+        demo.rooted(
+            "outline hosts/box/default.nix in ROOT
+hosts/box/default.nix: 9 lines, 5 symbols
+  3 attribute sys.audio.enable
+  4-6 attribute sys.video
+    5 attribute enable
+  7 attribute services.openssh.enable
+  8 function home-manager.users.alice
+"
+        )
+    );
+    assert_eq!(
+        demo.ask(&["callees", "modules/audio.nix"]),
+        demo.rooted(
+            "callees modules/audio.nix in ROOT
+modules/audio.nix:1-7 file: 1 callee, 0 possible, 1 outside the worktree
+  lib/default.nix:4 attribute mkSys: call 2
+  outside the worktree: pkgs.pavucontrol
+"
+        )
+    );
+    // Through the files that import what reaches it, up to the flake.
+    assert_eq!(
+        demo.ask(&["impact", "lib/importDir.nix"]),
+        demo.rooted(
+            "impact lib/importDir.nix in ROOT
+lib/importDir.nix:1-3 file
+depth 1: 1 caller
+  lib/default.nix:3 attribute importDir
+depth 2: 2 callers
+  flake.nix:5 attribute outputs.nixosConfigurations.box.specialArgs.myLib
+  modules/default.nix:3 attribute imports
+depth 3: 1 caller
+  flake.nix:6 attribute outputs.nixosConfigurations.box.modules
+4 callers in 3 files, to depth 3
+"
+        )
     );
 }

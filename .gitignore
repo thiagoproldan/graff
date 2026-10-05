@@ -11,3 +11,4 @@ evals/bar/work/
 evals/bar/private/
 evals/store/bench/target/
 evals/extract/registry*.txt
+evals/nix/private/

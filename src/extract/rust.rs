@@ -16,7 +16,9 @@ use std::collections::{HashMap, HashSet};
 
 use tree_sitter::{Node, Parser, Point, Range};
 
-use super::{Call, CallKind, Extraction, Import, Kind, MAX_DEPTH, RefKind, Reference, Symbol};
+use super::{
+    Call, CallKind, Extraction, Import, Kind, MAX_DEPTH, RefKind, Reference, Symbol, end_line, line,
+};
 
 /// Words a macro's tokens can hold that name nothing in the program.
 const KEYWORDS: &[&str] = &[
@@ -96,20 +98,6 @@ struct Reader<'s> {
     taken: HashMap<String, u32>,
     /// How many levels deep the walk is.
     depth: usize,
-}
-
-fn line(node: Node) -> u32 {
-    node.start_position().row as u32 + 1
-}
-
-/// A node that ends at the start of a line ends on the line before.
-fn end_line(node: Node) -> u32 {
-    let end = node.end_position();
-    if end.column == 0 && end.row > node.start_position().row {
-        end.row as u32
-    } else {
-        end.row as u32 + 1
-    }
 }
 
 /// A node's children with the field each is in.
@@ -620,6 +608,8 @@ impl<'s> Reader<'s> {
             glob,
             public,
             line: line(node),
+            from: None,
+            via: None,
         };
         match node.kind() {
             "identifier" | "crate" | "self" | "super" | "scoped_identifier" | "metavariable" => {
@@ -670,6 +660,7 @@ impl<'s> Reader<'s> {
             line: line(at),
             from: self.from.clone(),
             receiver: None,
+            local: None,
         });
     }
 
@@ -973,6 +964,7 @@ impl<'s> Reader<'s> {
             kind,
             line: line(at),
             from: self.from.clone(),
+            local: None,
         });
     }
 

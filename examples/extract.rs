@@ -55,7 +55,7 @@ fn main() -> ExitCode {
         bytes += source.len();
         errors += usize::from(extraction.syntax_error);
         cut += usize::from(extraction.too_deep);
-        let (depth, error) = walk(&source);
+        let (depth, error) = walk(language, &source);
         if depth > deepest.0 {
             deepest = (depth, path.clone());
         }
@@ -81,11 +81,15 @@ fn main() -> ExitCode {
 
 /// How many levels the file's syntax tree has, and the first syntax error in
 /// it: its line and what it holds.
-fn walk(source: &[u8]) -> (usize, Option<(usize, String)>) {
+fn walk(language: Language, source: &[u8]) -> (usize, Option<(usize, String)>) {
+    let grammar = match language {
+        Language::Rust => tree_sitter_rust::LANGUAGE,
+        Language::Nix => tree_sitter_nix::LANGUAGE,
+    };
     let mut parser = tree_sitter::Parser::new();
     parser
-        .set_language(&tree_sitter_rust::LANGUAGE.into())
-        .expect("the Rust grammar loads");
+        .set_language(&grammar.into())
+        .expect("the grammar loads");
     let tree = parser.parse(source, None).expect("a tree");
     let mut cursor = tree.walk();
     let (mut level, mut deepest, mut error) = (0, 0, None);

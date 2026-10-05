@@ -1,8 +1,9 @@
 //! Prints each call, reference and use item graff finds in a worktree's
-//! files, and each type a path goes through, with what it ties each to, one
-//! JSON object per line. The files are read from stdin, one path per line,
-//! from the worktree's root, the folder named; a package's library is named
-//! as its Cargo.toml says.
+//! files, each type a path goes through, and in Nix each path written and
+//! each option a binding sets, with what it ties each to and the definition
+//! each is in, one JSON object per line. The files are read from stdin, one
+//! path per line, from the worktree's root, the folder named; a package's
+//! library is named as its Cargo.toml says.
 //!
 //!     git ls-files 'src/*.rs' | cargo run --release --example resolve -- PACKAGE
 //!
@@ -96,6 +97,7 @@ fn main() {
             "name": edge.name,
             "written": edge.path,
             "use": edge.used.name(),
+            "from": edge.from,
             "resolution": resolution,
             "rule": rule,
             "candidates": candidates,

@@ -605,6 +605,16 @@ myLib.mkSys {
 }
 "#,
     ),
+    (
+        "modules/theme.nix",
+        r#"{ config, myLib, ... }:
+myLib.mkSys {
+  inherit config;
+  name = "theme";
+  body.theme.enable = true;
+}
+"#,
+    ),
 ];
 
 #[test]
@@ -614,6 +624,32 @@ fn nix_def_gives_an_options_declaration_before_what_sets_it() {
         demo.ask(&["def", "sys.audio.enable"]),
         demo.rooted(
             "def sys.audio.enable in ROOT
+modules/audio.nix:2-7 option options.sys.audio.enable, written at lib/mkSys.nix:5
+  /// Turns the module on.
+  myLib.mkSys
+"
+        )
+    );
+    // A binding the name names more closely than any option sets another
+    // option, declared outside: the worktree's is named only by its end.
+    assert_eq!(
+        demo.ask(&["def", "theme.enable"]),
+        demo.rooted(
+            "def theme.enable in ROOT
+modules/theme.nix:2-6 option options.sys.theme.enable, written at lib/mkSys.nix:5
+  /// Turns the module on.
+  myLib.mkSys
+modules/theme.nix:5 attribute config.theme.enable
+  body.theme.enable = true;
+"
+        )
+    );
+    // No module calls the helper with `radio`: its own declaration, which
+    // `${name}` names any name in.
+    assert_eq!(
+        demo.ask(&["def", "sys.radio.enable"]),
+        demo.rooted(
+            "def sys.radio.enable in ROOT
 lib/mkSys.nix:5 option options.sys.${name}.enable
   /// Turns the module on.
   options.sys.${name}.enable = lib.mkEnableOption name;
@@ -639,12 +675,13 @@ flake.nix:2 input inputs.nixpkgs
 "
         )
     );
-    // A binding defines each attrset its own path passes through.
+    // A binding defines each attrset its own path passes through; one the
+    // helper's `body` is, where the helper puts it.
     assert_eq!(
         demo.ask(&["def", "services.pipewire"]),
         demo.rooted(
             "def services.pipewire in ROOT
-modules/audio.nix:5 attribute body.services.pipewire.enable
+modules/audio.nix:5 attribute config.services.pipewire.enable
   body.services.pipewire.enable = true;
 "
         )
@@ -665,7 +702,7 @@ hosts/box/default.nix:8 function home-manager.users.alice
         demo.ask(&["def", "pipewire.enable"]),
         demo.rooted(
             "def pipewire.enable in ROOT
-modules/audio.nix:5 attribute body.services.pipewire.enable
+modules/audio.nix:5 attribute config.services.pipewire.enable
   body.services.pipewire.enable = true;
 "
         )
@@ -675,12 +712,12 @@ modules/audio.nix:5 attribute body.services.pipewire.enable
 #[test]
 fn nix_callers_give_where_an_option_is_set_and_who_imports_a_file() {
     let demo = Demo::of("nix-callers", NIX_DEMO);
-    // One declaration serves every `sys.*.enable`: the answer keeps the one asked.
+    // The module that calls the helper declares the option.
     assert_eq!(
         demo.ask(&["callers", "sys.video.enable"]),
         demo.rooted(
             "callers sys.video.enable in ROOT
-lib/mkSys.nix:5 option options.sys.${name}.enable: 1 caller, 0 possible
+modules/video.nix:2-5 option options.sys.video.enable, written at lib/mkSys.nix:5: 1 caller, 0 possible
   hosts/box/default.nix:4-6 attribute sys.video: set 5
 "
         )
@@ -720,6 +757,20 @@ hosts/box/default.nix: 9 lines, 5 symbols
     5 attribute enable
   7 attribute services.openssh.enable
   8 function home-manager.users.alice
+"
+        )
+    );
+    // A helper's module: what it declares and sets, its arguments where
+    // nothing else stands for them.
+    assert_eq!(
+        demo.ask(&["outline", "modules/audio.nix"]),
+        demo.rooted(
+            "outline modules/audio.nix in ROOT
+modules/audio.nix: 7 lines, 4 symbols
+  2-7 option options.sys.audio.enable, written at lib/mkSys.nix:5
+  4 argument name
+  5 attribute config.services.pipewire.enable
+  6 attribute config.environment.systemPackages
 "
         )
     );

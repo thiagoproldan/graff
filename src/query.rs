@@ -271,8 +271,19 @@ pub fn outline(
     let mut open: Vec<usize> = Vec::new();
     let mut shown: Vec<(usize, usize, Option<usize>)> = Vec::new();
     let mut variants: HashMap<usize, Vec<&str>> = HashMap::new();
-    // A Nix file is a definition of its own, which holds the rest.
-    order.retain(|&s| symbols[s].kind != Kind::File);
+    // A Nix file is a definition of its own, which holds the rest; a
+    // helper's argument, a binding of the module stands for where it has one.
+    let made: HashSet<(u32, u32)> = symbols
+        .iter()
+        .filter(|s| s.kind != Kind::Argument)
+        .map(|s| (s.start, s.end))
+        .collect();
+    order.retain(|&s| {
+        let symbol = &symbols[s];
+        symbol.kind != Kind::File
+            && !(symbol.kind == Kind::Argument && made.contains(&(symbol.start, symbol.end)))
+    });
+    let defined = order.len();
     for s in order {
         while let Some(&top) = open.last()
             && symbols[s].end > symbols[top].end
@@ -287,11 +298,13 @@ pub fn outline(
             continue;
         }
         shown.push((s, open.len(), open.last().copied()));
-        open.push(s);
+        // What a helper writes, at the call's lines, holds none of the call's own bindings.
+        if code.written(Definition { file: f, symbol: s }).is_none() {
+            open.push(s);
+        }
     }
     let length =
         fs::read(root.join(path)).map_or(0, |bytes| bytes.iter().filter(|&&b| b == b'\n').count());
-    let defined = symbols.iter().filter(|s| s.kind != Kind::File).count();
     let text = format!("{path}: {length} lines, {}", count(defined, "symbol"));
     let item = json!({"file": path, "lines": length, "symbols": defined});
     let mut lines = vec![Line::new(text, item, rank(5, 0), "headers")];
@@ -316,11 +329,15 @@ pub fn outline(
             format!("{} {}", symbol.kind.name(), symbol.name)
         };
         let held = variants.get(&s);
+        let written = code.written(Definition { file: f, symbol: s });
         let text = format!(
-            "{}{} {label}{}",
+            "{}{} {label}{}{}",
             "  ".repeat(depth + 1),
             span(symbol.start, symbol.end),
             held.map(|names| format!(": {}", names.join(", ")))
+                .unwrap_or_default(),
+            written
+                .map(|(path, at)| format!(", written at {path}:{}", span(at.start, at.end)))
                 .unwrap_or_default()
         );
         let mut item = json!({
@@ -329,6 +346,9 @@ pub fn outline(
         });
         if let Some(names) = held {
             item["variants"] = json!(names);
+        }
+        if let Some((path, at)) = written {
+            item["written"] = json!({"path": path, "start": at.start, "end": at.end});
         }
         let (tier, part) = match depth {
             0 => (3, "symbols"),
@@ -457,6 +477,9 @@ struct Code<'s> {
     defined: Vec<HashMap<String, usize>>,
     /// Each file's crate and module path.
     places: Vec<(String, Vec<String>)>,
+    /// Where a Nix helper writes each binding it makes where a module
+    /// calls it.
+    written: HashMap<Definition, resolve::nix::Written>,
 }
 
 /// What a use of a name is in: a definition, or the top of a file.
@@ -507,7 +530,24 @@ impl<'s> Code<'s> {
     fn open(store: &'s mut Store, root: &'s Path) -> Result<Code<'s>, Error> {
         store.check(root)?;
         let store: &Store = store;
-        let worktree = store.read(root)?;
+        let mut worktree = store.read(root)?;
+        // A Nix helper a module's file calls makes the module there.
+        store.sites(&mut worktree, Sites::Top)?;
+        let instances = {
+            let files: Vec<File> = worktree
+                .files
+                .iter()
+                .map(|(path, extraction)| File { path, extraction })
+                .collect();
+            resolve::nix::instantiate(&files, &|path| fs::read(root.join(path)).ok())
+        };
+        let written = instances.apply(
+            &mut worktree
+                .files
+                .iter_mut()
+                .map(|(_, extraction)| extraction)
+                .collect::<Vec<_>>(),
+        );
         let libraries = worktree
             .files
             .iter()
@@ -545,6 +585,7 @@ impl<'s> Code<'s> {
             libraries,
             defined,
             places,
+            written,
         })
     }
 
@@ -625,20 +666,36 @@ impl<'s> Code<'s> {
     /// impl Storage`.
     fn describe(&self, d: Definition) -> String {
         let symbol = self.symbol(d);
-        match symbol.kind {
+        let described = match symbol.kind {
             // Its qualified name says it is one: `impl Display for Storage`.
             Kind::Impl => format!("{} {}", self.range(d), symbol.qualified),
             Kind::File => format!("{} file", self.range(d)),
             kind => format!("{} {} {}", self.range(d), kind.name(), symbol.qualified),
+        };
+        match self.written(d) {
+            Some((path, at)) => {
+                format!("{described}, written at {path}:{}", span(at.start, at.end))
+            }
+            None => described,
         }
     }
 
     fn json(&self, d: Definition) -> Value {
         let symbol = self.symbol(d);
-        json!({
+        let mut item = json!({
             "path": self.path(d), "start": symbol.start, "end": symbol.end,
             "kind": symbol.kind.name(), "qualified": symbol.qualified,
-        })
+        });
+        if let Some((path, at)) = self.written(d) {
+            item["written"] = json!({"path": path, "start": at.start, "end": at.end});
+        }
+        item
+    }
+
+    /// Where a Nix helper writes a binding it makes where a module calls it.
+    fn written(&self, d: Definition) -> Option<(&str, resolve::nix::Written)> {
+        let at = *self.written.get(&d)?;
+        Some((&self.worktree.files[at.file].0, at))
     }
 
     /// Where a definition comes in an answer: by file, then line.
@@ -776,13 +833,16 @@ impl<'s> Code<'s> {
             _ => None,
         };
         let parts = &named.parts[usize::from(top.is_some())..];
+        // A Nix helper's argument is named by what the helper makes of it.
         let mut found: Vec<Definition> = self
             .definitions(file)
             .filter(|&d| {
                 let in_crate = top
                     .flatten()
                     .is_none_or(|package| self.places[d.file].0 == package);
-                in_crate && names(parts, &self.full_name(d), top.is_some())
+                in_crate
+                    && self.symbol(d).kind != Kind::Argument
+                    && names(parts, &self.full_name(d), top.is_some())
             })
             .collect();
         // A Nix binding defines each attrset its own path passes through:
@@ -799,10 +859,35 @@ impl<'s> Code<'s> {
         }
         // A Nix option's declaration first, then the bindings that set it,
         // which say nothing more once one is found; then those the name
-        // names more of: `load` before `Storage::load`.
-        if found.iter().any(|&d| self.symbol(d).kind == Kind::Option) {
-            found.retain(|&d| self.symbol(d).kind != Kind::Attribute);
+        // names more of: `load` before `Storage::load`. A binding the name
+        // names more closely than any option sets another: `theme.enable`
+        // names `config.theme.enable` as written, and `sys.theme.enable`
+        // only by its end.
+        let past = |d: Definition| {
+            let full = resolve::segments(&self.symbol(d).qualified);
+            let nix = Language::of(self.path(d), b"") == Some(Language::Nix);
+            let root = usize::from(nix && matches!(full.first(), Some(&("config" | "options"))));
+            (full.len() - root).saturating_sub(parts.len())
+        };
+        let closest = found
+            .iter()
+            .filter(|&&d| self.symbol(d).kind == Kind::Option)
+            .map(|&d| past(d))
+            .min();
+        if let Some(closest) = closest {
+            found.retain(|&d| self.symbol(d).kind != Kind::Attribute || past(d) < closest);
         }
+        // A binding a helper makes where a module calls it says where the
+        // helper writes it, which then says nothing more.
+        let written: HashSet<(usize, u32, u32)> = found
+            .iter()
+            .filter_map(|d| self.written.get(d))
+            .map(|at| (at.file, at.start, at.end))
+            .collect();
+        found.retain(|&d| {
+            let symbol = self.symbol(d);
+            !written.contains(&(d.file, symbol.start, symbol.end))
+        });
         found.sort_by_key(|&d| {
             let qualified = resolve::segments(&self.symbol(d).qualified).len();
             (

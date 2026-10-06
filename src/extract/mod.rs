@@ -83,6 +83,12 @@ pub enum Kind {
     Input,
     /// A Nix file as a whole, which a path imports.
     File,
+    /// A binding of the attrset a Nix helper of the worktree is called with,
+    /// `name = "x";` in `myLib.mkSys { name = "x"; .. }`: the helper's
+    /// argument, not the module's binding. No extractor makes one: resolution
+    /// turns a binding into one when it instantiates the helper, and what the
+    /// helper makes of the binding stands in its place.
+    Argument,
 }
 
 /// A call: what is called, by name as written, from where.
@@ -165,7 +171,7 @@ pub struct Import {
 }
 
 impl Kind {
-    pub const ALL: [Kind; 18] = [
+    pub const ALL: [Kind; 19] = [
         Kind::Function,
         Kind::Method,
         Kind::Struct,
@@ -184,6 +190,7 @@ impl Kind {
         Kind::Option,
         Kind::Input,
         Kind::File,
+        Kind::Argument,
     ];
 
     /// Its name as stored and shown, the same as serde's.
@@ -207,6 +214,7 @@ impl Kind {
             Kind::Option => "option",
             Kind::Input => "input",
             Kind::File => "file",
+            Kind::Argument => "argument",
         }
     }
 }

@@ -79,6 +79,26 @@ def test_a_declaration_is_judged_at_the_line_and_at_the_file():
     assert rotated_line["correct"] == 0 and rotated_file["correct"] == 0
 
 
+def test_a_declaration_a_helper_makes_is_judged_where_the_helper_writes_it_too():
+    truth = options.declarations_truth(EVALUATED, to_path)
+    made = dict(definition("modules/a.nix", 1), written={"path": "lib/mkSys.nix", "start": 5, "end": 5})
+    elsewhere = dict(definition("modules/a.nix", 1), written={"path": "lib/mkSys.nix", "start": 9, "end": 9})
+    line, file, wrong, missed = options.score_declarations(truth, {"sys.a.enable": [made]})
+    assert (line["correct"], file["correct"], wrong) == (1, 1, [])
+    assert [level for level, loc, _, _ in missed if loc == "sys.a.enable"] == []
+    # Written at another line of the helper: right at the file only.
+    line, file, wrong, missed = options.score_declarations(truth, {"sys.a.enable": [elsewhere]})
+    assert (line["correct"], file["correct"], wrong) == (0, 1, [])
+    assert [level for level, loc, _, _ in missed if loc == "sys.a.enable"] == ["line"]
+
+
+def test_an_option_from_outside_is_judged_on_the_bindings_def_gives():
+    answers = [dict(definition("modules/a.nix", 3), kind="attribute"),
+               dict(definition("modules/b.nix", 4), kind="function"),
+               dict(definition("modules/c.nix", 1), kind="option")]
+    assert options.set_by(answers) == {"modules/a.nix", "modules/b.nix"}
+
+
 def test_an_options_own_default_is_no_definition():
     walked = {
         "nixos": [

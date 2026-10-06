@@ -1,12 +1,12 @@
 run 2026-10-05
-graff e054547 with uncommitted changes
+graff 7dc936a with uncommitted changes
 corpus a NixOS flake at f7eef58 (git archive), 158 .nix files; one host, evaluated by nix (Nix) 2.34.8 against nixpkgs c59305b, home-manager acd21c5
 truth 132 options declared in the worktree, 127 with a line; 376 options with a definition in the worktree on the host, 112 of them its own; 70 options whose definitions nix could not read (56 throw, 14 stop the walk); module graph 125 files of the worktree, 121 imports between them
 
-control, graff's answers rotated: declarations at the line 0.000; declarations at the file 0.000; settings of the worktree's options 0.084; settings of options declared outside 0.013; imports 0.008
+control, graff's answers rotated: declarations at the line 0.000; declarations at the file 0.000; settings of the worktree's options 0.118; settings of options declared outside 0.012; imports 0.008
 
-declarations at the line: precision 0.893 (108 of 121 answers), recall 0.850 (108 of 127 options)
-declarations at the file: precision 0.238 (30 of 126 answers), recall 0.227 (30 of 132 options)
-settings of the worktree's options (callers): precision at least 0.991 (106 of 107 judged, 4 in files the host does not import), recall 0.898 (106 of 118)
-settings of options declared outside (def): precision at least 0.984 (311 of 316 judged, 16 in files the host does not import), recall 0.931 (311 of 334)
+declarations at the line: precision 1.000 (127 of 127 answers), recall 1.000 (127 of 127 options)
+declarations at the file: precision 1.000 (132 of 132 answers), recall 1.000 (132 of 132 options)
+settings of the worktree's options (callers): precision at least 0.992 (118 of 119 judged, 5 in files the host does not import), recall 1.000 (118 of 118)
+settings of options declared outside (def): precision at least 0.985 (334 of 339 judged, 13 in files the host does not import), recall 1.000 (334 of 334)
 imports: precision at least 1.000 (120 of 120 judged, 16 in files the host does not import), recall 1.000 (121 of 121)

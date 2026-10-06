@@ -1,7 +1,14 @@
-# Nix, checked (task 13, step 1: syntax)
+# Nix, checked (task 13)
 
-graff reads Nix by its syntax alone (`src/extract/nix.rs`,
-`src/resolve/nix.rs`). Two checks hold it against what knows more:
+graff reads Nix in two steps, each checked here against the same truth.
+Step 1 reads the syntax alone (`src/extract/nix.rs`, `src/resolve/nix.rs`).
+Step 2, on each query, follows a helper of the worktree where a module
+calls it with an attrset, `myLib.mkSys { name = "x"; .. }`, and evaluates
+it as far as a module's shape goes: attrsets, `//`, `let`, `if`, `import`,
+functions applied, `mkIf`, `mkMerge`, and the names it interpolates from
+the call's literal arguments (`src/resolve/nix/instance.rs`). What the
+helper declares and sets then stands in the calling file, where the module
+system files it. Two checks hold graff against what knows more:
 
 - **options.py**: graff's answers on a NixOS flake's options and modules,
   against the module system's own, which nix evaluates for one host,
@@ -41,15 +48,17 @@ each Home Manager user's configuration
   option a helper of the flake declares (`myLib.mkSys { name = "x"; .. }`)
   has its position at the helper's line and its declaration at the module
   that calls the helper, so the two levels name different files.
-  `graff def OPTION` is the answer.
+  `graff def OPTION` is the answer. A declaration step 2 makes stands at
+  the call's lines and gives the helper's line it is written at
+  (`written`); either line counts at the line.
 - **settings**: the files `definitionsWithLocations` names for each option,
   against the files of `graff callers OPTION`'s `set` uses, for an option the
-  worktree declares, and of `graff def OPTION`'s bindings, for one declared
-  outside it (nixpkgs', Home Manager's). nix names only the definitions in
-  force on the host: none under a `mkIf` false there, nor one a higher
-  priority overrides. A file the host does not import is not judged, and
-  one it imports that nix does not name counts as wrong: precision is a
-  lower bound.
+  worktree declares, and of `graff def OPTION`'s bindings (its attributes,
+  functions and variables), for one declared outside it (nixpkgs', Home
+  Manager's). nix names only the definitions in force on the host: none
+  under a `mkIf` false there, nor one a higher priority overrides. A file
+  the host does not import is not judged, and one it imports that nix does
+  not name counts as wrong: precision is a lower bound.
 - **imports**: the module graph `evalModules` returns (`graph`), between
   files of the worktree, against graff's edges from a path in an `imports`
   list (or a folder a `readDir` function lists) to a file.
@@ -68,41 +77,89 @@ The flake at f7eef58, 158 .nix files, one host; nix 2.34.8, nixpkgs
 c59305b, home-manager acd21c5. Truth: 132 options declared in the worktree
 (127 with a line), 376 options defined there on the host (112 of them its
 own), 121 imports between 125 of its files. 70 options' definitions could
-not be read: 56 throw, 14 stop the walk.
+not be read: 56 throw, 14 stop the walk. Step 1 is graff at 7dc936a, and
+between the two runs only graff changed: the flake and the truth are the
+same (nix evaluated again for step 2), and the scorer, changed for step 2
+(the `written` line, `def`'s bindings alone), scores step 1 as before, to
+the last line of its details.
 
-|                                    | precision               | recall                | control |
-| ---------------------------------- | ----------------------- | --------------------- | ------- |
-| declarations, at the line          | 0.893, 108 of 121       | 0.850, 108 of 127     | 0.000   |
-| declarations, at the file          | 0.238, 30 of 126        | 0.227, 30 of 132      | 0.000   |
-| settings of the flake's options    | at least 0.991, 106/107 | 0.898, 106 of 118     | 0.084   |
-| settings of options from outside   | at least 0.984, 311/316 | 0.931, 311 of 334     | 0.013   |
-| imports                            | 1.000, 120 of 120       | 1.000, 121 of 121     | 0.008   |
+|                                  | step 1, precision       | step 1, recall    | step 2, precision       | step 2, recall    |
+| -------------------------------- | ----------------------- | ----------------- | ----------------------- | ----------------- |
+| declarations, at the line        | 0.893, 108 of 121       | 0.850, 108 of 127 | 1.000, 127 of 127       | 1.000, 127 of 127 |
+| declarations, at the file        | 0.238, 30 of 126        | 0.227, 30 of 132  | 1.000, 132 of 132       | 1.000, 132 of 132 |
+| settings of the flake's options  | at least 0.991, 106/107 | 0.898, 106 of 118 | at least 0.992, 118/119 | 1.000, 118 of 118 |
+| settings of options from outside | at least 0.984, 311/316 | 0.931, 311 of 334 | at least 0.985, 334/339 | 1.000, 334 of 334 |
+| imports                          | 1.000, 120 of 120       | 1.000, 121 of 121 | 1.000, 120 of 120       | 1.000, 121 of 121 |
+
+The answers rotated score, row by row, 0.000, 0.000, 0.084, 0.013 and
+0.008 at step 1, and 0.000, 0.000, 0.118, 0.012 and 0.008 at step 2. Not
+judged, in files the host does not import: 4 settings of the flake's
+options and 16 of options from outside at step 1, 5 and 13 at step 2, and
+16 imports at both.
 
 - **What step 1 misses is the helpers, as expected.** At the file, 83 of
   the 102 options missed are declared by a helper (`mkSys`, `mkSpec`,
-  `mkModule`): graff answers with the helper's line, which is right at the
+  `mkModule`): step 1 answers with the helper's line, which is right at the
   line and wrong at the file. The other 19 are declared through a helper's
   `options` argument, where their path is relative (`options.address`):
-  graff finds none, or, for 12, the binding that sets it. The 12 settings
+  step 1 finds none, or, for 12, the binding that sets it. The 12 settings
   of the flake's options missed are of those 19; of the 23 settings of
   options from outside missed, 22 go through a helper's argument (13
-  `packages = [ .. ]` of `mkPackages`, 9 of `mkUser`), and one is
-  `inherit (cfg) hostKeys;` in a plain attrset, which graff reads as no
-  binding. Instantiating the helpers is step 2.
-- **What counts as wrong, read by hand**: of the 6 settings judged wrong,
-  3 sit under a `mkIf` false on the host, 1 is in a module a Home Manager
-  `sharedModules` list holds, in force on the host, which the module system
-  files under no file of the worktree, and 2 are graff's: `def
-  stylix.enable` also names `sys.stylix.enable`, and `def systemd.services`
-  also names `boot.initrd.systemd.services.rollback`, as a name is named by
-  its end.
-- **Fixed by this check**: a declaration under an interpolated name,
-  `options.sys.${name}.enable`, answered `def zramSwap.enable`, which only
-  a binding writes, as `${name}` matched the first name written; and a
+  `packages = [ .. ]` of `mkPackages`, 9 of `mkUser`), and one is an
+  `inherit (cfg) x;`, which graff reads as no binding in a plain attrset.
+- **Step 2 finds them all.** A declaration a helper makes stands in the
+  module that calls it, at the call's lines, written at the helper's line;
+  one through the helper's `options` argument takes its whole path, at its
+  own line. What an argument sets is set at the argument's line, and what
+  the helper writes, at the call. The `inherit (cfg) x;` is in a helper's
+  body, where step 2 reads it as the binding it is; in a module that calls
+  no helper, graff still reads it as none (task 90).
+- **What counts as wrong, read by hand**: 6 settings at each step. 3 at
+  step 1 and 4 at step 2 sit under a `mkIf` the host's configuration makes
+  false, which step 2 does not evaluate: it decides a condition on the
+  call's arguments alone. The fourth is a setting a helper makes, which
+  step 1 did not find. 1 is in a module a Home Manager `sharedModules` list
+  holds, in force on the host, which the module system files under no file
+  of the worktree. 1 is graff's at both steps: `def systemd.services` also
+  names a binding of `boot.initrd.systemd.services.x`, as a name is named
+  by its end. Step 1's other, `def x.enable` naming a binding that sets the
+  flake's `sys.x.enable`, is gone at step 2, which makes that option: a
+  binding the name names no more closely than an option goes.
+- **Fixed by this check, at step 1**: a declaration under an interpolated
+  name, `options.sys.${name}.enable`, answered `def` of an option only a
+  binding writes, as `${name}` matched the first name written; and a
   binding that sets an option through a path into its value,
   `users.users.alice = { .. };`, set nothing, nor did one whose value is a
   function. Before those, the settings of options from outside scored
   0.985 and 0.775, those of the flake's own 0.990 and 0.864.
+- **Fixed by these checks, at step 2**:
+  - a helper called in an `imports` list, or merged by `recursiveUpdate`,
+    was not followed: 2 declarations missed at the file;
+  - a condition the call's arguments decide was taken both ways, so a
+    helper's `mkIf (home != null)` set Home Manager's options for a user
+    the call gives no `home`: 3 settings wrong. `!`, `&&`, `||`, and `==`
+    or `!=` against `null`, a text, a bool or `[ ]` are now decided when
+    the arguments decide them;
+  - `def` of an option from outside named the flake's option of the same
+    end and dropped the bindings that set it, and the check, taking any
+    file of the answer, counted that right where the same module also set
+    it. A binding now goes only for an option the name names at least as
+    closely, and the check judges `def`'s bindings alone;
+  - the bindings in a list a helper's argument holds, a Home Manager
+    `sharedModules = [ { .. } ]`, were hidden with the argument; they now
+    stand under the path the helper puts the list at;
+  - on nixpkgs lib/, examples/resolve.rs counted 2,213 arguments and
+    nothing made: `runTests { .. }`, a function of the worktree called
+    with an attrset where a module goes, was taken for a helper. A call is
+    a helper's only when the walk makes something of it.
+- **What step 2 costs**: on the flake it makes 1,197 bindings in 85 files,
+  and 1,185 bindings of the calls' attrsets become arguments
+  (examples/resolve.rs). On one of the flake's options and one of its
+  modules, `graff def`, `callers` and `outline` take 34-35, 39 and 33-34 ms
+  at step 2, against 11, 14 and 10-11 ms at step 1 (five runs each, in two
+  alternating rounds): each query parses again the files whose calls reach
+  a helper, and walks them (task 91). On nixpkgs it makes nothing, in lib/
+  or in nixos/modules/.
 
 ## nil.py
 
@@ -139,6 +196,9 @@ nixpkgs at c59305b (the host's), nil 2026-07-23.
 | not judged                 | 10                   | 265                     | 1,204                               |
 | recall                     | 1.000, 281 of 281    | 1.000, 7,003 of 7,003   | 1.000, 65,499 of 65,499             |
 
+- **Step 2 changes none of it**: run again with the helpers followed, the
+  three reports are the same past their first two lines, the lists of
+  their details included.
 - **nixpkgs lib/ is no longer held out**: its first run scored 0.998 and
   0.987, and its misses fixed three rules. A `let` inside an option's
   declaration binds names (graff had taken it for the option's fields); a

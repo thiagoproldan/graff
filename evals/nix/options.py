@@ -234,6 +234,21 @@ def set_in(answer):
             if "caller" in item and not item.get("possible") and any(u["use"] == "set" for u in item["uses"])}
 
 
+def lines_of(definition):
+    """Where a definition graff gives is written: at its own line, and,
+    for one a helper makes where a module calls it, at the helper's."""
+    found = {(definition["path"], definition["start"])}
+    if "written" in definition:
+        found.add((definition["written"]["path"], definition["written"]["start"]))
+    return found
+
+
+def set_by(definitions):
+    """The files of the bindings among graff's definitions: an option's
+    declaration a name names by its end is another option's."""
+    return {d["path"] for d in definitions if d["kind"] in ("attribute", "function", "variable")}
+
+
 def score_declarations(truth, answers):
     """Precision over graff's definitions, recall over options: at the line
     of declarationPositions (options it gives one for) and at the files of
@@ -243,7 +258,7 @@ def score_declarations(truth, answers):
     for loc in sorted(truth):
         held, found = truth[loc], answers.get(loc, [])
         if held["positions"]:
-            hits = [d for d in found if (d["path"], d["start"]) in held["positions"]]
+            hits = [d for d in found if lines_of(d) & held["positions"]]
             line["answers"] += len(found)
             line["correct"] += len(hits)
             line["options"] += 1
@@ -258,7 +273,7 @@ def score_declarations(truth, answers):
         if not hits:
             missed.append(("file", loc, sorted(held["declarations"]), found))
         wrong += [(loc, d) for d in found if d["path"] not in held["declarations"]
-                  and (d["path"], d["start"]) not in held["positions"]]
+                  and not lines_of(d) & held["positions"]]
     return line, file, wrong, missed
 
 
@@ -380,8 +395,7 @@ def main():
         defs = {loc: definitions_of(snapshot.graff(binaries["graff"], "def", loc)) for loc in declared}
         setters = {loc: set_in(snapshot.graff(binaries["graff"], "callers", loc)) for loc in declared}
         outside = sorted(loc for loc in settings if loc not in declared)
-        bindings = {loc: {d["path"] for d in definitions_of(snapshot.graff(binaries["graff"], "def", loc))}
-                    for loc in outside}
+        bindings = {loc: set_by(definitions_of(snapshot.graff(binaries["graff"], "def", loc))) for loc in outside}
         vias = {(path, i["line"], i["path"]): i.get("via")
                 for path, extraction in snapshot.extractions(binaries["extract"]).items() for i in extraction["imports"]}
         every, judged = import_edges(snapshot.edges(binaries["resolve"]), vias)

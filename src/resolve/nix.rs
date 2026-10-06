@@ -11,12 +11,17 @@
 //! - An option's path -- `config.services.foo.enable`, and each binding of
 //!   an attrset, which may set one -- to the option a file of the worktree
 //!   declares there, `${name}` matching any name but the first, those with
-//!   the most names first; a path may go on into the option's value, as
-//!   `users.users.alice = { .. };` sets `users.users`. One no file declares
-//!   is nixpkgs' or a flake's: external.
+//!   the most names first, and of those the most written out; a path may go
+//!   on into the option's value, as `users.users.alice = { .. };` sets
+//!   `users.users`. One no file declares is nixpkgs' or a flake's: external.
 //! - Any other path, from a module's argument as `myLib.mkSys`, to the one
 //!   definition of the worktree named as its end, when only one is; from
 //!   nixpkgs (`pkgs`, `lib`, `builtins`), external.
+//!
+//! What a helper of the worktree makes where a module calls it,
+//! `myLib.mkSys { name = "x"; .. }`, is made first, by `instantiate`: the
+//! options it declares and the bindings it sets, in the calling file, as
+//! the module system files them.
 
 use std::collections::HashMap;
 
@@ -25,6 +30,10 @@ use crate::lang::Language;
 
 use super::{Definition, Edge, File, Resolution, Rule, Use};
 use crate::extract::nix::segments;
+
+mod instance;
+
+pub use instance::{Instances, Written, instantiate};
 
 /// Where a path from these names leads outside the worktree: nixpkgs, its
 /// library and Nix's builtins, an overlay's two package sets, a flake's
@@ -80,9 +89,10 @@ struct Index<'a> {
     /// The definitions a path may name by its end: functions, `let`
     /// bindings and attributes, by name.
     named: HashMap<&'a str, Vec<Definition>>,
-    /// Each option the worktree declares, and its path: the names after
-    /// the last `options`.
-    options: Vec<(Definition, Vec<&'a str>)>,
+    /// Each option the worktree declares, its path -- the names after the
+    /// last `options` -- and how many of those are written out, not
+    /// interpolated.
+    options: Vec<(Definition, Vec<&'a str>, usize)>,
     /// Each flake's folder, and its inputs by name.
     flakes: Vec<(&'a str, HashMap<&'a str, Definition>)>,
 }
@@ -117,7 +127,9 @@ impl<'a> Index<'a> {
                             .iter()
                             .rposition(|&name| name == "options")
                             .map_or(0, |i| i + 1);
-                        index.options.push((d, names[at..].to_vec()));
+                        let names = names[at..].to_vec();
+                        let written = names.iter().filter(|name| !wild(name)).count();
+                        index.options.push((d, names, written));
                     }
                     Kind::Input => {
                         inputs.insert(symbol.name.as_str(), d);
@@ -161,13 +173,15 @@ impl<'a> Index<'a> {
 
     /// The options a path may set or read: those declared where the path
     /// ends, a declaration's `${..}` matching any name after its first; of
-    /// them, those whose paths hold the most names. One whose path starts
-    /// with a name interpolated, `options.${name}.enable`, would match
-    /// every `.enable`: it matches none.
+    /// them, those whose paths hold the most names, and of those, the most
+    /// written out: a helper's `sys.${name}.enable` gives way to the
+    /// `sys.audio.enable` a call of it makes. One whose path starts with a
+    /// name interpolated, `options.${name}.enable`, would match every
+    /// `.enable`: it matches none.
     fn option(&self, path: &[&str]) -> Resolution {
         let mut found: Vec<Definition> = Vec::new();
-        let mut most = 0;
-        for (d, names) in &self.options {
+        let mut best = (0, 0);
+        for (d, names, written) in &self.options {
             let fits = names.first().is_some_and(|first| !wild(first))
                 && names.len() <= path.len()
                 && names
@@ -175,11 +189,11 @@ impl<'a> Index<'a> {
                     .rev()
                     .zip(path.iter().rev())
                     .all(|(declared, used)| declared == used || wild(declared));
-            if !fits || names.len() < most {
+            if !fits || (names.len(), *written) < best {
                 continue;
             }
-            if names.len() > most {
-                most = names.len();
+            if (names.len(), *written) > best {
+                best = (names.len(), *written);
                 found.clear();
             }
             found.push(*d);
@@ -586,13 +600,28 @@ a
     ];
 
     fn edges() -> Vec<(String, u32, String, String, String)> {
-        let extractions: Vec<Extraction> = WORKTREE
+        let mut extractions: Vec<Extraction> = WORKTREE
             .iter()
             .map(|(path, source)| {
                 let language = Language::of(path, b"").expect("a language graff reads");
                 extract::extract(language, source.as_bytes())
             })
             .collect();
+        let instances = {
+            let files: Vec<File> = WORKTREE
+                .iter()
+                .zip(&extractions)
+                .map(|((path, _), extraction)| File { path, extraction })
+                .collect();
+            let read = |path: &str| {
+                WORKTREE
+                    .iter()
+                    .find(|(p, _)| *p == path)
+                    .map(|(_, source)| source.as_bytes().to_vec())
+            };
+            instantiate(&files, &read)
+        };
+        instances.apply(&mut extractions.iter_mut().collect::<Vec<_>>());
         let files: Vec<File> = WORKTREE
             .iter()
             .zip(&extractions)
@@ -702,7 +731,8 @@ a
     #[test]
     fn a_binding_sets_and_a_read_reads_the_option_declared_where_its_path_ends() {
         let edges = edges();
-        // `${name}` matches any name.
+        // The option a call of a helper makes, before the helper's own, where
+        // `${name}` matches any name: no module calls mkSys for `video`.
         assert_eq!(
             reach(
                 &edges,
@@ -710,7 +740,7 @@ a
                 "sys.audio.enable",
                 "setting"
             ),
-            ["lib/mkSys.nix options.sys.${name}.enable (option)"]
+            ["modules/audio.nix options.sys.audio.enable (option)"]
         );
         assert_eq!(
             reach(

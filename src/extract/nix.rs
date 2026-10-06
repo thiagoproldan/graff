@@ -65,7 +65,7 @@ const BUILTINS: &[&str] = &[
     "true",
 ];
 
-fn parser() -> Parser {
+pub(crate) fn parser() -> Parser {
     let mut parser = Parser::new();
     parser
         .set_language(&tree_sitter_nix::LANGUAGE.into())
@@ -200,13 +200,13 @@ struct Reader<'s> {
     quiet: bool,
 }
 
-fn named_children(node: Node) -> Vec<Node> {
+pub(crate) fn named_children(node: Node) -> Vec<Node> {
     let mut cursor = node.walk();
     node.named_children(&mut cursor).collect()
 }
 
 /// An expression without the parentheses around it.
-fn unwrapped(mut node: Node) -> Node {
+pub(crate) fn unwrapped(mut node: Node) -> Node {
     while node.kind() == "parenthesized_expression" {
         match node.child_by_field_name("expression") {
             Some(inner) => node = inner,
@@ -218,7 +218,7 @@ fn unwrapped(mut node: Node) -> Node {
 
 /// A function application's function, and its arguments in order: `f a b`
 /// is `(f a) b`.
-fn applied(node: Node) -> (Node, Vec<Node>) {
+pub(crate) fn applied(node: Node) -> (Node, Vec<Node>) {
     let mut arguments = Vec::new();
     let mut function = node;
     while function.kind() == "apply_expression" {
@@ -234,14 +234,44 @@ fn applied(node: Node) -> (Node, Vec<Node>) {
     (function, arguments)
 }
 
-fn binding_set(node: Node) -> Option<Node> {
+pub(crate) fn binding_set(node: Node) -> Option<Node> {
     named_children(node)
         .into_iter()
         .find(|child| child.kind() == "binding_set")
 }
 
+/// The name a function application's function goes by: `mkIf` for `mkIf`
+/// and for `lib.mkIf`.
+pub(crate) fn function_name<'t>(source: &'t [u8], function: Node) -> Option<&'t str> {
+    let name = match function.kind() {
+        "variable_expression" => function.child_by_field_name("name"),
+        "select_expression" => function
+            .child_by_field_name("attrpath")
+            .and_then(|attrpath| named_children(attrpath).into_iter().last()),
+        _ => None,
+    };
+    name.and_then(|name| name.utf8_text(source).ok())
+}
+
+/// Whether a value declares an option: `lib.mkOption { .. }`, or
+/// `mkEnableOption ".." // { default = true; }`.
+pub(crate) fn declares_option(source: &[u8], value: Node) -> bool {
+    let mut value = unwrapped(value);
+    while value.kind() == "binary_expression" {
+        match value.child_by_field_name("left") {
+            Some(left) => value = unwrapped(left),
+            None => return false,
+        }
+    }
+    if value.kind() != "apply_expression" {
+        return false;
+    }
+    let (function, _) = applied(value);
+    function_name(source, function).is_some_and(|name| OPTION_MAKERS.contains(&name))
+}
+
 /// Whether a name may stand unquoted in a path.
-fn plain_name(name: &str) -> bool {
+pub(crate) fn plain_name(name: &str) -> bool {
     let mut chars = name.chars();
     chars
         .next()
@@ -485,7 +515,7 @@ impl<'s> Reader<'s> {
     /// The kind of definition a binding is, by its value.
     fn kind_of(&self, value: Node, set: Set) -> Kind {
         let value = unwrapped(value);
-        if self.declares_option(value) {
+        if declares_option(self.source, value) {
             Kind::Option
         } else if value.kind() == "function_expression" {
             Kind::Function
@@ -494,30 +524,6 @@ impl<'s> Reader<'s> {
         } else {
             Kind::Attribute
         }
-    }
-
-    /// Whether a value declares an option: `lib.mkOption { .. }`, or
-    /// `mkEnableOption ".." // { default = true; }`.
-    fn declares_option(&self, value: Node) -> bool {
-        let mut value = unwrapped(value);
-        while value.kind() == "binary_expression" {
-            match value.child_by_field_name("left") {
-                Some(left) => value = unwrapped(left),
-                None => return false,
-            }
-        }
-        if value.kind() != "apply_expression" {
-            return false;
-        }
-        let (function, _) = applied(value);
-        let name = match function.kind() {
-            "variable_expression" => function.child_by_field_name("name"),
-            "select_expression" => function
-                .child_by_field_name("attrpath")
-                .and_then(|attrpath| named_children(attrpath).into_iter().last()),
-            _ => None,
-        };
-        name.is_some_and(|name| OPTION_MAKERS.contains(&self.text(name)))
     }
 
     /// What an option's declaration says of it: the `description` in

@@ -15,13 +15,17 @@ items, each with its lines (`src/extract/`), kept in an index in
 `~/.cache/graff` that each query will bring up to date by itself, reading
 again only what changed (`src/store.rs`). It ties each call and reference to
 the definition it reaches, by Rust's rules for names rather than by types,
-and says what stays ambiguous (`src/resolve.rs`). In Nix, by its syntax
-alone, each binding is a definition named by its path, a NixOS option
-declared with mkOption one too, and a file one, which a path imports: a name
-is tied to the `let` or `rec` binding it is bound to, a path to its file (a
-folder a `builtins.readDir` function lists to what it lists), `inputs.x` to
-the flake's input, and a binding to the option of the worktree it sets
-(`src/resolve/nix.rs`). It answers five questions (`src/query.rs`):
+and says what stays ambiguous (`src/resolve.rs`). In Nix, by its syntax,
+each binding is a definition named by its path, a NixOS option declared with
+mkOption one too, and a file one, which a path imports: a name is tied to the
+`let` or `rec` binding it is bound to, a path to its file (a folder a
+`builtins.readDir` function lists to what it lists), `inputs.x` to the
+flake's input, and a binding to the option of the worktree it sets
+(`src/resolve/nix.rs`). A helper of the worktree a module calls,
+`myLib.mkSys { name = "x"; .. }`, is followed into and evaluated as far as a
+module's shape goes, so what it declares and sets stands in the calling file,
+as the module system files it (`src/resolve/nix/instance.rs`). It answers
+five questions (`src/query.rs`):
 
     graff def Storage::load        # its lines, doc, signature, a type's impl blocks
     graff callers Storage::load    # what reaches it, by the definition each use is in

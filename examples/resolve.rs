@@ -18,7 +18,7 @@ use std::time::Instant;
 
 use graff::extract::{self, Extraction};
 use graff::lang::Language;
-use graff::resolve::{self, File, Library, Resolution};
+use graff::resolve::{self, Definition, File, Library, Resolution};
 use serde_json::json;
 
 fn main() {
@@ -31,7 +31,7 @@ fn main() {
         .map_while(Result::ok)
         .filter(|p| !p.is_empty())
         .collect();
-    let extractions: Vec<Extraction> = paths
+    let mut extractions: Vec<Extraction> = paths
         .iter()
         .map(|path| {
             let source = std::fs::read(root.join(path)).unwrap_or_else(|e| panic!("{path}: {e}"));
@@ -40,6 +40,26 @@ fn main() {
             extract::extract(language, &source)
         })
         .collect();
+    let instances = {
+        let files: Vec<File> = paths
+            .iter()
+            .zip(&extractions)
+            .map(|(path, extraction)| File { path, extraction })
+            .collect();
+        resolve::nix::instantiate(&files, &|path| std::fs::read(root.join(path)).ok())
+    };
+    eprintln!(
+        "{} bindings made where modules call helpers, in {} files; {} arguments",
+        instances.made.len(),
+        instances
+            .made
+            .iter()
+            .map(|(file, _, _)| file)
+            .collect::<std::collections::HashSet<_>>()
+            .len(),
+        instances.arguments.len()
+    );
+    let written = instances.apply(&mut extractions.iter_mut().collect::<Vec<_>>());
     let files: Vec<File> = paths
         .iter()
         .zip(&extractions)
@@ -79,13 +99,22 @@ fn main() {
                     definition.symbol
                 };
                 let symbol = &symbols[index];
-                let target = json!({
+                let mut target = json!({
                     "path": files[definition.file].path,
                     "qualified": symbol.qualified,
                     "kind": symbol.kind.name(),
                     "start": symbol.start,
                     "end": symbol.end,
                 });
+                let at = Definition {
+                    file: definition.file,
+                    symbol: index,
+                };
+                if let Some(at) = written.get(&at) {
+                    target["written"] = json!({
+                        "path": files[at.file].path, "start": at.start, "end": at.end,
+                    });
+                }
                 ("resolved", Some(rule.name()), 1, Some(target))
             }
             Resolution::Ambiguous(candidates) => ("ambiguous", None, candidates.len(), None),

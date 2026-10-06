@@ -1,0 +1,43 @@
+run 2026-10-05
+graff cc0f59d with uncommitted changes
+corpus ctx: a git repository at ac97338 (git archive), 23 Bash files
+truth: bash-language-server 5.6.0 (nixpkgs), INCLUDE_ALL_WORKSPACE_SYMBOLS=true SHELLCHECK_PATH= BACKGROUND_ANALYSIS_MAX_FILES=0, every Bash file opened
+  3644 names asked, 2628 answered in the corpus; 0 names not found on their line
+
+broken resolver: precision 0.048, recall 0.045
+graff: precision 1.000 (2764 of 2765 judged; 105 unjudged), recall 0.995 (2605 of 2618 answers)
+by rule: environment 20/20 (11 unjudged), scope 2640/2641 (90 unjudged), source 104/104 (4 unjudged)
+recall by answer: functions 1188/1189, variables in their file 1380/1380, variables in another file 37/49
+missed, by what graff did: 11 ambiguous, 1 external, 1 scope
+
+wrong edges:
+src/test-hooks.sh:19 CTX_WORKER_HOME -> src/test-hooks.sh:1614 CTX_WORKER_HOME (scope); bash-language-server src/lib/transport.sh:47
+    REAL_WORKER_HOME="${CTX_WORKER_HOME:-${CTX_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/ctx}/worker-home}"
+
+missed names:
+src/bin/auto-reset:33 CTX_DISABLE -> src/test-hooks.sh:280; graff: ambiguous
+    [ "${CTX_DISABLE:-0}" = "1" ] && exit 0
+src/hooks/announce-graph:11 CTX_DISABLE -> src/test-hooks.sh:280; graff: ambiguous
+    [ "${CTX_DISABLE:-0}" = "1" ] && exit 0
+src/hooks/check-file-size:13 CTX_DISABLE -> src/test-hooks.sh:280; graff: ambiguous
+    [ "${CTX_DISABLE:-0}" = "1" ] && allow
+src/hooks/cold-return:43 CTX_DISABLE -> src/test-hooks.sh:280; graff: ambiguous
+    [ "${CTX_DISABLE:-0}" = "1" ] && exit 0
+src/hooks/guard-secrets:7 CTX_DISABLE -> src/test-hooks.sh:280; graff: ambiguous
+    [ "${CTX_DISABLE:-0}" = "1" ] && exit 0
+src/hooks/guard-window:7 CTX_DISABLE -> src/test-hooks.sh:280; graff: ambiguous
+    [ "${CTX_DISABLE:-0}" = "1" ] && exit 0
+src/hooks/guard-work-loss:7 CTX_DISABLE -> src/test-hooks.sh:280; graff: ambiguous
+    [ "${CTX_DISABLE:-0}" = "1" ] && exit 0
+src/hooks/handoff:61 CTX_DISABLE -> src/test-hooks.sh:280; graff: ambiguous
+    [ "${CTX_DISABLE:-0}" = "1" ] && exit 0
+src/hooks/handoff-written:19 CTX_DISABLE -> src/test-hooks.sh:280; graff: ambiguous
+    [ "${CTX_DISABLE:-0}" = "1" ] && exit 0
+src/hooks/track-usage:9 CTX_DISABLE -> src/test-hooks.sh:280; graff: ambiguous
+    [ "${CTX_DISABLE:-0}" = "1" ] && exit 0
+src/hooks/window:25 CTX_DISABLE -> src/test-hooks.sh:280; graff: ambiguous
+    [ "${CTX_DISABLE:-0}" = "1" ] && exit 0
+src/test-hooks.sh:19 CTX_WORKER_HOME -> src/lib/transport.sh:47; graff: scope
+    REAL_WORKER_HOME="${CTX_WORKER_HOME:-${CTX_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/ctx}/worker-home}"
+src/test-hooks.sh:601 away -> src/hooks/handoff:128; graff: external
+    transcript "$TMP/tr-$s.jsonl" "$t" "$away" "${ENDED-$((away > 0 ? away - 1 : 0))}"

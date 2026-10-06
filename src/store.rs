@@ -9,7 +9,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fs;
-use std::io;
+use std::io::{self, Read};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -240,6 +240,15 @@ fn stat(path: &Path) -> Option<Stat> {
     })
 }
 
+/// A file's first bytes: enough for a shebang, or a mode line on its first
+/// lines.
+fn head(path: &Path) -> Option<Vec<u8>> {
+    let mut bytes = vec![0; 256];
+    let read = fs::File::open(path).ok()?.read(&mut bytes).ok()?;
+    bytes.truncate(read);
+    Some(bytes)
+}
+
 fn now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -303,6 +312,7 @@ struct Record {
     stat: Stat,
     content: i64,
     blob: String,
+    language: Language,
     /// The version of the extractor that read the content.
     extractor: u32,
     seen: i64,
@@ -324,6 +334,8 @@ pub struct Store {
 /// references `Store::sites` read into it.
 pub struct Worktree {
     pub files: Vec<(String, Extraction)>,
+    /// Each file's language, by the files' order.
+    pub languages: Vec<Language>,
     /// Each file's content, by the files' order.
     contents: Vec<i64>,
     id: i64,
@@ -384,14 +396,30 @@ impl Store {
         // Before any stat: a file written after this moment is racy when next checked.
         let seen = now();
         let listed = listed(root)?;
+        let records = self.records(root_text)?;
         let files: Vec<Stale> = listed
             .iter()
             .filter_map(|path| {
-                let language = Language::of(path, b"")?;
+                let stat = stat(&root.join(path));
+                let language = match Language::of(path, b"") {
+                    Some(language) => language,
+                    // A file with no extension is read by its first lines,
+                    // which one the index holds unchanged has kept.
+                    None if Language::told_by_head(path) => match records.get(path.as_str()) {
+                        Some(record)
+                            if Some(record.stat) == stat
+                                && record.stat.mtime < record.seen - RACY =>
+                        {
+                            record.language
+                        }
+                        _ => Language::of(path, &head(&root.join(path))?)?,
+                    },
+                    None => return None,
+                };
                 Some(Stale {
                     path,
                     language,
-                    stat: stat(&root.join(path))?,
+                    stat: stat?,
                 })
             })
             .collect();
@@ -401,7 +429,6 @@ impl Store {
             ..Checked::default()
         };
 
-        let records = self.records(root_text)?;
         let stale: Vec<&Stale> = files
             .iter()
             .filter(|file| match records.get(file.path) {
@@ -527,17 +554,24 @@ impl Store {
             )
             .optional()?
             .unwrap_or(-1);
-        let files: Vec<(String, i64)> = self
+        let files: Vec<(String, i64, String)> = self
             .connection
-            .prepare("SELECT path, content FROM files WHERE worktree = ?1 ORDER BY path")?
-            .query_map([id], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .prepare(
+                "SELECT f.path, f.content, c.language FROM files f JOIN contents c ON c.id = f.content
+                 WHERE f.worktree = ?1 ORDER BY f.path",
+            )?
+            .query_map([id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
             .collect::<Result<_, _>>()?;
         let mut worktree = Worktree {
             files: files
                 .iter()
-                .map(|(path, _)| (path.clone(), Extraction::default()))
+                .map(|(path, _, _)| (path.clone(), Extraction::default()))
                 .collect(),
-            contents: files.iter().map(|(_, content)| *content).collect(),
+            languages: files
+                .iter()
+                .map(|(_, _, language)| known(Language::from_name, language))
+                .collect::<Result<_, _>>()?,
+            contents: files.iter().map(|(_, content, _)| *content).collect(),
             id,
         };
         let holders = worktree.holders();
@@ -697,7 +731,7 @@ impl Store {
     /// What the worktree at `root` last saw of each file, by path.
     fn records(&self, root: &str) -> Result<HashMap<String, Record>, Error> {
         let mut query = self.connection.prepare(
-            "SELECT f.path, f.size, f.mtime, f.ctime, f.inode, f.content, c.blob, c.extractor, f.seen
+            "SELECT f.path, f.size, f.mtime, f.ctime, f.inode, f.content, c.blob, c.extractor, f.seen, c.language
              FROM files f JOIN worktrees w ON w.id = f.worktree JOIN contents c ON c.id = f.content WHERE w.root = ?1",
         )?;
         let rows = query.query_map([root], |row| {
@@ -707,16 +741,30 @@ impl Store {
                 ctime: row.get(3)?,
                 inode: row.get(4)?,
             };
+            Ok((
+                row.get::<_, String>(0)?,
+                stat,
+                row.get::<_, i64>(5)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, u32>(7)?,
+                row.get::<_, i64>(8)?,
+                row.get::<_, String>(9)?,
+            ))
+        })?;
+        let mut records = HashMap::new();
+        for row in rows {
+            let (path, stat, content, blob, extractor, seen, language) = row?;
             let record = Record {
                 stat,
-                content: row.get(5)?,
-                blob: row.get(6)?,
-                extractor: row.get(7)?,
-                seen: row.get(8)?,
+                content,
+                blob,
+                language: known(Language::from_name, &language)?,
+                extractor,
+                seen,
             };
-            Ok((row.get(0)?, record))
-        })?;
-        Ok(rows.collect::<Result<_, _>>()?)
+            records.insert(path, record);
+        }
+        Ok(records)
     }
 }
 

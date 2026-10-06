@@ -802,3 +802,170 @@ depth 3: 1 caller
         )
     );
 }
+
+/// Scripts as ctx writes them: hooks and bins with no extension, told by
+/// their shebang, a library they source, and a test that runs a hook.
+const BASH_DEMO: &[(&str, &str)] = &[
+    (
+        "src/lib/ledger.sh",
+        r#"# Appends events to the funnel.
+
+# Writes one event: its kind, the session, then key-value pairs.
+ctx_log() {
+  local kind=$1
+  printf '%s %s\n' "$kind" "$*" >>"${CTX_FUNNEL:-/tmp/funnel}"
+}
+"#,
+    ),
+    (
+        "src/hooks/handoff",
+        r#"#!/usr/bin/env bash
+# Writes a handoff when the window fills.
+set -u
+TOP="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=../lib/ledger.sh
+. "$TOP/lib/ledger.sh"
+
+# --- the window ---
+# How full the window is, in percent.
+used() {
+  echo 50
+}
+pct=$(used) max=40
+
+# --- the handoff ---
+if [ "$pct" -ge "$max" ]; then
+  CTX_FUNNEL="$TOP/state/funnel" ctx_log handoff "$pct"
+  setsid -f "$TOP/bin/reset" "$pct"
+fi
+"#,
+    ),
+    (
+        "src/bin/reset",
+        r#"#!/bin/bash
+# Resets a session the handoff left.
+here=$(dirname "$0")
+. "$here/../lib/ledger.sh"
+ctx_log reset "$1"
+"#,
+    ),
+    (
+        "src/test.sh",
+        r#"#!/bin/bash
+HOOKS="$(dirname "$0")/hooks"
+out=$(env -u CTX_FUNNEL "$HOOKS/handoff")
+echo "$out"
+"#,
+    ),
+    ("notes.txt", "#!/bin/bash\nnot_a_call\n"),
+];
+
+#[test]
+fn bash_def_and_callers_reach_through_what_scripts_source_and_run() {
+    let demo = Demo::of("bash-callers", BASH_DEMO);
+    assert_eq!(
+        demo.ask(&["def", "ctx_log"]),
+        demo.rooted(
+            "def ctx_log in ROOT
+src/lib/ledger.sh:4-7 function ctx_log
+  /// Writes one event: its kind, the session, then key-value pairs.
+  ctx_log()
+"
+        )
+    );
+    // A call at a script's top is in the section its banner opens, or in
+    // none; the variable that line exports for the call holds none of it.
+    assert_eq!(
+        demo.ask(&["callers", "ctx_log"]),
+        demo.rooted(
+            "callers ctx_log in ROOT
+src/lib/ledger.sh:4-7 function ctx_log: 2 callers, 0 possible
+  src/bin/reset (top level): call 5
+  src/hooks/handoff:15-19 section the handoff: call 17
+"
+        )
+    );
+    assert_eq!(
+        demo.ask(&["callers", "src/lib/ledger.sh"]),
+        demo.rooted(
+            "callers src/lib/ledger.sh in ROOT
+src/lib/ledger.sh:1-7 file: 2 callers, 0 possible
+  src/bin/reset (top level): path 4
+  src/hooks/handoff (top level): path 6
+"
+        )
+    );
+    // The library reads what the hook that sources it exports; the test
+    // takes it out of what it runs the hook with.
+    assert_eq!(
+        demo.ask(&["callers", "CTX_FUNNEL"]),
+        demo.rooted(
+            "callers CTX_FUNNEL in ROOT
+src/hooks/handoff:17 environment CTX_FUNNEL: 2 callers, 0 possible
+  src/lib/ledger.sh:4-7 function ctx_log: ref 6
+  src/test.sh (top level): set 3
+"
+        )
+    );
+}
+
+#[test]
+fn bash_outline_callees_and_impact() {
+    let demo = Demo::of("bash-outline", BASH_DEMO);
+    assert_eq!(
+        demo.ask(&["outline", "src/hooks/handoff"]),
+        demo.rooted(
+            "outline src/hooks/handoff in ROOT
+src/hooks/handoff: 19 lines, 7 symbols
+  4 variable TOP
+  8-13 section the window
+    10-12 function used
+    13 variable pct
+    13 variable max
+  15-19 section the handoff
+    17 environment CTX_FUNNEL
+"
+        )
+    );
+    assert_eq!(
+        demo.ask(&["callees", "src/hooks/handoff"]),
+        demo.rooted(
+            "callees src/hooks/handoff in ROOT
+src/hooks/handoff:1-19 file: 7 callees, 0 possible, 6 outside the worktree
+  src/bin/reset:1-5 file: path 18
+  src/hooks/handoff:4 variable TOP: ref 6, 17, 18
+  src/hooks/handoff:10-12 function used: call 13
+  src/hooks/handoff:13 variable pct: ref 16, 17, 18
+  src/hooks/handoff:13 variable max: ref 16
+  src/lib/ledger.sh:1-7 file: path 6
+  src/lib/ledger.sh:4-7 function ctx_log: call 17
+  outside the worktree: set, cd, dirname, pwd, echo, setsid
+"
+        )
+    );
+    // Through the scripts that run the one that reaches it: the hook's
+    // section runs the bin, and the test runs the hook.
+    assert_eq!(
+        demo.ask(&["impact", "ctx_log"]),
+        demo.rooted(
+            "impact ctx_log in ROOT
+src/lib/ledger.sh:4-7 function ctx_log
+depth 1: 2 callers
+  src/bin/reset (top level)
+  src/hooks/handoff:15-19 section the handoff
+depth 2: 1 caller
+  src/test.sh (top level)
+depth 3: 0 callers
+3 callers in 3 files, to depth 3
+"
+        )
+    );
+    // A text file with a shebang is no script.
+    let refused = demo.run_in(&demo.repo, &["outline", "notes.txt"]);
+    assert!(!refused.status.success());
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("notes.txt is no file graff reads"),
+        "{}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
+}

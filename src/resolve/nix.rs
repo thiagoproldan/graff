@@ -63,7 +63,7 @@ fn folder(path: &str) -> &str {
 /// A path written in a file, from the worktree's top: `../b.nix` in
 /// `a/c.nix` is `b.nix`, `./.` is the file's folder. None for one outside
 /// the worktree, or written from the root or the home folder.
-fn joined(file: &str, written: &str) -> Option<String> {
+pub(super) fn joined(file: &str, written: &str) -> Option<String> {
     if !written.starts_with('.') {
         return None;
     }
@@ -108,7 +108,7 @@ impl<'a> Index<'a> {
             flakes: Vec::new(),
         };
         for (f, file) in files.iter().enumerate() {
-            if Language::of(file.path, b"") != Some(Language::Nix) {
+            if file.language != Language::Nix {
                 continue;
             }
             index.paths.insert(file.path, f);
@@ -611,7 +611,11 @@ a
             let files: Vec<File> = WORKTREE
                 .iter()
                 .zip(&extractions)
-                .map(|((path, _), extraction)| File { path, extraction })
+                .map(|((path, _), extraction)| File {
+                    path,
+                    language: Language::of(path, b"").expect("a language graff reads"),
+                    extraction,
+                })
                 .collect();
             let read = |path: &str| {
                 WORKTREE
@@ -625,7 +629,11 @@ a
         let files: Vec<File> = WORKTREE
             .iter()
             .zip(&extractions)
-            .map(|((path, _), extraction)| File { path, extraction })
+            .map(|((path, _), extraction)| File {
+                path,
+                language: Language::of(path, b"").expect("a language graff reads"),
+                extraction,
+            })
             .collect();
         super::super::resolve(&files, &[])
             .into_iter()

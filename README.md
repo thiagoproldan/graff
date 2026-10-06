@@ -10,7 +10,7 @@ Bash, Python, C and Markdown.
 
 ## Status
 
-graff reads Rust and Nix so far: definitions, calls, references and use
+graff reads Rust, Nix and Bash so far: definitions, calls, references and use
 items, each with its lines (`src/extract/`), kept in an index in
 `~/.cache/graff` that each query will bring up to date by itself, reading
 again only what changed (`src/store.rs`). It ties each call and reference to
@@ -24,8 +24,21 @@ flake's input, and a binding to the option of the worktree it sets
 (`src/resolve/nix.rs`). A helper of the worktree a module calls,
 `myLib.mkSys { name = "x"; .. }`, is followed into and evaluated as far as a
 module's shape goes, so what it declares and sets stands in the calling file,
-as the module system files it (`src/resolve/nix/instance.rs`). It answers
-five questions (`src/query.rs`):
+as the module system files it (`src/resolve/nix/instance.rs`). In Bash, a
+file with no extension is told by its shebang or, with none, by the Emacs
+mode or the shellcheck directive at its top; a script's functions, the
+variables it assigns, one at the first assignment of each name (an
+environment variable when the script exports it), and the sections its
+comment banners open (`# --- title ---`) are definitions, and so is the
+script, which a `.` sources and a command runs. A call is tied to a
+function of its own file, else of the files it runs with by `.` (what it
+sources and, for a library, the scripts that source it), else to the only
+function of that name in the worktree; a variable to its file's, those
+files', or one another script exports to the commands it runs. A path is
+evaluated where it names the script's own folder (`dirname "$0"`,
+`${BASH_SOURCE%/*}`, `$(cd .. && pwd)`) or named by a `# shellcheck
+source=` directive (`src/extract/bash.rs`, `src/resolve/bash.rs`). It
+answers five questions (`src/query.rs`):
 
     graff def Storage::load        # its lines, doc, signature, a type's impl blocks
     graff callers Storage::load    # what reaches it, by the definition each use is in
@@ -35,7 +48,8 @@ five questions (`src/query.rs`):
 
 A symbol is named by the end of its path (`load`, `store::Storage::load`),
 with its file (`src/store.rs:Storage::load`) or by a line
-(`src/store.rs:120`). An answer is cut to `--budget` tokens, 2,000 unless
+(`src/store.rs:120`); a Nix file or a script by its path
+(`src/lib/ledger.sh`). An answer is cut to `--budget` tokens, 2,000 unless
 told, counted as 4 bytes each, least important lines first, and its last
 line says what it left out and the budget that would hold it all; `--json`
 gives the same answer as one object. Uses graff cannot tie to one definition,
@@ -68,6 +82,9 @@ What graff does so far is measured there too:
 - `evals/nix/`: Nix against nix's evaluation of a NixOS host (options
   declared and set, the module graph) and against nil's ties of names, on a
   NixOS flake and on nixpkgs.
+- `evals/bash/`: Bash against what ran when ctx's test suite ran, traced by
+  Bash itself, and against bash-language-server's ties of names, on ctx and
+  on bash-completion.
 
 ## Building
 

@@ -1,0 +1,1445 @@
+run 2026-10-05
+graff cc0f59d with uncommitted changes
+corpus bash-completion: /nix/store/l9lxggczxk1hf3cbx9ghzbkxdgpdq25r-bash-completion-2.18.0/share/bash-completion, 523 Bash files
+truth: bash-language-server 5.6.0 (nixpkgs), INCLUDE_ALL_WORKSPACE_SYMBOLS=true SHELLCHECK_PATH= BACKGROUND_ANALYSIS_MAX_FILES=0, every Bash file opened
+  11439 names asked, 5733 answered in the corpus; 1 names not found on their line
+
+broken resolver: precision 0.006, recall 0.005
+graff: precision 0.975 (4817 of 4940 judged; 88 unjudged), recall 0.889 (4765 of 5357 answers)
+by rule: scope 1244/1367 (86 unjudged), unique 3573/3573 (2 unjudged)
+recall by answer: functions 4307/4438, variables in their file 458/628, variables in another file 0/291
+missed, by what graff did: 130 ambiguous, 352 external, 110 scope
+
+wrong edges:
+bash_completion:619 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    local _cur=${_comp_compgen__cur-${cur-}}
+bash_completion:790 _upvars -> bash_completion:499 _upvars (scope); bash-language-server bash_completion:650
+    ((${#_upvars[@]})) && _comp_unlocal "${_upvars[@]}"
+bash_completion:790 _upvars -> bash_completion:499 _upvars (scope); bash-language-server bash_completion:650
+    ((${#_upvars[@]})) && _comp_unlocal "${_upvars[@]}"
+bash_completion:868 _upvars -> bash_completion:499 _upvars (scope); bash-language-server bash_completion:650
+    ((${#_upvars[@]})) && _comp_unlocal "${_upvars[@]}"
+bash_completion:868 _upvars -> bash_completion:499 _upvars (scope); bash-language-server bash_completion:650
+    ((${#_upvars[@]})) && _comp_unlocal "${_upvars[@]}"
+bash_completion:909 _upvars -> bash_completion:499 _upvars (scope); bash-language-server bash_completion:650
+    ((${#_upvars[@]})) && _comp_unlocal "${_upvars[@]}"
+bash_completion:909 _upvars -> bash_completion:499 _upvars (scope); bash-language-server bash_completion:650
+    ((${#_upvars[@]})) && _comp_unlocal "${_upvars[@]}"
+bash_completion:1228 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    if [[ $cur == *:* && $COMP_WORDBREAKS == *:* ]]; then
+bash_completion:1230 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    local _colon_word=${cur%"${cur##*:}"}
+bash_completion:1230 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    local _colon_word=${cur%"${cur##*:}"}
+bash_completion:1345 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    _comp_quote_compgen "${cur-}"
+bash_completion:1376 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    if [[ $cur != ?(*/).. ]]; then
+bash_completion:1410 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    if [[ $cur == --?*=* ]]; then
+bash_completion:1413 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    prev=${cur%%?(\\)=*}
+bash_completion:1427 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    if [[ $cur =~ ^(\$(\{[!#]?)?)([A-Za-z0-9_]*)$ ]]; then
+bash_completion:1429 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    if [[ $cur == '${'* ]]; then
+bash_completion:1446 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    elif [[ $cur =~ ^(\$\{[#!]?)([A-Za-z0-9_]*)\[([^]]*)$ ]]; then
+bash_completion:1457 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    _comp_compgen -U vars -c "$cur" ltrim_colon "${vars[@]}"
+bash_completion:1462 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    elif [[ $cur =~ ^\$\{[#!]?[A-Za-z0-9_]*\[.*\]$ ]]; then
+bash_completion:1464 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    _comp_compgen -c "$cur" ltrim_colon "$cur}"
+bash_completion:1464 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    _comp_compgen -c "$cur" ltrim_colon "$cur}"
+bash_completion:1484 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    [[ $cur == *"$delimiter"* ]] && prefix=${cur%"$delimiter"*}$delimiter
+bash_completion:1484 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    [[ $cur == *"$delimiter"* ]] && prefix=${cur%"$delimiter"*}$delimiter
+bash_completion:1492 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    _comp_split -F "$delimiter" existing "$cur"
+bash_completion:1495 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    [[ ! $cur || $cur == *"$delimiter" ]] || unset -v "existing[${#existing[@]}-1]"
+bash_completion:1495 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    [[ ! $cur || $cur == *"$delimiter" ]] || unset -v "existing[${#existing[@]}-1]"
+bash_completion:1507 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    _comp_compgen -c "${cur##*"$delimiter"}" -- -W '"${COMPREPLY[@]}"'
+bash_completion:1510 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    _comp_compgen -c "${cur##*"$delimiter"}" -- "$@"
+bash_completion:1527 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    [[ $delimiter != : ]] || _comp_ltrim_colon_completions "$cur"
+bash_completion:1643 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    if [[ $cur == $redir* || ${prev-} == $redir ]]; then
+bash_completion:1645 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    case $cur in
+bash_completion:1847 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    _comp_compgen -v sigs -c "SIG${cur#"${1-}"}" -- -A signal &&
+bash_completion:2006 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    if [[ ${cur-} == \~* && $cur != */* ]]; then
+bash_completion:2006 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    if [[ ${cur-} == \~* && $cur != */* ]]; then
+bash_completion:2060 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    case ${cur-} in
+bash_completion:2063 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    _comp_expand_tilde "$cur"
+bash_completion:2306 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    _comp_compgen -c "${1:-$cur}" split -- "$(PATH="$PATH:/sbin" lsmod |
+bash_completion:2321 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    if [[ $cur == *\\\\* || $cur == *:*:* ]]; then
+bash_completion:2321 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    if [[ $cur == *\\\\* || $cur == *:*:* ]]; then
+bash_completion:2324 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    elif [[ $cur == *\\:* ]]; then
+bash_completion:2330 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    _comp_compgen -v tmp -c "${cur#*:}" allowed_groups
+bash_completion:2332 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    _comp_compgen -v tmp -c "${cur#*:}" -- -g
+bash_completion:2335 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    local _prefix=${cur%%*([^:])}
+bash_completion:2340 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    elif [[ $cur == *:* ]]; then
+bash_completion:2345 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    _comp_compgen -c "${cur#*:}" allowed_groups
+bash_completion:2347 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    _comp_compgen -c "${cur#*:}" -- -g
+bash_completion:2602 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    _comp_compgen -c "${cur:-/dev/}" -- -f -d -X "!*/?([amrs])cd!(c-*)"
+bash_completion:2610 cur -> bash_completion:1414 cur (scope); bash-language-server completions-fallback/mount.linux.bash:216
+    _comp_compgen -c "${cur:-/dev/}" -- -f -d -X "!*/?(r)dvd*"
+bash_completion:3244 line -> bash_completion:1013 line (scope); bash-language-server bash_completion:2144
+    while read -r line; do
+bash_completion:3245 line -> bash_completion:1013 line (scope); bash-language-server bash_completion:2144
+    [[ $line =~ --[A-Za-z0-9]+([-_][A-Za-z0-9]+)*=? ]] &&
+completions-core/aptitude.bash:64 COMPREPLY -> completions-core/aptitude.bash:77 COMPREPLY (scope); bash-language-server bash_completion:3024
+    ((${#COMPREPLY[@]})) || return 0
+completions-core/aptitude.bash:75 COMPREPLY -> completions-core/aptitude.bash:77 COMPREPLY (scope); bash-language-server bash_completion:3024
+    for i in "${!COMPREPLY[@]}"; do
+completions-core/aptitude.bash:76 COMPREPLY -> completions-core/aptitude.bash:77 COMPREPLY (scope); bash-language-server bash_completion:3024
+    case ${COMPREPLY[i]} in
+completions-core/aptitude.bash:78 COMPREPLY -> completions-core/aptitude.bash:77 COMPREPLY (scope); bash-language-server bash_completion:3024
+    -s) COMPREPLY[i]=--simulate ;;
+completions-core/aptitude.bash:79 COMPREPLY -> completions-core/aptitude.bash:77 COMPREPLY (scope); bash-language-server bash_completion:3024
+    -d) COMPREPLY[i]=--download-only ;;
+completions-core/aptitude.bash:80 COMPREPLY -> completions-core/aptitude.bash:77 COMPREPLY (scope); bash-language-server bash_completion:3024
+    -P) COMPREPLY[i]=--prompt ;;
+completions-core/aptitude.bash:81 COMPREPLY -> completions-core/aptitude.bash:77 COMPREPLY (scope); bash-language-server bash_completion:3024
+    -y) COMPREPLY[i]=--assume-yes ;;
+completions-core/aptitude.bash:82 COMPREPLY -> completions-core/aptitude.bash:77 COMPREPLY (scope); bash-language-server bash_completion:3024
+    -F) COMPREPLY[i]=--display-format ;;
+completions-core/aptitude.bash:83 COMPREPLY -> completions-core/aptitude.bash:77 COMPREPLY (scope); bash-language-server bash_completion:3024
+    -O) COMPREPLY[i]=--sort ;;
+completions-core/aptitude.bash:84 COMPREPLY -> completions-core/aptitude.bash:77 COMPREPLY (scope); bash-language-server bash_completion:3024
+    -W) COMPREPLY[i]=--show-why ;;
+completions-core/aptitude.bash:85 COMPREPLY -> completions-core/aptitude.bash:77 COMPREPLY (scope); bash-language-server bash_completion:3024
+    -w) COMPREPLY[i]=--width ;;
+completions-core/aptitude.bash:86 COMPREPLY -> completions-core/aptitude.bash:77 COMPREPLY (scope); bash-language-server bash_completion:3024
+    -V) COMPREPLY[i]=--show-versions ;;
+completions-core/aptitude.bash:87 COMPREPLY -> completions-core/aptitude.bash:77 COMPREPLY (scope); bash-language-server bash_completion:3024
+    -D) COMPREPLY[i]=--show-deps ;;
+completions-core/aptitude.bash:88 COMPREPLY -> completions-core/aptitude.bash:77 COMPREPLY (scope); bash-language-server bash_completion:3024
+    -v) COMPREPLY[i]=--verbose ;;
+completions-core/aptitude.bash:89 COMPREPLY -> completions-core/aptitude.bash:77 COMPREPLY (scope); bash-language-server bash_completion:3024
+    -t) COMPREPLY[i]=--target-release ;;
+completions-core/aptitude.bash:90 COMPREPLY -> completions-core/aptitude.bash:77 COMPREPLY (scope); bash-language-server bash_completion:3024
+    -q) COMPREPLY[i]=--quiet ;;
+completions-core/feh.bash:72 COMPREPLY -> completions-core/feh.bash:90 COMPREPLY (scope); bash-language-server bash_completion:3024
+    if [[ ! $cur || ! ${COMPREPLY-} ]]; then
+completions-core/info.bash:40 COMPREPLY -> completions-core/info.bash:59 COMPREPLY (scope); bash-language-server bash_completion:3024
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/java.bash:132 COMPREPLY -> completions-core/java.bash:136 COMPREPLY (scope); bash-language-server bash_completion:3024
+    if ((${#COMPREPLY[@]} != 0)); then
+completions-core/java.bash:134 COMPREPLY -> completions-core/java.bash:136 COMPREPLY (scope); bash-language-server bash_completion:3024
+    _comp_split -l COMPREPLY "$(printf '%s\n' "${COMPREPLY[@]}" | command sed -n 's,/$,,p')"
+completions-core/kcov.bash:40 COMPREPLY -> completions-core/kcov.bash:42 COMPREPLY (scope); bash-language-server bash_completion:3024
+    if ((${#COMPREPLY[@]} == 1)); then
+completions-core/make.bash:36 COMPREPLY -> completions-core/make.bash:52 COMPREPLY (scope); bash-language-server bash_completion:3024
+    if ((${#COMPREPLY[@]} > 0)); then
+completions-core/make.bash:42 COMPREPLY -> completions-core/make.bash:52 COMPREPLY (scope); bash-language-server bash_completion:3024
+    for target in "${COMPREPLY[@]}"; do
+completions-core/man.bash:49 COMPREPLY -> completions-core/man.bash:87 COMPREPLY (scope); bash-language-server bash_completion:3024
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/mplayer.bash:47 COMPREPLY -> completions-core/mplayer.bash:49 COMPREPLY (scope); bash-language-server bash_completion:3024
+    for i in "${!COMPREPLY[@]}"; do
+completions-core/mplayer.bash:48 COMPREPLY -> completions-core/mplayer.bash:49 COMPREPLY (scope); bash-language-server bash_completion:3024
+    if [[ -f ${COMPREPLY[i]} && -r ${COMPREPLY[i]} ]]; then
+completions-core/mplayer.bash:48 COMPREPLY -> completions-core/mplayer.bash:49 COMPREPLY (scope); bash-language-server bash_completion:3024
+    if [[ -f ${COMPREPLY[i]} && -r ${COMPREPLY[i]} ]]; then
+completions-core/mplayer.bash:49 COMPREPLY -> completions-core/mplayer.bash:49 COMPREPLY (scope); bash-language-server bash_completion:3024
+    COMPREPLY[i]=${COMPREPLY[i]%.*}
+completions-core/mplayer.bash:90 COMPREPLY -> completions-core/mplayer.bash:49 COMPREPLY (scope); bash-language-server bash_completion:3024
+    COMPREPLY[k++]=${j#"$i/"}
+completions-core/mysql.bash:92 COMPREPLY -> completions-core/mysql.bash:99 COMPREPLY (scope); bash-language-server bash_completion:3024
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/nslookup.bash:51 COMPREPLY -> completions-core/nslookup.bash:59 COMPREPLY (scope); bash-language-server bash_completion:3024
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/pytest.bash:99 COMPREPLY -> completions-core/pytest.bash:115 COMPREPLY (scope); bash-language-server bash_completion:3024
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/rcs.bash:18 COMPREPLY -> completions-core/rcs.bash:21 COMPREPLY (scope); bash-language-server bash_completion:3024
+    for i in ${!COMPREPLY[*]}; do
+completions-core/rcs.bash:19 COMPREPLY -> completions-core/rcs.bash:21 COMPREPLY (scope); bash-language-server bash_completion:3024
+    file=${COMPREPLY[i]##*/}
+completions-core/rcs.bash:20 COMPREPLY -> completions-core/rcs.bash:21 COMPREPLY (scope); bash-language-server bash_completion:3024
+    dir=${COMPREPLY[i]%RCS/*}
+completions-core/rcs.bash:29 COMPREPLY -> completions-core/rcs.bash:21 COMPREPLY (scope); bash-language-server bash_completion:3024
+    for i in ${!COMPREPLY[*]}; do
+completions-core/rcs.bash:30 COMPREPLY -> completions-core/rcs.bash:21 COMPREPLY (scope); bash-language-server bash_completion:3024
+    COMPREPLY[i]=${COMPREPLY[i]%,v}
+completions-core/rcs.bash:30 COMPREPLY -> completions-core/rcs.bash:21 COMPREPLY (scope); bash-language-server bash_completion:3024
+    COMPREPLY[i]=${COMPREPLY[i]%,v}
+completions-core/rcs.bash:35 COMPREPLY -> completions-core/rcs.bash:21 COMPREPLY (scope); bash-language-server bash_completion:3024
+    [[ ${#COMPREPLY[@]} -eq 0 && $1 == *ci ]] && _comp_compgen -a filedir || _comp_compgen -a filedir -d
+completions-core/set.bash:35 COMPREPLY -> completions-core/set.bash:39 COMPREPLY (scope); bash-language-server bash_completion:3024
+    for i in "${!COMPREPLY[@]}"; do
+completions-core/set.bash:36 COMPREPLY -> completions-core/set.bash:39 COMPREPLY (scope); bash-language-server bash_completion:3024
+    if [[ ${COMPREPLY[i]} == -- ]]; then
+completions-core/set.bash:39 COMPREPLY -> completions-core/set.bash:39 COMPREPLY (scope); bash-language-server bash_completion:3024
+    COMPREPLY[i]=${COMPREPLY[i]/#-/+}
+completions-core/sitecopy.bash:33 COMPREPLY -> completions-core/sitecopy.bash:40 COMPREPLY (scope); bash-language-server bash_completion:3024
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/ssh.bash:202 configfile -> completions-core/ssh.bash:265 configfile (scope); bash-language-server bash_completion:2789
+    _comp_compgen_known_hosts -a ${configfile:+-F "$configfile"}
+completions-core/ssh.bash:202 configfile -> completions-core/ssh.bash:265 configfile (scope); bash-language-server bash_completion:2789
+    _comp_compgen_known_hosts -a ${configfile:+-F "$configfile"}
+completions-core/svcadm.bash:78 COMPREPLY -> completions-core/svcadm.bash:97 COMPREPLY (scope); bash-language-server bash_completion:3024
+    local i=${#COMPREPLY[*]}
+completions-core/svcadm.bash:79 COMPREPLY -> completions-core/svcadm.bash:97 COMPREPLY (scope); bash-language-server bash_completion:3024
+    if [[ $i -gt 0 && ${COMPREPLY[--i]} == */ ]]; then
+completions-core/svcadm.bash:82 COMPREPLY -> completions-core/svcadm.bash:97 COMPREPLY (scope); bash-language-server bash_completion:3024
+    [[ ${COMPREPLY[i]} != "${COMPREPLY[i - 1]}" ]] && break
+completions-core/svcadm.bash:82 COMPREPLY -> completions-core/svcadm.bash:97 COMPREPLY (scope); bash-language-server bash_completion:3024
+    [[ ${COMPREPLY[i]} != "${COMPREPLY[i - 1]}" ]] && break
+completions-core/svcadm.bash:86 COMPREPLY -> completions-core/svcadm.bash:97 COMPREPLY (scope); bash-language-server bash_completion:3024
+    _comp_cmd_svcadm__fmri "${COMPREPLY[0]}" "$prefix"
+completions-core/svcadm.bash:95 COMPREPLY -> completions-core/svcadm.bash:97 COMPREPLY (scope); bash-language-server bash_completion:3024
+    local i=${#COMPREPLY[*]}
+completions-core/svcadm.bash:97 COMPREPLY -> completions-core/svcadm.bash:97 COMPREPLY (scope); bash-language-server bash_completion:3024
+    COMPREPLY[i]=${COMPREPLY[i]#"$colonprefixes"}
+completions-core/tshark.bash:29 COMPREPLY -> completions-core/tshark.bash:65 COMPREPLY (scope); bash-language-server bash_completion:3024
+    [[ ${COMPREPLY-} == *: ]] && compopt -o nospace
+completions-core/tshark.bash:55 COMPREPLY -> completions-core/tshark.bash:65 COMPREPLY (scope); bash-language-server bash_completion:3024
+    [[ ${COMPREPLY-} == *: ]] && compopt -o nospace
+completions-core/wget.bash:58 COMPREPLY -> completions-core/wget.bash:78 COMPREPLY (scope); bash-language-server bash_completion:3024
+    _comp_split -F $', \t\n' opt_as_arr "${COMPREPLY[0]}"
+completions-core/wvdial.bash:22 COMPREPLY -> completions-core/wvdial.bash:39 COMPREPLY (scope); bash-language-server bash_completion:3024
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-fallback/modprobe.bash:35 COMPREPLY -> completions-fallback/modprobe.bash:121 COMPREPLY (scope); bash-language-server bash_completion:3024
+    if [[ ! ${COMPREPLY-} ]]; then
+completions-fallback/modprobe.bash:44 COMPREPLY -> completions-fallback/modprobe.bash:121 COMPREPLY (scope); bash-language-server bash_completion:3024
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-fallback/modprobe.bash:105 COMPREPLY -> completions-fallback/modprobe.bash:121 COMPREPLY (scope); bash-language-server bash_completion:3024
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-fallback/modprobe.bash:109 COMPREPLY -> completions-fallback/modprobe.bash:121 COMPREPLY (scope); bash-language-server bash_completion:3024
+    if [[ ${COMPREPLY-} ]]; then
+completions-fallback/modprobe.bash:111 COMPREPLY -> completions-fallback/modprobe.bash:121 COMPREPLY (scope); bash-language-server bash_completion:3024
+    local -a mods=("${COMPREPLY[@]}")
+completions-fallback/modprobe.bash:114 COMPREPLY -> completions-fallback/modprobe.bash:121 COMPREPLY (scope); bash-language-server bash_completion:3024
+    for module in "${COMPREPLY[@]}"; do
+completions-fallback/mount.linux.bash:15 cur -> completions-fallback/mount.linux.bash:216 cur (scope); bash-language-server bash_completion:2808
+    [[ $cur =~ ^.+, ]]
+completions-fallback/mount.linux.bash:63 cur -> completions-fallback/mount.linux.bash:216 cur (scope); bash-language-server bash_completion:2808
+    [[ $cur =~ ^.+, ]]
+completions-fallback/mount.linux.bash:66 cur -> completions-fallback/mount.linux.bash:216 cur (scope); bash-language-server bash_completion:2808
+    [[ ${cur##*,} == *=* ]] && return
+completions-fallback/mount.linux.bash:199 COMPREPLY -> completions-fallback/mount.linux.bash:201 COMPREPLY (scope); bash-language-server bash_completion:3024
+    if ((${#COMPREPLY[@]})) && [[ $prefix == *["$COMP_WORDBREAKS"]* ]]; then
+completions-fallback/mount.linux.bash:201 COMPREPLY -> completions-fallback/mount.linux.bash:201 COMPREPLY (scope); bash-language-server bash_completion:3024
+    COMPREPLY=("${COMPREPLY[@]#"$tmp"?}")
+completions-fallback/mount.linux.bash:203 COMPREPLY -> completions-fallback/mount.linux.bash:201 COMPREPLY (scope); bash-language-server bash_completion:3024
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-fallback/mount.linux.bash:208 cur -> completions-fallback/mount.linux.bash:216 cur (scope); bash-language-server bash_completion:2808
+    if [[ $cur == -* ]]; then
+completions-fallback/mount.linux.bash:213 COMPREPLY -> completions-fallback/mount.linux.bash:201 COMPREPLY (scope); bash-language-server bash_completion:3024
+    [[ ${COMPREPLY-} ]] && return
+completions-fallback/umount.linux.bash:17 COMPREPLY -> completions-fallback/umount.linux.bash:56 COMPREPLY (scope); bash-language-server bash_completion:3024
+    for i in ${!COMPREPLY[*]}; do
+completions-fallback/umount.linux.bash:19 COMPREPLY -> completions-fallback/umount.linux.bash:56 COMPREPLY (scope); bash-language-server bash_completion:3024
+    printf -v REPLY %q "${COMPREPLY[i]}"
+startup-core/000_bash_completion_compat.bash:59 have -> startup-core/000_bash_completion_compat.bash:60 have#2 (scope); bash-language-server startup-core/000_bash_completion_compat.bash:57
+    unset -v have
+
+missed names:
+bash_completion:491 _append -> bash_completion:445; graff: external
+    if [[ $_append ]]; then
+bash_completion:619 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    local _cur=${_comp_compgen__cur-${cur-}}
+bash_completion:778 _dir -> bash_completion:659; graff: external
+    if [[ $_dir ]]; then
+bash_completion:783 _dir -> bash_completion:659; graff: external
+    command cd -- "$_dir" &>/dev/null ||
+bash_completion:790 _upvars -> bash_completion:650; graff: scope
+    ((${#_upvars[@]})) && _comp_unlocal "${_upvars[@]}"
+bash_completion:792 _append -> bash_completion:694; graff: external
+    local _comp_compgen__append=$_append
+bash_completion:793 _var -> bash_completion:693; graff: external
+    local _comp_compgen__var=$_var
+bash_completion:794 _cur -> bash_completion:702; graff: external
+    local _comp_compgen__cur=$_cur cur=$_cur
+bash_completion:795 _dir -> bash_completion:659; graff: external
+    local _comp_compgen__dir=$_dir
+bash_completion:796 _prefix -> bash_completion:661; graff: external
+    local _comp_compgen__prefix=$_prefix
+bash_completion:797 _prefix -> bash_completion:661; graff: external
+    if [[ $_prefix ]]; then
+bash_completion:805 _generator -> bash_completion:723; graff: external
+    "${_generator[@]}" "$@"
+bash_completion:807 _prefix -> bash_completion:661; graff: external
+    if [[ $_prefix ]]; then
+bash_completion:810 _prefix -> bash_completion:661; graff: external
+    tmp[_i]=$_prefix${tmp[_i]}
+bash_completion:812 _append -> bash_completion:694; graff: external
+    _comp_compgen -RU tmp ${_append:+-a} -v "$_var" -- -W '"${tmp[@]}"'
+bash_completion:812 _var -> bash_completion:693; graff: external
+    _comp_compgen -RU tmp ${_append:+-a} -v "$_var" -- -W '"${tmp[@]}"'
+bash_completion:820 _dir -> bash_completion:659; graff: external
+    [[ $_dir ]] && command cd -- "$_original_pwd"
+bash_completion:837 _dir -> bash_completion:659; graff: external
+    if [[ $_dir ]]; then
+bash_completion:842 _dir -> bash_completion:659; graff: external
+    command cd -- "$_dir" &>/dev/null || {
+bash_completion:854 _cur -> bash_completion:702; graff: external
+    IFS=$_ifs compgen -V _result -X '' "$@" ${_cur:+-- "$_cur"} || {
+bash_completion:854 _ifs -> bash_completion:663; graff: external
+    IFS=$_ifs compgen -V _result -X '' "$@" ${_cur:+-- "$_cur"} || {
+bash_completion:857 _dir -> bash_completion:659; graff: external
+    [[ $_dir ]] && command cd -- "$_original_pwd"
+bash_completion:866 _dir -> bash_completion:659; graff: external
+    [[ $_dir ]] && command cd -- "$_original_pwd"
+bash_completion:868 _upvars -> bash_completion:650; graff: scope
+    ((${#_upvars[@]})) && _comp_unlocal "${_upvars[@]}"
+bash_completion:872 _append -> bash_completion:694; graff: external
+    if [[ $_append ]]; then
+bash_completion:873 _var -> bash_completion:693; graff: external
+    eval -- "$_var+=()"
+bash_completion:875 _var -> bash_completion:693; graff: external
+    eval -- "$_var=()"
+bash_completion:880 _prefix -> bash_completion:661; graff: external
+    if [[ $_prefix ]]; then
+bash_completion:883 _prefix -> bash_completion:661; graff: external
+    _result[_i]=$_prefix${_result[_i]}
+bash_completion:886 _append -> bash_completion:694; graff: external
+    if [[ $_append ]]; then
+bash_completion:887 _var -> bash_completion:693; graff: external
+    eval -- "$_var+=(\"\${_result[@]}\")"
+bash_completion:889 _var -> bash_completion:693; graff: external
+    eval -- "$_var=(\"\${_result[@]}\")"
+bash_completion:898 _dir -> bash_completion:659; graff: external
+    if [[ $_dir ]]; then
+bash_completion:901 _dir -> bash_completion:659; graff: external
+    command cd -- "$_dir" &>/dev/null || return
+bash_completion:903 _cur -> bash_completion:702; graff: external
+    IFS=$_ifs compgen "$@" ${_cur:+-- "$_cur"}
+bash_completion:903 _ifs -> bash_completion:663; graff: external
+    IFS=$_ifs compgen "$@" ${_cur:+-- "$_cur"}
+bash_completion:909 _upvars -> bash_completion:650; graff: scope
+    ((${#_upvars[@]})) && _comp_unlocal "${_upvars[@]}"
+bash_completion:911 _prefix -> bash_completion:661; graff: external
+    if [[ $_prefix ]]; then
+bash_completion:912 _append -> bash_completion:694; graff: external
+    _comp_split -l ${_append:+-a} "$_var" \
+bash_completion:912 _var -> bash_completion:693; graff: external
+    _comp_split -l ${_append:+-a} "$_var" \
+bash_completion:913 _prefix -> bash_completion:661; graff: external
+    "$(IFS=$'\n' compgen -W '$_result' -P "$_prefix")"
+bash_completion:915 _append -> bash_completion:694; graff: external
+    _comp_split -l ${_append:+-a} "$_var" "$_result"
+bash_completion:915 _var -> bash_completion:693; graff: external
+    _comp_split -l ${_append:+-a} "$_var" "$_result"
+bash_completion:1228 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    if [[ $cur == *:* && $COMP_WORDBREAKS == *:* ]]; then
+bash_completion:1230 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    local _colon_word=${cur%"${cur##*:}"}
+bash_completion:1345 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    _comp_quote_compgen "${cur-}"
+bash_completion:1376 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    if [[ $cur != ?(*/).. ]]; then
+bash_completion:1410 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    if [[ $cur == --?*=* ]]; then
+bash_completion:1413 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    prev=${cur%%?(\\)=*}
+bash_completion:1427 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    if [[ $cur =~ ^(\$(\{[!#]?)?)([A-Za-z0-9_]*)$ ]]; then
+bash_completion:1429 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    if [[ $cur == '${'* ]]; then
+bash_completion:1446 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    elif [[ $cur =~ ^(\$\{[#!]?)([A-Za-z0-9_]*)\[([^]]*)$ ]]; then
+bash_completion:1457 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    _comp_compgen -U vars -c "$cur" ltrim_colon "${vars[@]}"
+bash_completion:1462 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    elif [[ $cur =~ ^\$\{[#!]?[A-Za-z0-9_]*\[.*\]$ ]]; then
+bash_completion:1464 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    _comp_compgen -c "$cur" ltrim_colon "$cur}"
+bash_completion:1484 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    [[ $cur == *"$delimiter"* ]] && prefix=${cur%"$delimiter"*}$delimiter
+bash_completion:1492 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    _comp_split -F "$delimiter" existing "$cur"
+bash_completion:1495 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    [[ ! $cur || $cur == *"$delimiter" ]] || unset -v "existing[${#existing[@]}-1]"
+bash_completion:1507 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    _comp_compgen -c "${cur##*"$delimiter"}" -- -W '"${COMPREPLY[@]}"'
+bash_completion:1510 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    _comp_compgen -c "${cur##*"$delimiter"}" -- "$@"
+bash_completion:1527 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    [[ $delimiter != : ]] || _comp_ltrim_colon_completions "$cur"
+bash_completion:1643 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    if [[ $cur == $redir* || ${prev-} == $redir ]]; then
+bash_completion:1645 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    case $cur in
+bash_completion:1847 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    _comp_compgen -v sigs -c "SIG${cur#"${1-}"}" -- -A signal &&
+bash_completion:2006 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    if [[ ${cur-} == \~* && $cur != */* ]]; then
+bash_completion:2060 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    case ${cur-} in
+bash_completion:2063 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    _comp_expand_tilde "$cur"
+bash_completion:2306 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    _comp_compgen -c "${1:-$cur}" split -- "$(PATH="$PATH:/sbin" lsmod |
+bash_completion:2321 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    if [[ $cur == *\\\\* || $cur == *:*:* ]]; then
+bash_completion:2324 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    elif [[ $cur == *\\:* ]]; then
+bash_completion:2330 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    _comp_compgen -v tmp -c "${cur#*:}" allowed_groups
+bash_completion:2332 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    _comp_compgen -v tmp -c "${cur#*:}" -- -g
+bash_completion:2335 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    local _prefix=${cur%%*([^:])}
+bash_completion:2340 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    elif [[ $cur == *:* ]]; then
+bash_completion:2345 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    _comp_compgen -c "${cur#*:}" allowed_groups
+bash_completion:2347 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    _comp_compgen -c "${cur#*:}" -- -g
+bash_completion:2602 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    _comp_compgen -c "${cur:-/dev/}" -- -f -d -X "!*/?([amrs])cd!(c-*)"
+bash_completion:2610 cur -> completions-fallback/mount.linux.bash:216; graff: scope
+    _comp_compgen -c "${cur:-/dev/}" -- -f -d -X "!*/?(r)dvd*"
+bash_completion:2927 generated -> bash_completion:2927; graff: external
+    local generated=$(avahi-browse -cprak 2>/dev/null | _comp_awk -F ';' \
+bash_completion:2935 generated -> bash_completion:2935; graff: external
+    local generated=$(ruptime 2>/dev/null | _comp_awk '!/^ruptime:/ { print $1 }')
+bash_completion:3002 word_offset -> bash_completion:3002; graff: external
+    local word_offset=$REPLY
+bash_completion:3008 comp_words -> bash_completion:3008; graff: external
+    local -a comp_words=("${COMP_WORDS[@]}")
+bash_completion:3009 comp_words -> bash_completion:3008; graff: external
+    local -a COMP_WORDS=("${comp_words[@]}")
+bash_completion:3022 word_offset -> bash_completion:3002; graff: external
+    ((COMP_CWORD -= word_offset))
+bash_completion:3032 cmd -> bash_completion:3032; graff: external
+    local cmd=${REPLY-} compcmd=${REPLY-}
+bash_completion:3033 cmd -> bash_completion:3032; graff: external
+    local cspec=$(complete -p -- "$cmd" 2>/dev/null)
+bash_completion:3036 cmd -> bash_completion:3032; graff: external
+    if [[ ! $cspec && $cmd == */* ]]; then
+bash_completion:3037 cmd -> bash_completion:3032; graff: external
+    cspec=$(complete -p -- "${cmd##*/}" 2>/dev/null)
+bash_completion:3038 cmd -> bash_completion:3032; graff: external
+    [[ $cspec ]] && compcmd=${cmd##*/}
+bash_completion:3042 cmd -> bash_completion:3032; graff: external
+    compcmd=${cmd##*/}
+bash_completion:3047 retry_count -> bash_completion:3047; graff: external
+    local retry_count=0
+bash_completion:3049 original_cur -> bash_completion:3049; graff: external
+    local args original_cur=${comp_args[1]-$cur}
+bash_completion:3051 cmd -> bash_completion:3032; graff: external
+    args=("$cmd" "$original_cur" "${COMP_WORDS[-2]}")
+bash_completion:3051 original_cur -> bash_completion:3049; graff: external
+    args=("$cmd" "$original_cur" "${COMP_WORDS[-2]}")
+bash_completion:3053 cmd -> bash_completion:3032; graff: external
+    args=("$cmd" "$original_cur")
+bash_completion:3053 original_cur -> bash_completion:3049; graff: external
+    args=("$cmd" "$original_cur")
+bash_completion:3072 retry_count -> bash_completion:3047; graff: external
+    if (($? == 124 && retry_count++ == 0)); then
+bash_completion:3091 completer -> bash_completion:3091; graff: external
+    local completer=${cspec#* -C \'}
+bash_completion:3190 _comp_root_command -> bash_completion:3177; graff: external
+    [[ $EUID -eq 0 || ${_comp_root_command-} ]]
+bash_completion:3244 line -> bash_completion:2144; graff: scope
+    while read -r line; do
+bash_completion:3245 line -> bash_completion:2144; graff: scope
+    [[ $line =~ --[A-Za-z0-9]+([-_][A-Za-z0-9]+)*=? ]] &&
+bash_completion:3437 cmd -> bash_completion:3032; graff: external
+    elif . "$compfile" "$cmd" ${source_args[@]+"${source_args[@]}"}; then
+bash_completion:3441 cmd -> bash_completion:3032; graff: external
+    if compspec=$(complete -p -- "$cmd" 2>/dev/null); then
+bash_completion:3452 cmd -> bash_completion:3032; graff: external
+    if [[ $cmdname != "$cmd" ]] && compspec=$(complete -p -- "$cmdname" 2>/dev/null); then
+bash_completion:3454 cmd -> bash_completion:3032; graff: external
+    [[ $cmd == /* ]] && eval "$compspec \"\$cmd\""
+bash_completion:3786 have -> startup-core/000_bash_completion_compat.bash:57; graff: external
+    unset -v have
+completions-core/2to3.bash:14 _comp_tail -> bash_completion:3646; graff: ambiguous
+    "$1" --list-fixes 2>/dev/null | _comp_tail -n +2
+completions-core/2to3.bash:34 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/7z.bash:75 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == -@(an|bd|sfx|si|slt|so|ssc|[rwy]) ]] ||
+completions-core/7z.bash:99 _comp_tail -> bash_completion:3646; graff: ambiguous
+    's/^Path = \(.*\)$/\1/p' 2>/dev/null | _comp_tail -n +2
+completions-core/a2x.bash:33 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/aclocal.bash:31 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/apache2ctl.bash:9 _comp_awk -> bash_completion:3641; graff: ambiguous
+    APWORDS=$("$1" 2>&1 >/dev/null | _comp_awk 'NR < 2 { print $3; exit }')
+completions-core/appdata-validate.bash:23 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/apt-cache.bash:29 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '$1 == "Source:" { print $2 }' | sort -u)"
+completions-core/apt-get.bash:39 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '$1 == "Source:" { print $2 }' | sort -u)"
+completions-core/apt-mark.bash:55 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/aptitude.bash:64 COMPREPLY -> bash_completion:3024; graff: scope
+    ((${#COMPREPLY[@]})) || return 0
+completions-core/aptitude.bash:75 COMPREPLY -> bash_completion:3024; graff: scope
+    for i in "${!COMPREPLY[@]}"; do
+completions-core/aptitude.bash:76 COMPREPLY -> bash_completion:3024; graff: scope
+    case ${COMPREPLY[i]} in
+completions-core/aptitude.bash:78 COMPREPLY -> bash_completion:3024; graff: scope
+    -s) COMPREPLY[i]=--simulate ;;
+completions-core/aptitude.bash:79 COMPREPLY -> bash_completion:3024; graff: scope
+    -d) COMPREPLY[i]=--download-only ;;
+completions-core/aptitude.bash:80 COMPREPLY -> bash_completion:3024; graff: scope
+    -P) COMPREPLY[i]=--prompt ;;
+completions-core/aptitude.bash:81 COMPREPLY -> bash_completion:3024; graff: scope
+    -y) COMPREPLY[i]=--assume-yes ;;
+completions-core/aptitude.bash:82 COMPREPLY -> bash_completion:3024; graff: scope
+    -F) COMPREPLY[i]=--display-format ;;
+completions-core/aptitude.bash:83 COMPREPLY -> bash_completion:3024; graff: scope
+    -O) COMPREPLY[i]=--sort ;;
+completions-core/aptitude.bash:84 COMPREPLY -> bash_completion:3024; graff: scope
+    -W) COMPREPLY[i]=--show-why ;;
+completions-core/aptitude.bash:85 COMPREPLY -> bash_completion:3024; graff: scope
+    -w) COMPREPLY[i]=--width ;;
+completions-core/aptitude.bash:86 COMPREPLY -> bash_completion:3024; graff: scope
+    -V) COMPREPLY[i]=--show-versions ;;
+completions-core/aptitude.bash:87 COMPREPLY -> bash_completion:3024; graff: scope
+    -D) COMPREPLY[i]=--show-deps ;;
+completions-core/aptitude.bash:88 COMPREPLY -> bash_completion:3024; graff: scope
+    -v) COMPREPLY[i]=--verbose ;;
+completions-core/aptitude.bash:89 COMPREPLY -> bash_completion:3024; graff: scope
+    -t) COMPREPLY[i]=--target-release ;;
+completions-core/aptitude.bash:90 COMPREPLY -> bash_completion:3024; graff: scope
+    -q) COMPREPLY[i]=--quiet ;;
+completions-core/asciidoc.bash:52 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/aspell.bash:38 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '{ print $1 }')"
+completions-core/aspell.bash:55 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '{ print $1 }')"
+completions-core/autoconf.bash:32 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/automake.bash:28 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/autoreconf.bash:29 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/autoscan.bash:24 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/avahi-browse.bash:23 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} != *= ]] || compopt -o nospace
+completions-core/badblocks.bash:21 COMPREPLY -> bash_completion:3024; graff: external
+    ((${#COMPREPLY[@]})) &&
+completions-core/bk.bash:10 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '/^  bk/ { print $2 }')
+completions-core/brctl.bash:6 _comp_awk -> bash_completion:3641; graff: ambiguous
+    "${1:-brctl}" show ${2:+"$2"} 2>/dev/null | _comp_awk \
+completions-core/brctl.bash:30 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '(NR>1 && !/^\t/) {print $1}')"
+completions-core/ccache.bash:26 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '$3 == "=" { print $2 }')"
+completions-core/ccache.bash:27 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/ccache.bash:36 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/ccze.bash:41 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/checksec.bash:42 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/chmod.bash:26 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/chpasswd.bash:27 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/chromium-browser.bash:40 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/chronyc.bash:7 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '/^'"$prev"'[ \t][^ []/ { gsub("\\|", " ", $2); print $2 }')"
+completions-core/chronyc.bash:46 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '!/(^ |: *$)/ { sub("\\|", " ", $1); print $1 }')"
+completions-core/chronyc.bash:50 COMPREPLY -> bash_completion:3024; graff: external
+    if [[ ! ${COMPREPLY-} && $prev == sources?(tats) ]]; then
+completions-core/configure.bash:35 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '/^  --[A-Za-z]/ { print $1; \
+completions-core/configure.bash:37 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *=* ]] && compopt -o nospace
+completions-core/configure.bash:40 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/convert.bash:58 _comp_awk -> bash_completion:3641; graff: ambiguous
+    } | _comp_awk \
+completions-core/cowsay.bash:10 _comp_tail -> bash_completion:3646; graff: ambiguous
+    _comp_compgen_split -- "$(cowsay -l 2>/dev/null | _comp_tail -n +2)"
+completions-core/cpan2dist.bash:31 _comp_awk -> bash_completion:3641; graff: ambiguous
+    "$packagelist" 2>/dev/null | _comp_awk '{print $1}' |
+completions-core/curl.bash:84 COMPREPLY -> bash_completion:3024; graff: external
+    ((${#COMPREPLY[@]})) &&
+completions-core/curl.bash:90 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *: ]] && compopt -o nospace
+completions-core/curl.bash:124 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '/^[ \t]/ {print $1}')"; then
+completions-core/curl.bash:181 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} ]] || _comp_compgen_help
+completions-core/cvs.bash:26 _comp_awk -> bash_completion:3641; graff: ambiguous
+    "$1" --help-commands 2>&1 | _comp_awk '/^(     *|\t)/ { print $1 }'
+completions-core/cvs.bash:45 _comp_awk -> bash_completion:3641; graff: ambiguous
+    [[ -r ~/.cvspass ]] && _comp_split -a cvsroots "$(_comp_awk '{ print $2 }' ~/.cvspass)"
+completions-core/cvs.bash:62 noargopts -> completions-core/cvs.bash:62; graff: external
+    local noargopts='!(-*|*[d]*)'
+completions-core/cvs.bash:73 noargopts -> completions-core/cvs.bash:62; graff: external
+    --help | -${noargopts}H)
+completions-core/cvs.bash:77 noargopts -> completions-core/cvs.bash:62; graff: external
+    -${noargopts}d)
+completions-core/cvs.bash:184 _comp_backup_glob -> bash_completion:2187; graff: external
+    _comp_compgen -- -X "$_comp_backup_glob" -W '"${files[@]}"'
+completions-core/cvs.bash:239 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '{print $1}')"
+completions-core/cvs.bash:284 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/cvs.bash:315 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '{print $1}')"
+completions-core/cvs.bash:338 COMPREPLY -> bash_completion:3024; graff: external
+    COMPREPLY=("${COMPREPLY[@]#"$cvsroot"}")
+completions-core/cvs.bash:339 COMPREPLY -> bash_completion:3024; graff: external
+    COMPREPLY=("${COMPREPLY[@]#\/}")
+completions-core/cvs.bash:344 COMPREPLY -> bash_completion:3024; graff: external
+    ((${#COMPREPLY[@]})) &&
+completions-core/cvs.bash:345 COMPREPLY -> bash_completion:3024; graff: external
+    _comp_compgen -- -W '"${COMPREPLY[@]}"'
+completions-core/cvsps.bash:14 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '/^PatchSet:?[ \t]/ { print $2 }')"
+completions-core/cvsps.bash:19 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '/^Author:[ \t]/ { print $2 }')"
+completions-core/cvsps.bash:24 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '/^Branch:[ \t]/ { print $2 }')"
+completions-core/cvsps.bash:29 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '/^Tag:[ \t]+[^(]/ { print $2 }')"
+completions-core/dd.bash:34 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/deja-dup.bash:26 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/dnssec-keygen.bash:41 COMPREPLY -> bash_completion:3024; graff: external
+    ((${#COMPREPLY[@]})) &&
+completions-core/doas.bash:42 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/dot.bash:37 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == -@([GNETKo]|L[nUCT]) ]] && compopt -o nospace
+completions-core/env.bash:50 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/eog.bash:18 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/evince.bash:26 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/faillog.bash:24 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/fbgs.bash:42 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} ]] && return
+completions-core/fbi.bash:43 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} ]] && return
+completions-core/feh.bash:72 COMPREPLY -> bash_completion:3024; graff: scope
+    if [[ ! $cur || ! ${COMPREPLY-} ]]; then
+completions-core/file-roller.bash:35 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/find.bash:89 COMPREPLY -> bash_completion:3024; graff: external
+    if ((${#COMPREPLY[@]} != 0)); then
+completions-core/find.bash:101 COMPREPLY -> bash_completion:3024; graff: external
+    for j in "${!COMPREPLY[@]}"; do
+completions-core/find.bash:102 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY[j]} == "$i" ]] && unset -v 'COMPREPLY[j]'
+completions-core/fio.bash:37 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_compgen_split -- "$("$1" --cmdhelp=all 2>/dev/null | _comp_awk '{print $1}') all"
+completions-core/fio.bash:138 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '{printf "--%s=\n", $1}')"
+completions-core/fio.bash:139 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/firefox.bash:18 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk -F = '$1 == "Name" { print $2 }' \
+completions-core/firefox.bash:45 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/flake8.bash:38 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/function.bash:11 _comp_tail -> bash_completion:3646; graff: ambiguous
+    local funcdef=$(type -- "${words[1]}" 2>/dev/null | _comp_tail -n +3)
+completions-core/fusermount.bash:13 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_compgen_split -- "$(_comp_awk \
+completions-core/gcc.bash:16 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/gdb.bash:39 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '{if ($1 ~ /^'"${prev##*/}"'/) print $2}')"
+completions-core/genisoimage.bash:16 _comp_tail -> bash_completion:3646; graff: ambiguous
+    _comp_tail -n +3)"
+completions-core/getconf.bash:15 _comp_awk -> bash_completion:3641; graff: ambiguous
+    "$1" -a 2>/dev/null | _comp_awk '{ print $1 }'
+completions-core/getconf.bash:27 _comp_awk -> bash_completion:3641; graff: ambiguous
+    "$1" -a 2>/dev/null | _comp_awk '{ print $1 }'
+completions-core/getent.bash:48 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_compgen_split -- "$("$1" "$db" | _comp_awk '{ print $1 }')"
+completions-core/getent.bash:71 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/gm.bash:6 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '/^ +[^ ]+ +- / { print $1 }')"
+completions-core/gnome-mplayer.bash:30 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/gnome-screenshot.bash:28 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/gphoto2.bash:27 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk 'NR>3 { print $1 }')"
+completions-core/gphoto2.bash:33 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk -F '"' 'NR>2 { print $2 }')"
+completions-core/gphoto2.bash:46 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/gprof.bash:45 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/groupadd.bash:23 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/groupmod.bash:23 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/growisofs.bash:29 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/gssdp-discover.bash:27 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/gzip.bash:26 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/hcitool.bash:6 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_compgen -a split -- "$(hcitool scan | _comp_awk '/^\t/{print $1}')"
+completions-core/hcitool.bash:12 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_compgen -a split -- "$(hcitool dev | _comp_awk '/^\t/{print $1}')"
+completions-core/hddtemp.bash:33 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/help.bash:14 COMPREPLY -> bash_completion:3024; graff: external
+    ((${#COMPREPLY[*]} != 1)) || printf -v "COMPREPLY[0]" %q "$COMPREPLY"
+completions-core/htop.bash:29 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/iconv.bash:47 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/idn.bash:23 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/ifstat.bash:53 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk 'found { print $1 } /supported xstats:/ { found=1 }')"
+completions-core/ifstat.bash:62 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/influx.bash:17 _comp_awk -> bash_completion:3641; graff: ambiguous
+    local args=$("$1" --help 2>&1 | _comp_awk "\$1 == \"$prev\" { print \$2 }")
+completions-core/info.bash:40 COMPREPLY -> bash_completion:3024; graff: scope
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/ip.bash:15 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_compgen -a split -- "$(_comp_awk '!/#/ { print $2 }' "$conf_file" \
+completions-core/iperf.bash:90 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/ipmitool.bash:52 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '/^[ \t]+/ { print $1 }') list"
+completions-core/iptables.bash:49 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/iwconfig.bash:21 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk -F '\"' '/ESSID/ {print $2}')"
+completions-core/iwconfig.bash:31 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '/^[ \t]*Channel/ {print $2}')"
+completions-core/iwconfig.bash:37 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '/^[ \t]*Channel/ {print $4"G"}')"
+completions-core/iwconfig.bash:44 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk -F ': ' '/Address/ {print $2}')"
+completions-core/iwconfig.bash:51 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '/^[ \t]*[0-9]/ {print $1"M"}')"
+completions-core/java.bash:77 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '$NF ~ /^-+$/ { flag=!flag; next };
+completions-core/java.bash:132 COMPREPLY -> bash_completion:3024; graff: scope
+    if ((${#COMPREPLY[@]} != 0)); then
+completions-core/java.bash:134 COMPREPLY -> bash_completion:3024; graff: scope
+    _comp_split -l COMPREPLY "$(printf '%s\n' "${COMPREPLY[@]}" | command sed -n 's,/$,,p')"
+completions-core/javaws.bash:26 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/jpegoptim.bash:32 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/jps.bash:18 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == -J* ]] && compopt -o nospace
+completions-core/jshint.bash:30 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/k3b.bash:41 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/kcov.bash:40 COMPREPLY -> bash_completion:3024; graff: scope
+    if ((${#COMPREPLY[@]} == 1)); then
+completions-core/killall.bash:10 noargopts -> completions-core/killall.bash:10; graff: external
+    local noargopts='!(-*|*[Zoysu]*)'
+completions-core/killall.bash:13 noargopts -> completions-core/killall.bash:10; graff: external
+    --context | --older-than | --younger-than | --version | -${noargopts}@([Zoy]|V*))
+completions-core/killall.bash:16 noargopts -> completions-core/killall.bash:10; graff: external
+    --signal | -${noargopts}s)
+completions-core/killall.bash:20 noargopts -> completions-core/killall.bash:10; graff: external
+    --user | -${noargopts}u)
+completions-core/koji.bash:31 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '{ print $1 }')"
+completions-core/koji.bash:113 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/koji.bash:238 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/koji.bash:241 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '/^(  +|\t)/ { print $1 }')"
+completions-core/ktutil.bash:6 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '{print $1}')"
+completions-core/ktutil.bash:12 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '{print $1}' | _comp_awk -F @ '{print $2}')"
+completions-core/lastlog.bash:23 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/lilo.bash:5 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_compgen_split -- "$(_comp_awk -F = '$1 ~ /^[ \t]*label$/ {print $2}' \
+completions-core/links.bash:83 COMPREPLY -> bash_completion:3024; graff: external
+    ((${#COMPREPLY[@]})) &&
+completions-core/lintian.bash:8 _comp_awk -> bash_completion:3641; graff: ambiguous
+    tags=$(_comp_awk '/^Tag/ { print $2 }' "${check_files[@]}")
+completions-core/lintian.bash:22 _comp_awk -> bash_completion:3641; graff: ambiguous
+    checks=$(_comp_awk '/^(Check-Script|Abbrev)/ { print $2 }' \
+completions-core/lintian.bash:30 _comp_awk -> bash_completion:3641; graff: ambiguous
+    todisable+=$'\n'$(_comp_awk '/^(Check-Script|Abbrev)/ { print $2 }' "$match")
+completions-core/lintian.bash:48 _comp_awk -> bash_completion:3641; graff: ambiguous
+    infos=$(_comp_awk '/^Collector/ { print $2 }' \
+completions-core/locale-gen.bash:22 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/locale-gen.bash:27 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '{ print $1 }' /usr/share/i18n/SUPPORTED 2>/dev/null
+completions-core/lpr.bash:19 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/lsscsi.bash:24 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/lsusb.bash:8 noargopts -> completions-core/lsusb.bash:8; graff: external
+    local noargopts='!(-*|*[sD]*)'
+completions-core/lsusb.bash:11 noargopts -> completions-core/lsusb.bash:8; graff: external
+    --help | --version | -${noargopts}@([sD]|[hV]*))
+completions-core/luseradd.bash:34 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/lzip.bash:37 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/lzma.bash:14 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/make.bash:18 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk -f "${BASH_SOURCE[0]%/*}/../helpers-core/make-extract-targets.awk"
+completions-core/make.bash:36 COMPREPLY -> bash_completion:3024; graff: scope
+    if ((${#COMPREPLY[@]} > 0)); then
+completions-core/make.bash:42 COMPREPLY -> bash_completion:3024; graff: scope
+    for target in "${COMPREPLY[@]}"; do
+completions-core/man.bash:49 COMPREPLY -> bash_completion:3024; graff: scope
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/man.bash:59 manpath -> completions-core/man.bash:59; graff: external
+    local manpath=$(manpath 2>/dev/null || command man -w 2>/dev/null)
+completions-core/mc.bash:24 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/mcrypt.bash:24 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '{print $1}')"
+completions-core/mcrypt.bash:29 _comp_tail -> bash_completion:3646; graff: ambiguous
+    _comp_tail -n +2)"
+completions-core/mdadm.bash:142 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/medusa.bash:18 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_compgen_split -- "$("$1" -d | _comp_awk '/^ +\+/ {print $2}' |
+completions-core/mii-tool.bash:27 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/minicom.bash:30 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/mkinitrd.bash:31 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/mktemp.bash:25 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/monodevelop.bash:12 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/mplayer.bash:7 _comp_awk -> bash_completion:3641; graff: ambiguous
+    command sed -e '/^Available/,/^$/!d' -e '/^Available/d' | _comp_awk '{print $1}' |
+completions-core/mplayer.bash:47 COMPREPLY -> bash_completion:3024; graff: scope
+    for i in "${!COMPREPLY[@]}"; do
+completions-core/mplayer.bash:48 COMPREPLY -> bash_completion:3024; graff: scope
+    if [[ -f ${COMPREPLY[i]} && -r ${COMPREPLY[i]} ]]; then
+completions-core/mplayer.bash:49 COMPREPLY -> bash_completion:3024; graff: scope
+    COMPREPLY[i]=${COMPREPLY[i]%.*}
+completions-core/mplayer.bash:90 COMPREPLY -> bash_completion:3024; graff: scope
+    COMPREPLY[k++]=${j#"$i/"}
+completions-core/msynctool.bash:11 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '/^Member/ {print $2}' | command sed -e 's/:$//')"
+completions-core/msynctool.bash:15 _comp_tail -> bash_completion:3646; graff: ambiguous
+    _comp_compgen_split -- "$("$1" --listplugins | _comp_tail -n +2)"
+completions-core/msynctool.bash:22 _comp_tail -> bash_completion:3646; graff: ambiguous
+    _comp_compgen_split -- "$("$1" --listgroups | _comp_tail -n +2)"
+completions-core/msynctool.bash:26 _comp_tail -> bash_completion:3646; graff: ambiguous
+    _comp_compgen_split -- "$("$1" --listobjects | _comp_tail -n +2)"
+completions-core/mtx.bash:15 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '/Storage Element [0-9]+:Full/ { printf "%s ", $3 }')
+completions-core/mtx.bash:19 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '/Data Transfer Element [0-9]+:(Full|Empty)/ { printf "%s ", $4 }')
+completions-core/mysql.bash:92 COMPREPLY -> bash_completion:3024; graff: scope
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/mysqladmin.bash:61 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/newlist.bash:18 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/newusers.bash:22 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/nmap.bash:48 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/nproc.bash:18 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/nslookup.bash:51 COMPREPLY -> bash_completion:3024; graff: scope
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/nsupdate.bash:23 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *: ]] && compopt -o nospace
+completions-core/oggdec.bash:32 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/openssl.bash:25 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_compgen -U config split -- "$(_comp_awk '/\[.*\]/ {print $2}' "$config")"
+completions-core/openssl.bash:33 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '/^-.*[ \t]to use the .* message digest algorithm/ { print $1 }'
+completions-core/openssl.bash:117 command -> completions-core/openssl.bash:53; graff: external
+    _comp_compgen -a split -- "$("$1" enc -list 2>/dev/null | command sed '/Supported ciphers:/d')"
+completions-core/opera.bash:21 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *\( ]] && compopt -o nospace
+completions-core/opera.bash:38 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/p4.bash:12 _comp_awk -> bash_completion:3641; graff: ambiguous
+    p4commands=$(p4 help commands 2>/dev/null | _comp_awk 'NF>3 {print $1}')
+completions-core/pack200.bash:64 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/pdftotext.bash:14 _comp_tail -> bash_completion:3646; graff: ambiguous
+    _comp_compgen_split -- "$("$1" -listenc 2>/dev/null | _comp_tail -n +2)"
+completions-core/perl.bash:110 PATH -> completions-core/perl.bash:110; graff: ambiguous
+    pathcmd=$(type -P -- "$1") && local PATH=${pathcmd%/*}:$PATH
+completions-core/perl.bash:135 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk 'NF >= 2 && $1 ~ /^perl/ { print $1 }')"
+completions-core/perltidy.bash:56 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/pine.bash:27 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_compgen_split -- "$(_comp_awk '{print $1}' ~/.addressbook 2>/dev/null)"
+completions-core/ping.bash:30 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/pkg-config.bash:36 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/pkg-config.bash:39 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '{print $1}')"
+completions-core/pkg-get.bash:19 _comp_awk -> bash_completion:3641; graff: ambiguous
+    url=$(_comp_awk -F = '$1 == "url" { print $2 }' "$conffile")
+completions-core/pkg-get.bash:52 _comp_awk -> bash_completion:3641; graff: ambiguous
+    local packages_list=$(_comp_awk '$0 ~ /BEGIN PGP SIGNATURE/ { exit } $1 ~ /^Hash:/ || $1 ~ /^ *(-|#|$)/ { next
+completions-core/pngfix.bash:27 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/prelink.bash:34 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/protoc.bash:44 COMPREPLY -> bash_completion:3024; graff: external
+    for i in "${!COMPREPLY[@]}"; do
+completions-core/protoc.bash:45 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY[i]} == -oFILE ]] && unset -v 'COMPREPLY[i]'
+completions-core/protoc.bash:47 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/ps.bash:52 _comp_awk -> bash_completion:3641; graff: ambiguous
+    local labels=$("$1" L | _comp_awk '{ print $1 }')
+completions-core/psql.bash:8 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk 'NF > 1 { print $1 }')"
+completions-core/psql.bash:47 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/psql.bash:81 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/psql.bash:113 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/psql.bash:147 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/psql.bash:192 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/pwgen.bash:24 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/pycodestyle.bash:26 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/pydocstyle.bash:27 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/pylint.bash:76 COMPREPLY -> bash_completion:3024; graff: external
+    ((${#COMPREPLY[@]})) &&
+completions-core/pylint.bash:91 COMPREPLY -> bash_completion:3024; graff: external
+    ((${#COMPREPLY[@]} == 1)) &&
+completions-core/pylint.bash:109 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/pytest.bash:99 COMPREPLY -> bash_completion:3024; graff: scope
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/python.bash:101 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '$1 == "-X" && $2 ~ /:$/ {
+completions-core/python.bash:104 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/python.bash:118 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '{ sub("\\(-bb:","\n-bb "); print }')"
+completions-core/qemu.bash:29 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_compgen_split -- "$("$1" -soundhw help | _comp_awk '
+completions-core/qemu.bash:35 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_compgen_split -- "$("$1" "$prev" help | _comp_awk '
+completions-core/qemu.bash:41 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_compgen_split -- "$("$1" -cpu help | _comp_awk '{print $2}')"
+completions-core/qemu.bash:84 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '{print $1}')"
+completions-core/querybts.bash:29 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/quota.bash:22 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/quota.bash:34 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_compgen_split -- "$(_comp_awk '/^\// {print $1}' /etc/mtab)"
+completions-core/rcs.bash:18 COMPREPLY -> bash_completion:3024; graff: scope
+    for i in ${!COMPREPLY[*]}; do
+completions-core/rcs.bash:19 COMPREPLY -> bash_completion:3024; graff: scope
+    file=${COMPREPLY[i]##*/}
+completions-core/rcs.bash:20 COMPREPLY -> bash_completion:3024; graff: scope
+    dir=${COMPREPLY[i]%RCS/*}
+completions-core/rcs.bash:29 COMPREPLY -> bash_completion:3024; graff: scope
+    for i in ${!COMPREPLY[*]}; do
+completions-core/rcs.bash:30 COMPREPLY -> bash_completion:3024; graff: scope
+    COMPREPLY[i]=${COMPREPLY[i]%,v}
+completions-core/rcs.bash:35 COMPREPLY -> bash_completion:3024; graff: scope
+    [[ ${#COMPREPLY[@]} -eq 0 && $1 == *ci ]] && _comp_compgen -a filedir || _comp_compgen -a filedir -d
+completions-core/rdesktop.bash:32 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *: ]] && compopt -o nospace
+completions-core/reportbug.bash:45 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk -F ' ' '$1 == "Source:" && !uniq[$2]++ { print $2 }')"
+completions-core/reportbug.bash:62 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == -*= ]] && compopt -o nospace
+completions-core/ri.bash:69 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/rpm.bash:82 noargopts -> completions-core/rpm.bash:82; graff: external
+    local noargopts='!(-*|*[rED]*)'
+completions-core/rpm.bash:85 noargopts -> completions-core/rpm.bash:82; graff: external
+    --dbpath | --excludepath | --prefix | --relocate | --root | -${noargopts}r)
+completions-core/rpm.bash:89 noargopts -> completions-core/rpm.bash:82; graff: external
+    --eval | -${noargopts}E)
+completions-core/rpm.bash:127 noargopts -> completions-core/rpm.bash:82; graff: external
+    --define | --fileid | --hdrid | --pkgid | -${noargopts}D)
+completions-core/rpm.bash:246 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/rpm.bash:258 noargopts -> completions-core/rpm.bash:82; graff: external
+    --buildroot | --root | --dbpath | -${noargopts}r)
+completions-core/rpm.bash:262 noargopts -> completions-core/rpm.bash:82; graff: external
+    --target | --eval | -${noargopts}E | --buildpolicy)
+completions-core/rpm.bash:271 noargopts -> completions-core/rpm.bash:82; graff: external
+    --eval | -${noargopts}E)
+completions-core/rpm.bash:287 noargopts -> completions-core/rpm.bash:82; graff: external
+    --define | --with | --without | -${noargopts}D)
+completions-core/rpm.bash:296 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/rsync.bash:97 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] || compopt +o nospace
+completions-core/sbopkg.bash:10 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} ]] && return
+completions-core/scrub.bash:17 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '/^Available/{flag=1;next}/^ /&&flag{print $1}')"
+completions-core/scrub.bash:30 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/set.bash:35 COMPREPLY -> bash_completion:3024; graff: scope
+    for i in "${!COMPREPLY[@]}"; do
+completions-core/set.bash:36 COMPREPLY -> bash_completion:3024; graff: scope
+    if [[ ${COMPREPLY[i]} == -- ]]; then
+completions-core/set.bash:39 COMPREPLY -> bash_completion:3024; graff: scope
+    COMPREPLY[i]=${COMPREPLY[i]/#-/+}
+completions-core/shellcheck.bash:57 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/sitecopy.bash:33 COMPREPLY -> bash_completion:3024; graff: scope
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/slapt-get.bash:21 COMPREPLY -> bash_completion:3024; graff: external
+    if [[ ${COMPREPLY-} ]]; then
+completions-core/slapt-get.bash:22 COMPREPLY -> bash_completion:3024; graff: external
+    [[ $COMPREPLY == *= ]] && compopt -o nospace
+completions-core/slapt-src.bash:23 COMPREPLY -> bash_completion:3024; graff: external
+    if [[ ${COMPREPLY-} ]]; then
+completions-core/slapt-src.bash:24 COMPREPLY -> bash_completion:3024; graff: external
+    [[ $COMPREPLY == *= ]] && compopt -o nospace
+completions-core/smartctl.bash:7 COMPREPLY -> bash_completion:3024; graff: external
+    for i in "${!COMPREPLY[@]}"; do
+completions-core/smartctl.bash:8 COMPREPLY -> bash_completion:3024; graff: external
+    if [[ ${COMPREPLY[i]} == *[,=] ]]; then
+completions-core/smartctl.bash:83 COMPREPLY -> bash_completion:3024; graff: external
+    if ((${#COMPREPLY[@]} == 1)); then
+completions-core/smbclient.bash:102 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/smbclient.bash:136 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/smbclient.bash:183 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/smbclient.bash:221 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/smbclient.bash:325 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/ss.bash:34 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/ssh-keygen.bash:8 IFS -> completions-core/ssh-keygen.bash:8; graff: ambiguous
+    local IFS=$' \t\n' # for ${words[*]}
+completions-core/ssh-keygen.bash:9 noargopts -> completions-core/ssh-keygen.bash:9; graff: external
+    local noargopts='!(-*|*[ aCIJjMNPSVWzbEFRDwfGKsTmnOrtYZ]*)'
+completions-core/ssh-keygen.bash:12 noargopts -> completions-core/ssh-keygen.bash:9; graff: external
+    -${noargopts}[aCIJjNPSVWz])
+completions-core/ssh-keygen.bash:15 noargopts -> completions-core/ssh-keygen.bash:9; graff: external
+    -${noargopts}b)
+completions-core/ssh-keygen.bash:32 noargopts -> completions-core/ssh-keygen.bash:9; graff: external
+    -${noargopts}E)
+completions-core/ssh-keygen.bash:36 noargopts -> completions-core/ssh-keygen.bash:9; graff: external
+    -${noargopts}[FR])
+completions-core/ssh-keygen.bash:41 noargopts -> completions-core/ssh-keygen.bash:9; graff: external
+    -${noargopts}[Dw])
+completions-core/ssh-keygen.bash:45 noargopts -> completions-core/ssh-keygen.bash:9; graff: external
+    -${noargopts}[fGKsT])
+completions-core/ssh-keygen.bash:49 noargopts -> completions-core/ssh-keygen.bash:9; graff: external
+    -${noargopts}M)
+completions-core/ssh-keygen.bash:53 noargopts -> completions-core/ssh-keygen.bash:9; graff: external
+    -${noargopts}m)
+completions-core/ssh-keygen.bash:57 noargopts -> completions-core/ssh-keygen.bash:9; graff: external
+    -${noargopts}n)
+completions-core/ssh-keygen.bash:61 COMPREPLY -> bash_completion:3024; graff: external
+    ((${#COMPREPLY[@]})) &&
+completions-core/ssh-keygen.bash:68 noargopts -> completions-core/ssh-keygen.bash:9; graff: external
+    -${noargopts}O)
+completions-core/ssh-keygen.bash:72 noargopts -> completions-core/ssh-keygen.bash:9; graff: external
+    *\ -${noargopts}M\ *)
+completions-core/ssh-keygen.bash:78 noargopts -> completions-core/ssh-keygen.bash:9; graff: external
+    *\ -${noargopts}r\ *)
+completions-core/ssh-keygen.bash:81 noargopts -> completions-core/ssh-keygen.bash:9; graff: external
+    *\ -${noargopts}s\ *)
+completions-core/ssh-keygen.bash:91 noargopts -> completions-core/ssh-keygen.bash:9; graff: external
+    *\ -${noargopts}t\ +([a-z0-9])-sk\ *)
+completions-core/ssh-keygen.bash:97 noargopts -> completions-core/ssh-keygen.bash:9; graff: external
+    *\ -${noargopts}Y\ *)
+completions-core/ssh-keygen.bash:104 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *[:=] ]] && compopt -o nospace
+completions-core/ssh-keygen.bash:139 noargopts -> completions-core/ssh-keygen.bash:9; graff: external
+    -${noargopts}r)
+completions-core/ssh-keygen.bash:140 noargopts -> completions-core/ssh-keygen.bash:9; graff: external
+    [[ ${words[*]} != *\ -${noargopts}Y\ * ]] || _comp_compgen_filedir
+completions-core/ssh-keygen.bash:143 noargopts -> completions-core/ssh-keygen.bash:9; graff: external
+    -${noargopts}t)
+completions-core/ssh-keygen.bash:158 noargopts -> completions-core/ssh-keygen.bash:9; graff: external
+    -${noargopts}Y)
+completions-core/ssh-keygen.bash:163 noargopts -> completions-core/ssh-keygen.bash:9; graff: external
+    -${noargopts}Z)
+completions-core/ssh-keygen.bash:175 noargopts -> completions-core/ssh-keygen.bash:9; graff: external
+    if [[ ${words[*]} == *\ -${noargopts}s\ * ]]; then
+completions-core/ssh.bash:202 configfile -> bash_completion:2789; graff: scope
+    _comp_compgen_known_hosts -a ${configfile:+-F "$configfile"}
+completions-core/ssh.bash:539 cur -> completions-core/ssh.bash:288; graff: external
+    local REPLY=$cur
+completions-core/ssh.bash:608 cur -> completions-core/ssh.bash:288; graff: external
+    _comp_dequote_incomplete "$cur"
+completions-core/strings.bash:38 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/sudo.bash:11 noargopts -> completions-core/sudo.bash:11; graff: external
+    local noargopts='!(-*|*[CDghpRrTtUu]*)'
+completions-core/sudo.bash:15 PATH -> completions-core/sudo.bash:15; graff: ambiguous
+    local PATH=$PATH:/sbin:/usr/sbin:/usr/local/sbin
+completions-core/sudo.bash:16 _comp_root_command -> completions-core/sudo.bash:16; graff: external
+    local _comp_root_command=$1
+completions-core/sudo.bash:21 noargopts -> completions-core/sudo.bash:11; graff: external
+    if [[ ${words[i]} == -@(${noargopts}e*|-edit) ]]; then
+completions-core/sudo.bash:26 noargopts -> completions-core/sudo.bash:11; graff: external
+    [[ ${words[i]} == @(--@(close-from|chdir|group|host|prompt|chroot|role|command-timeout|type|other-user|user)|-
+completions-core/sudo.bash:32 noargopts -> completions-core/sudo.bash:11; graff: external
+    --user | --other-user | -${noargopts}[uU])
+completions-core/sudo.bash:36 noargopts -> completions-core/sudo.bash:11; graff: external
+    --group | -${noargopts}g)
+completions-core/sudo.bash:41 noargopts -> completions-core/sudo.bash:11; graff: external
+    -${noargopts}[CprTt])
+completions-core/sudo.bash:44 noargopts -> completions-core/sudo.bash:11; graff: external
+    --chdir | --chroot | -${noargopts}[DR])
+completions-core/sudo.bash:48 noargopts -> completions-core/sudo.bash:11; graff: external
+    --host | -${noargopts}h)
+completions-core/sudo.bash:58 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/svcadm.bash:78 COMPREPLY -> bash_completion:3024; graff: scope
+    local i=${#COMPREPLY[*]}
+completions-core/svcadm.bash:79 COMPREPLY -> bash_completion:3024; graff: scope
+    if [[ $i -gt 0 && ${COMPREPLY[--i]} == */ ]]; then
+completions-core/svcadm.bash:82 COMPREPLY -> bash_completion:3024; graff: scope
+    [[ ${COMPREPLY[i]} != "${COMPREPLY[i - 1]}" ]] && break
+completions-core/svcadm.bash:86 COMPREPLY -> bash_completion:3024; graff: scope
+    _comp_cmd_svcadm__fmri "${COMPREPLY[0]}" "$prefix"
+completions-core/svcadm.bash:95 COMPREPLY -> bash_completion:3024; graff: scope
+    local i=${#COMPREPLY[*]}
+completions-core/svcadm.bash:97 COMPREPLY -> bash_completion:3024; graff: scope
+    COMPREPLY[i]=${COMPREPLY[i]#"$colonprefixes"}
+completions-core/svk.bash:192 _comp_awk -> bash_completion:3641; graff: ambiguous
+    2>/dev/null | _comp_awk '/^\//{print $1}')"
+completions-core/svk.bash:201 command -> completions-core/svk.bash:35; graff: external
+    command sed -e 's|\(.*\)|'"$path"'\1|')"
+completions-core/synclient.bash:18 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '/^[ \t]/ { print $1 }')"
+completions-core/sysbench.bash:124 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/sysctl.bash:28 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/tar.bash:411 allshort_raw_unused -> completions-core/tar.bash:380; graff: external
+    c="${allshort_raw_unused:i:1}"
+completions-core/tcpdump.bash:58 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/timeout.bash:33 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/tipc.bash:46 _comp_awk -> bash_completion:3641; graff: ambiguous
+    tipc bearer list 2>/dev/null | _comp_awk -F : '/^udp:/ {print $2}'
+completions-core/tipc.bash:73 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '{print substr($1, 0, length($1))}')
+completions-core/truncate.bash:24 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/tshark.bash:29 COMPREPLY -> bash_completion:3024; graff: scope
+    [[ ${COMPREPLY-} == *: ]] && compopt -o nospace
+completions-core/tshark.bash:37 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_compgen_split -- "$("$1" -D 2>/dev/null | _comp_awk '{print $2}')"
+completions-core/tshark.bash:50 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '/^  / { print $1 }')"
+completions-core/tshark.bash:55 COMPREPLY -> bash_completion:3024; graff: scope
+    [[ ${COMPREPLY-} == *: ]] && compopt -o nospace
+completions-core/tshark.bash:69 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_compgen_split -- "$("$1" -F 2>&1 | _comp_awk '/^  / { print $1 }')"
+completions-core/tshark.bash:109 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '/^[ \t]*-G / {
+completions-core/unpack200.bash:40 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/valgrind.bash:48 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/valgrind.bash:104 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/vmstat.bash:23 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} ]] ||
+completions-core/watch.bash:11 noargopts -> completions-core/watch.bash:11; graff: external
+    local noargopts='!(-*|*[dn]*)'
+completions-core/watch.bash:15 noargopts -> completions-core/watch.bash:11; graff: external
+    --help | --version | -${noargopts}h)
+completions-core/watch.bash:18 noargopts -> completions-core/watch.bash:11; graff: external
+    --interval | -${noargopts}n)
+completions-core/watch.bash:37 noargopts -> completions-core/watch.bash:11; graff: external
+    --differences | -${noargopts}d)
+completions-core/watch.bash:42 noargopts -> completions-core/watch.bash:11; graff: external
+    --interval | -${noargopts}n)
+completions-core/watch.bash:51 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/wget.bash:58 COMPREPLY -> bash_completion:3024; graff: scope
+    _comp_split -F $', \t\n' opt_as_arr "${COMPREPLY[0]}"
+completions-core/wine.bash:17 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} ]] && return
+completions-core/wodim.bash:42 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/wodim.bash:47 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk 'NR > 1 { print $1 }') help"
+completions-core/wodim.bash:91 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/wol.bash:37 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/wsimport.bash:39 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *: ]] && compopt -o nospace
+completions-core/wvdial.bash:22 COMPREPLY -> bash_completion:3024; graff: scope
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/xdg-settings.bash:24 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_compgen_split -- "$("$1" --list | _comp_awk '!/^Known/ { print $1 }')"
+completions-core/xfreerdp.bash:17 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '/^0x/ { print $1 }' <<<"$kbd_list"
+completions-core/xfreerdp.bash:64 _comp_awk -> bash_completion:3641; graff: ambiguous
+    "$1" --help | _comp_awk '$1 ~ /^\// && $1 !~ /^.(flag$|option:)/ {
+completions-core/xfreerdp.bash:67 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *: ]] && compopt -o nospace
+completions-core/xfreerdp.bash:72 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_compgen_split -- "$(_comp_awk '$1 ~ /^[+-]/ && $1 !~ /^.toggle$/ {
+completions-core/xfreerdp.bash:76 COMPREPLY -> bash_completion:3024; graff: external
+    ((${#COMPREPLY[@]})) &&
+completions-core/xfreerdp.bash:82 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '{print $1}' ~/.freerdp/known_hosts 2>/dev/null
+completions-core/xrandr.bash:5 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_compgen_split -- "$("$1" -q 2>/dev/null | _comp_awk '/connected/ {print $1}')"
+completions-core/xrdb.bash:21 COMPREPLY -> bash_completion:3024; graff: external
+    [[ $COMPREPLY == -[DIU] ]] && compopt -o nospace
+completions-core/xvfb-run.bash:34 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/xz.bash:48 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/xzdec.bash:23 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-core/zopfli.bash:16 COMPREPLY -> bash_completion:3024; graff: external
+    ((${#COMPREPLY[@]})) &&
+completions-core/zopfli.bash:18 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == --i ]] && compopt -o nospace
+completions-core/zopflipng.bash:22 COMPREPLY -> bash_completion:3024; graff: external
+    ((${#COMPREPLY[@]})) &&
+completions-core/zopflipng.bash:24 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-fallback/adb.bash:42 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_split -a tmp "$("$1" help 2>&1 | _comp_awk '$1 == "adb" { print $2 }')"
+completions-fallback/cargo.bash:6 rustup -> completions-fallback/cargo.bash:6; graff: external
+    local rustup="${1%cargo}rustup" # use rustup from same dir
+completions-fallback/cargo.bash:7 rustup -> completions-fallback/cargo.bash:6; graff: external
+    eval -- "$("$rustup" completions bash cargo 2>/dev/null)"
+completions-fallback/dpkg.bash:13 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk -F '\n' -v RS="" "
+completions-fallback/dpkg.bash:28 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk -F '\n' -v RS="" "
+completions-fallback/dpkg.bash:41 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '{for(i=2;i<=NF;i++){ if($i=="hold"){ print $1;break }}}'
+completions-fallback/dpkg.bash:144 COMPREPLY -> bash_completion:3024; graff: external
+    for i in ${!COMPREPLY[*]}; do
+completions-fallback/dpkg.bash:146 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY[i]} != *- ]] || unset -v 'COMPREPLY[i]'
+completions-fallback/dpkg.bash:148 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-fallback/interdiff.bash:23 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-fallback/modinfo.bash:11 noargopts -> completions-fallback/modinfo.bash:11; graff: external
+    local noargopts='!(-*|*[Fkb]*)'
+completions-fallback/modinfo.bash:14 noargopts -> completions-fallback/modinfo.bash:11; graff: external
+    --field | -${noargopts}F)
+completions-fallback/modinfo.bash:21 noargopts -> completions-fallback/modinfo.bash:11; graff: external
+    --set-version | -${noargopts}k)
+completions-fallback/modinfo.bash:25 noargopts -> completions-fallback/modinfo.bash:11; graff: external
+    --basedir | -${noargopts}b)
+completions-fallback/modinfo.bash:35 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-fallback/modinfo.bash:39 version -> completions-fallback/modinfo.bash:39; graff: external
+    local i version=$(uname -r)
+completions-fallback/modinfo.bash:41 noargopts -> completions-fallback/modinfo.bash:11; graff: external
+    if [[ ${words[i]} == -@(${noargopts}k*|-set-version) ]]; then
+completions-fallback/modinfo.bash:51 version -> completions-fallback/modinfo.bash:39; graff: external
+    _comp_compgen_kernel_modules "$version"
+completions-fallback/modprobe.bash:35 COMPREPLY -> bash_completion:3024; graff: scope
+    if [[ ! ${COMPREPLY-} ]]; then
+completions-fallback/modprobe.bash:44 COMPREPLY -> bash_completion:3024; graff: scope
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-fallback/modprobe.bash:104 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk -F : '!/^[ \t]/ { print $1 }')"
+completions-fallback/modprobe.bash:105 COMPREPLY -> bash_completion:3024; graff: scope
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-fallback/modprobe.bash:109 COMPREPLY -> bash_completion:3024; graff: scope
+    if [[ ${COMPREPLY-} ]]; then
+completions-fallback/modprobe.bash:111 COMPREPLY -> bash_completion:3024; graff: scope
+    local -a mods=("${COMPREPLY[@]}")
+completions-fallback/modprobe.bash:114 COMPREPLY -> bash_completion:3024; graff: scope
+    for module in "${COMPREPLY[@]}"; do
+completions-fallback/modules.bash:56 _comp_awk -> bash_completion:3641; graff: ambiguous
+    options=$(module help 2>&1 | _comp_awk '/^[[:space:]]*\+/ {
+completions-fallback/mount.bash:37 _comp_awk -> bash_completion:3641; graff: ambiguous
+    "$sm" -e ${cur%%:*} | _comp_awk 'NR>1 {print $1}'
+completions-fallback/mount.bash:56 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '! /^[ \t]*#/ {if ($3 ~ /\//) print $3}' /etc/vfstab
+completions-fallback/mount.bash:61 _comp_awk -> bash_completion:3641; graff: ambiguous
+    "$1" | _comp_awk '! /^[ \t]*#/ {if ($3 ~ /\//) print $3}'
+completions-fallback/mount.bash:66 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '! /^[ \t]*#/ {if ($2 ~ /\//) print $2}' /etc/fstab
+completions-fallback/mount.linux.bash:15 cur -> bash_completion:2808; graff: scope
+    [[ $cur =~ ^.+, ]]
+completions-fallback/mount.linux.bash:16 prefix -> completions-fallback/mount.linux.bash:16; graff: external
+    local prefix=${BASH_REMATCH-}
+completions-fallback/mount.linux.bash:17 prefix -> completions-fallback/mount.linux.bash:16; graff: external
+    _comp_compgen -P "$prefix" -- -W 'auto adfs affs autofs btrfs cifs
+completions-fallback/mount.linux.bash:22 prefix -> completions-fallback/mount.linux.bash:16; graff: external
+    _comp_compgen -aP "$prefix" fstypes
+completions-fallback/mount.linux.bash:63 cur -> bash_completion:2808; graff: scope
+    [[ $cur =~ ^.+, ]]
+completions-fallback/mount.linux.bash:64 prefix -> completions-fallback/mount.linux.bash:64; graff: external
+    local prefix=${BASH_REMATCH-}
+completions-fallback/mount.linux.bash:66 cur -> bash_completion:2808; graff: scope
+    [[ ${cur##*,} == *=* ]] && return
+completions-fallback/mount.linux.bash:68 prefix -> completions-fallback/mount.linux.bash:64; graff: external
+    _comp_compgen -P "$prefix" -- -W 'loop {,a}sync {,no}atime
+completions-fallback/mount.linux.bash:75 prefix -> completions-fallback/mount.linux.bash:64; graff: external
+    _comp_compgen -aP "$prefix" -- -W '{u,g}id= {own,oth}mask='
+completions-fallback/mount.linux.bash:78 prefix -> completions-fallback/mount.linux.bash:64; graff: external
+    _comp_compgen -aP "$prefix" -- -W '{u,g}id= set{u,g}id=
+completions-fallback/mount.linux.bash:83 prefix -> completions-fallback/mount.linux.bash:64; graff: external
+    _comp_compgen -aP "$prefix" -- -W 'degraded subvol=
+completions-fallback/mount.linux.bash:91 prefix -> completions-fallback/mount.linux.bash:64; graff: external
+    _comp_compgen -aP "$prefix" -- -W 'user= password=
+completions-fallback/mount.linux.bash:100 prefix -> completions-fallback/mount.linux.bash:64; graff: external
+    _comp_compgen -aP "$prefix" -- -W 'conf= {file,dir}_mode=
+completions-fallback/mount.linux.bash:104 prefix -> completions-fallback/mount.linux.bash:64; graff: external
+    _comp_compgen -aP "$prefix" -- -W '{,no}acl bsddf minixdf
+completions-fallback/mount.linux.bash:110 prefix -> completions-fallback/mount.linux.bash:64; graff: external
+    _comp_compgen -aP "$prefix" -- -W 'journal= journal_dev=
+completions-fallback/mount.linux.bash:114 prefix -> completions-fallback/mount.linux.bash:64; graff: external
+    _comp_compgen -aP "$prefix" -- -W 'journal_checksum
+completions-fallback/mount.linux.bash:122 prefix -> completions-fallback/mount.linux.bash:64; graff: external
+    _comp_compgen -aP "$prefix" -- -W 'blocksize= {u,g}id=
+completions-fallback/mount.linux.bash:128 prefix -> completions-fallback/mount.linux.bash:64; graff: external
+    _comp_compgen -aP "$prefix" -- -W 'uni_xlate posix
+completions-fallback/mount.linux.bash:132 prefix -> completions-fallback/mount.linux.bash:64; graff: external
+    _comp_compgen -aP "$prefix" -- -W 'norock nojoliet check=
+completions-fallback/mount.linux.bash:137 prefix -> completions-fallback/mount.linux.bash:64; graff: external
+    _comp_compgen -aP "$prefix" -- -W 'compr= rp_size='
+completions-fallback/mount.linux.bash:140 prefix -> completions-fallback/mount.linux.bash:64; graff: external
+    _comp_compgen -aP "$prefix" -- -W 'iocharset= resize=
+completions-fallback/mount.linux.bash:144 prefix -> completions-fallback/mount.linux.bash:64; graff: external
+    _comp_compgen -aP "$prefix" -- -W 'soft hard timeo=
+completions-fallback/mount.linux.bash:151 prefix -> completions-fallback/mount.linux.bash:64; graff: external
+    _comp_compgen -aP "$prefix" -- -W 'udp tcp rdma
+completions-fallback/mount.linux.bash:156 prefix -> completions-fallback/mount.linux.bash:64; graff: external
+    _comp_compgen -aP "$prefix" -- -W 'clientaddr=
+completions-fallback/mount.linux.bash:160 prefix -> completions-fallback/mount.linux.bash:64; graff: external
+    _comp_compgen -aP "$prefix" -- -W '{u,g}id= {u,f,d}mask=
+completions-fallback/mount.linux.bash:169 prefix -> completions-fallback/mount.linux.bash:64; graff: external
+    _comp_compgen -aP "$prefix" -- -W '{u,g}id='
+completions-fallback/mount.linux.bash:172 prefix -> completions-fallback/mount.linux.bash:64; graff: external
+    _comp_compgen -aP "$prefix" -- -W 'conv hash=
+completions-fallback/mount.linux.bash:177 prefix -> completions-fallback/mount.linux.bash:64; graff: external
+    _comp_compgen -aP "$prefix" -- -W 'size= nr_blocks=
+completions-fallback/mount.linux.bash:181 prefix -> completions-fallback/mount.linux.bash:64; graff: external
+    _comp_compgen -aP "$prefix" -- -W '{u,g}id= umask= unhide
+completions-fallback/mount.linux.bash:186 prefix -> completions-fallback/mount.linux.bash:64; graff: external
+    _comp_compgen -aP "$prefix" -- -W 'dev{u,g}id= devmode=
+completions-fallback/mount.linux.bash:190 prefix -> completions-fallback/mount.linux.bash:64; graff: external
+    _comp_compgen -aP "$prefix" -- -W 'allocsize= {,no}attr2
+completions-fallback/mount.linux.bash:199 COMPREPLY -> bash_completion:3024; graff: scope
+    if ((${#COMPREPLY[@]})) && [[ $prefix == *["$COMP_WORDBREAKS"]* ]]; then
+completions-fallback/mount.linux.bash:199 prefix -> completions-fallback/mount.linux.bash:64; graff: external
+    if ((${#COMPREPLY[@]})) && [[ $prefix == *["$COMP_WORDBREAKS"]* ]]; then
+completions-fallback/mount.linux.bash:200 prefix -> completions-fallback/mount.linux.bash:64; graff: external
+    local tmp=${prefix%["$COMP_WORDBREAKS"]*}
+completions-fallback/mount.linux.bash:201 COMPREPLY -> bash_completion:3024; graff: scope
+    COMPREPLY=("${COMPREPLY[@]#"$tmp"?}")
+completions-fallback/mount.linux.bash:203 COMPREPLY -> bash_completion:3024; graff: scope
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-fallback/mount.linux.bash:208 cur -> bash_completion:2808; graff: scope
+    if [[ $cur == -* ]]; then
+completions-fallback/mount.linux.bash:213 COMPREPLY -> bash_completion:3024; graff: scope
+    [[ ${COMPREPLY-} ]] && return
+completions-fallback/mount.linux.bash:224 _comp_awk -> bash_completion:3641; graff: ambiguous
+    "$sm" -e ${cur%%:*} | _comp_awk 'NR>1 {print $1}'
+completions-fallback/nmcli.bash:9 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk -F ' {2,}' 'NR >= 2 {print $1}')"
+completions-fallback/nmcli.bash:15 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk -F ' {2,}' 'NR >= 2 {print $2}')"
+completions-fallback/nmcli.bash:21 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk -F ' {2,}' 'NR >= 2 {print $1}')"
+completions-fallback/nmcli.bash:27 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk -F ' {2,}' 'NR >= 2 {print $2}')"
+completions-fallback/renice.bash:14 COMPREPLY -> bash_completion:3024; graff: external
+    while ((i <= cword && ${#COMPREPLY[@]} == 0)); do
+completions-fallback/repomanage.bash:17 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-fallback/rfkill.bash:21 _comp_awk -> bash_completion:3641; graff: ambiguous
+    $("$1" list | _comp_awk -F : '/^[0-9]/ {print $1}')
+completions-fallback/secret-tool.bash:38 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-fallback/su.bash:31 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-fallback/udevadm.bash:62 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '/^[ \t]/ { print $1 }')"
+completions-fallback/udevadm.bash:70 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+completions-fallback/umount.linux.bash:17 COMPREPLY -> bash_completion:3024; graff: scope
+    for i in ${!COMPREPLY[*]}; do
+completions-fallback/umount.linux.bash:19 COMPREPLY -> bash_completion:3024; graff: scope
+    printf -v REPLY %q "${COMPREPLY[i]}"
+completions-fallback/xm.bash:10 _comp_awk -> bash_completion:3641; graff: ambiguous
+    _comp_awk '!/Name|Domain-0/ { print $1 }')"
+completions-fallback/xm.bash:150 _comp_awk -> bash_completion:3641; graff: ambiguous
+    2>/dev/null | _comp_awk '!/Vdev/ { print $1 }')"
+completions-fallback/xm.bash:174 _comp_awk -> bash_completion:3641; graff: ambiguous
+    2>/dev/null | _comp_awk '!/Idx/ { print $1 }')"
+completions-fallback/xm.bash:189 command -> completions-fallback/xm.bash:41; graff: external
+    command ls /etc/xen 2>/dev/null
+completions-fallback/yum.bash:145 COMPREPLY -> bash_completion:3024; graff: external
+    [[ ${COMPREPLY-} == *= ]] && compopt -o nospace
+startup-core/000_bash_completion_compat.bash:59 have -> startup-core/000_bash_completion_compat.bash:57; graff: scope
+    unset -v have
+startup-core/000_bash_completion_compat.bash:272 _comp_backup_glob -> bash_completion:2187; graff: external
+    _backup_glob=$_comp_backup_glob
+startup-core/000_bash_completion_compat.bash:431 cur -> startup-core/000_bash_completion_compat.bash:173; graff: external
+    _comp_compgen -c "${1:-$cur}" allowed_users
+startup-core/000_bash_completion_compat.bash:437 cur -> startup-core/000_bash_completion_compat.bash:173; graff: external
+    _comp_compgen -c "${1:-$cur}" allowed_groups

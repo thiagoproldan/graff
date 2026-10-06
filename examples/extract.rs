@@ -85,6 +85,7 @@ fn walk(language: Language, source: &[u8]) -> (usize, Option<(usize, String)>) {
     let grammar = match language {
         Language::Rust => tree_sitter_rust::LANGUAGE,
         Language::Nix => tree_sitter_nix::LANGUAGE,
+        Language::Bash => tree_sitter_bash::LANGUAGE,
     };
     let mut parser = tree_sitter::Parser::new();
     parser

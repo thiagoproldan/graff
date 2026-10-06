@@ -1679,7 +1679,11 @@ myLib.mkSys given
         let files: Vec<File> = WORKTREE
             .iter()
             .zip(&extractions)
-            .map(|((path, _), extraction)| File { path, extraction })
+            .map(|((path, _), extraction)| File {
+                path,
+                language: Language::of(path, b"").expect("a language graff reads"),
+                extraction,
+            })
             .collect();
         let read = |path: &str| {
             WORKTREE

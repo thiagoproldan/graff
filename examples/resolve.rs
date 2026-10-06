@@ -31,20 +31,25 @@ fn main() {
         .map_while(Result::ok)
         .filter(|p| !p.is_empty())
         .collect();
-    let mut extractions: Vec<Extraction> = paths
+    let (languages, mut extractions): (Vec<Language>, Vec<Extraction>) = paths
         .iter()
         .map(|path| {
             let source = std::fs::read(root.join(path)).unwrap_or_else(|e| panic!("{path}: {e}"));
             let language = Language::of(path, &source)
                 .unwrap_or_else(|| panic!("{path}: in no language graff reads"));
-            extract::extract(language, &source)
+            (language, extract::extract(language, &source))
         })
-        .collect();
+        .unzip();
     let instances = {
         let files: Vec<File> = paths
             .iter()
             .zip(&extractions)
-            .map(|(path, extraction)| File { path, extraction })
+            .zip(&languages)
+            .map(|((path, extraction), &language)| File {
+                path,
+                language,
+                extraction,
+            })
             .collect();
         resolve::nix::instantiate(&files, &|path| std::fs::read(root.join(path)).ok())
     };
@@ -63,7 +68,12 @@ fn main() {
     let files: Vec<File> = paths
         .iter()
         .zip(&extractions)
-        .map(|(path, extraction)| File { path, extraction })
+        .zip(&languages)
+        .map(|((path, extraction), &language)| File {
+            path,
+            language,
+            extraction,
+        })
         .collect();
     let names: Vec<(&str, String)> = paths
         .iter()

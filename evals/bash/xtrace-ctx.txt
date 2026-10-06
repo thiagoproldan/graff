@@ -1,0 +1,65 @@
+run 2026-10-05
+graff cc0f59d with uncommitted changes
+corpus ctx: a git repository at ac97338 (git archive), 23 Bash files
+truth: nix develop /projects/ctx --no-update-lock-file -c env -u CTX_HANDOFF_5H SHELLOPTS=xtrace BASH_XTRACEFD=19 'PS4=+@${BASHPID}@${BASH_SOURCE[0]-}@${LINENO}@${FUNCNAME[0]-}@${BASH_SOURCE[1]-}@${BASH_LINENO[0]-}@ ' bash src/test-hooks.sh
+  in the folder taken out, the trace sent to its own file; the suite said: 517 ok, 0 failure(s)
+  37939 lines traced, 19 of the 23 files ran; 1165 calls, 21 sources and 45 runs of their own
+
+calls: graff precision 1.000 (1192 of 1192 judged; 35 unjudged), recall 0.997 (1161 of 1165), 26 met off their own line
+  broken resolver: precision 0.000, recall 0.000
+  missed, by what graff did: 2 no edge, 1 tied +5 lines off, 1 tied -6 lines off
+sources: graff precision 1.000 (21 of 21 judged; 4 unjudged), recall 1.000 (21 of 21), 0 met off their own line
+  broken resolver: precision 0.000, recall 0.000
+runs: graff precision 1.000 (30 of 30 judged; 5 unjudged), recall 0.667 (30 of 45), 9 met off their own line
+  broken resolver: precision 0.100, recall 0.067
+  missed, by what graff did: 12 no edge, 1 tied +7 lines off, 2 tied -6 lines off
+
+calls, wrong:
+
+calls, missed:
+src/test-hooks.sh:432 -> ctx_window src/lib/window.sh; graff: no edge
+    w() { CLAUDE_CONFIG_DIR="$TMP/profile-w" "$@"; }
+src/test-hooks.sh:432 -> ctx_window_merge src/lib/window.sh; graff: no edge
+    w() { CLAUDE_CONFIG_DIR="$TMP/profile-w" "$@"; }
+src/test-hooks.sh:748 -> solo src/test-hooks.sh; graff: tied +5 lines off
+    )
+src/test-hooks.sh:753 -> tool_json src/test-hooks.sh; graff: tied -6 lines off
+    "$(CLAUDE_CONFIG_DIR="$PK" solo k2 300000 | tr '[:upper:]' '[:lower:]')"
+
+sources, wrong:
+
+sources, missed:
+
+runs, wrong:
+
+runs, missed:
+src/test-hooks.sh:81 -> src/hooks/check-file-size; graff: no edge
+    out=$(printf '%s' "$json" | env -u CTX_DISABLE CTX_MIN_LINES=500 "$HOOKS/$hook" 2>&1)
+src/test-hooks.sh:81 -> src/hooks/guard-secrets; graff: no edge
+    out=$(printf '%s' "$json" | env -u CTX_DISABLE CTX_MIN_LINES=500 "$HOOKS/$hook" 2>&1)
+src/test-hooks.sh:81 -> src/hooks/guard-window; graff: no edge
+    out=$(printf '%s' "$json" | env -u CTX_DISABLE CTX_MIN_LINES=500 "$HOOKS/$hook" 2>&1)
+src/test-hooks.sh:81 -> src/hooks/guard-work-loss; graff: no edge
+    out=$(printf '%s' "$json" | env -u CTX_DISABLE CTX_MIN_LINES=500 "$HOOKS/$hook" 2>&1)
+src/test-hooks.sh:159 -> src/hooks/check-file-size; graff: no edge
+    out=$(printf '%s' "$in" | CTX_DISABLE=1 CTX_MIN_LINES=500 "$HOOKS/$h" 2>&1)
+src/test-hooks.sh:331 -> src/hooks/check-file-size; graff: tied +7 lines off
+    printf '%s' "$in" | env -u CTX_DISABLE CTX_FUNNEL="$FUN" CTX_MIN_LINES=500 "$HOOKS/$h" >/dev/null
+src/test-hooks.sh:461 -> src/hooks/window; graff: no edge
+    env -u CTX_DISABLE -u CTX_HANDOFF_5H CLAUDE_CONFIG_DIR="$PW" "$@" "$WH" "$ev" 2>&1
+src/test-hooks.sh:604 -> src/hooks/handoff; graff: no edge
+    env -u CTX_DISABLE -u CTX_HANDOFF_TOKENS -u CTX_HANDOFF_5H -u CTX_AUTO_RESET_IDLE \
+src/test-hooks.sh:751 -> src/hooks/window; graff: tied -6 lines off
+    has "...and none of it asks for a handoff" absent "handoff" "$(tr '[:upper:]' '[:lower:]' <<<"$prese
+src/test-hooks.sh:753 -> src/hooks/guard-window; graff: tied -6 lines off
+    "$(CLAUDE_CONFIG_DIR="$PK" solo k2 300000 | tr '[:upper:]' '[:lower:]')"
+src/test-hooks.sh:1002 -> src/bin/auto-reset; graff: no edge
+    reset_env() { env -u CTX_DISABLE PATH="$FAKEBIN:$PATH" KONSOLE_DBUS_SERVICE=fake.konsole \
+src/test-hooks.sh:1110 -> src/hooks/handoff; graff: no edge
+    printf '%s' "$j" | env -u CTX_DISABLE -u CTX_HANDOFF_TOKENS -u CTX_HANDOFF_5H -u CTX_AUTO_RESET_IDLE
+src/test-hooks.sh:1218 -> src/hooks/cold-return; graff: no edge
+    cr() { env -u CTX_DISABLE -u CTX_COLD_TOKENS -u CTX_COLD_MINUTES -u CTX_HANDOFF_TOKENS "$@" "$CR" 2>
+src/test-hooks.sh:1562 -> src/hooks/guard-secrets; graff: no edge
+    printf '%s' "$3" | env -u CTX_DISABLE EKKO_FAKE="$1" EKKO_FAKE_LOG="$TMP/ekko.log" \
+src/test-hooks.sh:1562 -> src/hooks/guard-work-loss; graff: no edge
+    printf '%s' "$3" | env -u CTX_DISABLE EKKO_FAKE="$1" EKKO_FAKE_LOG="$TMP/ekko.log" \

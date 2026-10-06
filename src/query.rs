@@ -298,8 +298,10 @@ pub fn outline(
             continue;
         }
         shown.push((s, open.len(), open.last().copied()));
-        // What a helper writes, at the call's lines, holds none of the call's own bindings.
-        if code.written(Definition { file: f, symbol: s }).is_none() {
+        // What a helper writes, at the call's lines, holds none of the call's
+        // own bindings; a script's variable, none of those on its line.
+        let d = Definition { file: f, symbol: s };
+        if code.written(d).is_none() && code.holds(d) {
             open.push(s);
         }
     }
@@ -537,7 +539,12 @@ impl<'s> Code<'s> {
             let files: Vec<File> = worktree
                 .files
                 .iter()
-                .map(|(path, extraction)| File { path, extraction })
+                .zip(&worktree.languages)
+                .map(|((path, extraction), &language)| File {
+                    path,
+                    language,
+                    extraction,
+                })
                 .collect();
             resolve::nix::instantiate(&files, &|path| fs::read(root.join(path)).ok())
         };
@@ -597,7 +604,12 @@ impl<'s> Code<'s> {
             .worktree
             .files
             .iter()
-            .map(|(path, extraction)| File { path, extraction })
+            .zip(&self.worktree.languages)
+            .map(|((path, extraction), &language)| File {
+                path,
+                language,
+                extraction,
+            })
             .collect();
         let libraries: Vec<Library> = self
             .libraries
@@ -645,7 +657,7 @@ impl<'s> Code<'s> {
         &self.worktree.files[d.file].1.symbols[d.symbol]
     }
 
-    /// A Nix file as a definition of its own.
+    /// A Nix file or a script as a definition of its own.
     fn whole(&self, file: usize) -> Option<Definition> {
         let symbols = &self.worktree.files[file].1.symbols;
         let s = symbols.iter().position(|s| s.kind == Kind::File)?;
@@ -798,8 +810,12 @@ impl<'s> Code<'s> {
     /// Each definition a written name names, the whole name first; an error
     /// that gives the nearest names when none does.
     fn find(&self, written: &str) -> Result<Vec<Definition>, Error> {
-        // A Nix file is named by its path, as `graff outline` names one.
-        if written.ends_with(".nix")
+        // A Nix file or a script is named by its path, as `graff outline`
+        // names one; a bare word with no extension, `handoff`, names symbols.
+        if (written.contains('/')
+            || [".nix", ".sh", ".bash"]
+                .iter()
+                .any(|extension| written.ends_with(extension)))
             && let Ok(f) = self.file(written)
             && let Some(whole) = self.whole(f)
         {
@@ -1045,8 +1061,18 @@ impl<'s> Code<'s> {
             Some(&symbol) => Caller::In(Definition { file, symbol }),
             None => self
                 .around(file, edge.line)
+                .filter(|&d| self.holds(d))
                 .map_or(Caller::Top(file), Caller::In),
         }
+    }
+
+    /// Whether the code on a definition's lines is in it: not for a Bash
+    /// variable, which stands where it is first assigned, on a line whose
+    /// command and other assignments are not its own,
+    /// `CTX_FUNNEL=.. ctx_log ..`.
+    fn holds(&self, d: Definition) -> bool {
+        !(self.worktree.languages[d.file] == Language::Bash
+            && matches!(self.symbol(d).kind, Kind::Variable | Kind::Environment))
     }
 
     fn caller_file(&self, caller: Caller) -> usize {

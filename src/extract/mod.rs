@@ -3,6 +3,7 @@
 //! one file alone; tying a call to the definition it reaches is resolution's
 //! work, across files.
 
+pub mod bash;
 pub mod nix;
 pub mod rust;
 
@@ -74,7 +75,8 @@ pub enum Kind {
     Variant,
     /// A Nix attrset's binding: `services.openssh.enable = true;`.
     Attribute,
-    /// A Nix `let` binding.
+    /// A Nix `let` binding; a shell variable a script assigns, at its first
+    /// assignment.
     Variable,
     /// A NixOS option a binding declares with mkOption, mkEnableOption or
     /// mkPackageOption.
@@ -89,6 +91,13 @@ pub enum Kind {
     /// turns a binding into one when it instantiates the helper, and what the
     /// helper makes of the binding stands in its place.
     Argument,
+    /// A shell variable a script exports to the commands it runs -- by
+    /// `export`, or for one command, `X=1 cmd` and `env X=1 cmd` -- at its
+    /// first assignment: the scripts it runs read it from their environment.
+    Environment,
+    /// A part of a file a comment banner opens, `# --- title ---`, which runs
+    /// to the next banner of the same rule.
+    Section,
 }
 
 /// A call: what is called, by name as written, from where.
@@ -147,8 +156,12 @@ pub enum RefKind {
     Type,
     /// `Kind::Task`, `crate::ops::MAX`.
     Path,
-    /// `MAX`, or `parse_line` in `.map(parse_line)`.
+    /// `MAX`, or `parse_line` in `.map(parse_line)`; a shell variable read,
+    /// `$x`.
     Value,
+    /// A shell variable given a value past its first assignment in the
+    /// file, or for one command: `x` in `x=2`, `X=1 cmd`, `read x`.
+    Set,
 }
 
 /// One name a `use` item brings in, its tree flattened: `use a::{b, c as d};`
@@ -171,7 +184,7 @@ pub struct Import {
 }
 
 impl Kind {
-    pub const ALL: [Kind; 19] = [
+    pub const ALL: [Kind; 21] = [
         Kind::Function,
         Kind::Method,
         Kind::Struct,
@@ -191,6 +204,8 @@ impl Kind {
         Kind::Input,
         Kind::File,
         Kind::Argument,
+        Kind::Environment,
+        Kind::Section,
     ];
 
     /// Its name as stored and shown, the same as serde's.
@@ -215,6 +230,8 @@ impl Kind {
             Kind::Input => "input",
             Kind::File => "file",
             Kind::Argument => "argument",
+            Kind::Environment => "environment",
+            Kind::Section => "section",
         }
     }
 }
@@ -239,7 +256,7 @@ impl CallKind {
 }
 
 impl RefKind {
-    pub const ALL: [RefKind; 3] = [RefKind::Type, RefKind::Path, RefKind::Value];
+    pub const ALL: [RefKind; 4] = [RefKind::Type, RefKind::Path, RefKind::Value, RefKind::Set];
 
     /// Its name as stored and shown, the same as serde's.
     pub fn name(self) -> &'static str {
@@ -247,6 +264,7 @@ impl RefKind {
             RefKind::Type => "type",
             RefKind::Path => "path",
             RefKind::Value => "value",
+            RefKind::Set => "set",
         }
     }
 }
@@ -293,6 +311,7 @@ pub fn extract(language: Language, source: &[u8]) -> Extraction {
     match language {
         Language::Rust => rust::extract(source),
         Language::Nix => nix::extract(source),
+        Language::Bash => bash::extract(source),
     }
 }
 

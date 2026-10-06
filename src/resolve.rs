@@ -14,6 +14,7 @@
 //! an edge, and so is the type a path goes through: `Storage` in
 //! `Storage::open()`.
 
+pub mod bash;
 pub mod nix;
 
 use std::collections::{HashMap, HashSet};
@@ -115,6 +116,9 @@ const DEPTH: usize = 8;
 pub struct File<'a> {
     /// The path from the worktree's root: `src/store.rs`.
     pub path: &'a str,
+    /// What it is written in: a script with no extension says so in its
+    /// shebang, which its path does not show.
+    pub language: Language,
     pub extraction: &'a Extraction,
 }
 
@@ -201,9 +205,11 @@ pub enum Rule {
     Receiver,
     /// The only definition of that name in the crate.
     Unique,
-    /// Nix: the binding the name is bound to in its file.
+    /// Nix: the binding the name is bound to in its file; Bash: the
+    /// function or variable of the script's own file.
     Scope,
-    /// Nix: the file a path names, or its folder's default.nix.
+    /// Nix: the file a path names, or its folder's default.nix; Bash: the
+    /// file a script sources or runs.
     File,
     /// Nix: a file of a folder a function lists with `builtins.readDir`.
     Folder,
@@ -211,6 +217,10 @@ pub enum Rule {
     Input,
     /// Nix: an option the worktree declares where the path ends.
     Option,
+    /// Bash: a definition in a file its script runs with, by `.`.
+    Source,
+    /// Bash: a variable another script exports to the commands it runs.
+    Environment,
 }
 
 impl Rule {
@@ -228,6 +238,8 @@ impl Rule {
             Rule::Folder => "folder",
             Rule::Input => "input",
             Rule::Option => "option",
+            Rule::Source => "source",
+            Rule::Environment => "environment",
         }
     }
 }
@@ -1106,12 +1118,13 @@ struct Site<'a> {
 /// crates' paths.
 pub fn resolve(files: &[File], libraries: &[Library]) -> Vec<Edge> {
     let rust: Vec<usize> = (0..files.len())
-        .filter(|&f| Language::of(files[f].path, b"") == Some(Language::Rust))
+        .filter(|&f| files[f].language == Language::Rust)
         .collect();
     let crates: Vec<File> = rust
         .iter()
         .map(|&f| File {
             path: files[f].path,
+            language: files[f].language,
             extraction: files[f].extraction,
         })
         .collect();
@@ -1134,6 +1147,7 @@ pub fn resolve(files: &[File], libraries: &[Library]) -> Vec<Edge> {
         })
         .collect();
     edges.extend(nix::resolve(files));
+    edges.extend(bash::resolve(files));
     edges
 }
 
@@ -1346,7 +1360,11 @@ fn render() {}
         let files: Vec<File> = PACKAGE
             .iter()
             .zip(&extractions)
-            .map(|((path, _), extraction)| File { path, extraction })
+            .map(|((path, _), extraction)| File {
+                path,
+                language: Language::Rust,
+                extraction,
+            })
             .collect();
         let libraries = [Library {
             package: "",

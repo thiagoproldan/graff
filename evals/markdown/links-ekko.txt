@@ -1,0 +1,17 @@
+graff e33d74c with uncommitted changes; ekko: /projects/ekko at a69258f (git archive); 2026-10-09
+control, graff's resolver broken on purpose: of the 2426 the rules tie to something, 2 the same as the rules, against graff's 2426
+2676 of 2676 links and written paths reach what the rules say (100.0%)
+    link to file: 858 the same, 0 otherwise
+    link to nothing: 3 the same, 0 otherwise
+    link#fragment to section: 1137 the same, 0 otherwise
+    path to ambiguous: 2 the same, 0 otherwise
+    path to file: 247 the same, 0 otherwise
+    path to module: 171 the same, 0 otherwise
+    path to nothing: 240 the same, 0 otherwise
+    path:line to ambiguous: 2 the same, 0 otherwise
+    path:line to definition: 13 the same, 0 otherwise
+    path:line to nothing: 3 the same, 0 otherwise
+marksman, at each link to a Markdown file:
+    to a custom anchor: 1121 no answer
+    to a file: 855 the same, 1 no answer
+    to a heading's anchor: 16 the same

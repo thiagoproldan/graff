@@ -28,18 +28,31 @@ def main():
             failed += 1
             print(f"FAIL {name}: {got!r} != {want!r}")
 
-    for use, want in [("call method", "call"), ("reference type", "ref"), ("qualifier", "ref"), ("import", "use")]:
+    for use, want in [("call method", "call"), ("reference type", "ref"), ("qualifier", "ref"), ("import", "use"),
+                      ("file", "path"), ("setting", "set"), ("link", "link"), ("mention", "mention")]:
         check(f"label of {use}", query_check.label(use), want)
+    try:
+        query_check.label("include")
+        check("label of a use it does not know", "a label", "an error")
+    except KeyError:
+        check("label of a use it does not know", "an error", "an error")
 
     lines = [
         edge("src/b.rs", 4, "call free"),
         edge("src/b.rs", 1, "import"),
         edge("src/b.rs", 9, "call method", resolution="ambiguous"),
-        edge("src/b.rs", 5, "reference type", kind="module", qualified="a"),
+        edge("README.md", 5, "mention", kind="module", qualified="a"),
         edge("src/b.rs", 6, "reference type", kind="impl", qualified="impl A"),
     ]
-    check("full edges: resolved ones, by target, not to modules or impl blocks, nor ambiguous",
-          dict(query_check.full_edges(lines)), {("src/a.rs", "load"): {("src/b.rs", "call", 4), ("src/b.rs", "use", 1)}})
+    edges, kinds = query_check.full_edges(lines)
+    check("full edges: resolved ones, by target, not to impl blocks, nor ambiguous", dict(edges), {
+        ("src/a.rs", "load"): {("src/b.rs", "call", 4), ("src/b.rs", "use", 1)},
+        ("src/a.rs", "a"): {("README.md", "mention", 5)},
+    })
+    check("full edges: the kinds so named", dict(kinds), {("src/a.rs", "load"): {"function"}, ("src/a.rs", "a"): {"module"}})
+
+    for kind, want in [("file", "k3.h"), ("section", "k3.h#load"), ("function", "k3.h:load"), ("module", "k3.h:load")]:
+        check(f"question for a {kind}", query_check.question("k3.h", "load", {kind}), want)
 
     answer = {"results": [
         {"target": {"path": "src/a.rs"}, "callers": 1, "possible": 1},

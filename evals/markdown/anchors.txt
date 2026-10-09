@@ -1,0 +1,4 @@
+graff e33d74c with uncommitted changes; github-slugger's tests at 285fe87, 78 headings; 2026-10-09
+control, each anchor against the next heading's: 0 of 78 the same
+77 of 78 anchors the ones GitHub gave
+    Unassigned: GitHub 'a-------------------------𰛸-𰼤-------------------------------', graff 'a-𐗋---𓒆-𓲱-----------------𮱘---𰛸-𰼤-𱝏-𱽻-\U000327a6-\U00032fd2-------------------'

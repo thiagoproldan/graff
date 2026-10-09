@@ -11,15 +11,17 @@ pub enum Language {
     Bash,
     Python,
     C,
+    Markdown,
 }
 
 impl Language {
-    pub const ALL: [Language; 5] = [
+    pub const ALL: [Language; 6] = [
         Language::Rust,
         Language::Nix,
         Language::Bash,
         Language::Python,
         Language::C,
+        Language::Markdown,
     ];
 
     /// The language of a file, from its path, or for a file with no extension
@@ -32,6 +34,7 @@ impl Language {
             Some("sh" | "bash") => Some(Language::Bash),
             Some("py") => Some(Language::Python),
             Some("c" | "h") => Some(Language::C),
+            Some("md" | "markdown") => Some(Language::Markdown),
             Some(_) => None,
             None => match interpreter(head) {
                 Some("bash" | "sh") => Some(Language::Bash),
@@ -58,6 +61,7 @@ impl Language {
             Language::Bash => "bash",
             Language::Python => "python",
             Language::C => "c",
+            Language::Markdown => "markdown",
         }
     }
 
@@ -320,6 +324,17 @@ mod tests {
         assert_eq!(Language::of("include/k3/k3.h", b""), Some(Language::C));
         for path in ["src/x.cc", "src/x.cpp", "src/x.hpp", "src/x.H", "Makefile"] {
             assert_eq!(Language::of(path, b""), None, "{path}");
+        }
+    }
+
+    #[test]
+    fn a_markdown_file_is_markdown_by_its_extension_alone() {
+        for path in ["readme.md", "docs/tasks/337.md", "notes.markdown"] {
+            assert_eq!(Language::of(path, b""), Some(Language::Markdown), "{path}");
+        }
+        // GitHub shows a README with no extension as plain text.
+        for path in ["README", "docs/x.mdx", "x.MD.txt", "x.rmd"] {
+            assert_eq!(Language::of(path, b"# Title\n"), None, "{path}");
         }
     }
 }

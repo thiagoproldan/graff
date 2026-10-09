@@ -1,0 +1,9 @@
+graff e33d74c with uncommitted changes; registry: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f: 485 crates with a README.md, each a worktree of its own; 994 Markdown files, 5,329,448 bytes; cmark-gfm 0.29.0.gfm.13 - CommonMark with GitHub Flavored Markdown converter with table, strikethrough, tasklist, footnotes, autolink; 2026-10-09
+control, each file's truth against the next file's extraction: 596 of 64986 the same
+headings: 13951 read by cmark-gfm, 13951 by graff, 13951 the same; 0 cmark-gfm's alone, 0 graff's alone
+sections: 13951 read by cmark-gfm, 13951 by graff, 13951 the same; 0 cmark-gfm's alone, 0 graff's alone
+anchors of headings: 13951 read by cmark-gfm, 13951 by graff, 13951 the same; 0 cmark-gfm's alone, 0 graff's alone
+custom anchors: 87 read by cmark-gfm, 87 by graff, 87 the same; 0 cmark-gfm's alone, 0 graff's alone
+links: 858 read by cmark-gfm, 858 by graff, 858 the same; 0 cmark-gfm's alone, 0 graff's alone
+mentions: 22188 read by cmark-gfm, 22188 by graff, 22188 the same; 0 cmark-gfm's alone, 0 graff's alone
+links GitHub follows from HTML, `<a href>`, which graff does not read: 58

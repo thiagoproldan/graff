@@ -1,0 +1,9 @@
+graff e33d74c with uncommitted changes; kimi: /home/roldant/.local/share/graff/repos/kimi-k3-in-c.git at ac1584a (git archive); 21 Markdown files, 237,623 bytes; cmark-gfm 0.29.0.gfm.13 - CommonMark with GitHub Flavored Markdown converter with table, strikethrough, tasklist, footnotes, autolink; 2026-10-09
+control, each file's truth against the next file's extraction: 0 of 962 the same
+headings: 198 read by cmark-gfm, 198 by graff, 198 the same; 0 cmark-gfm's alone, 0 graff's alone
+sections: 198 read by cmark-gfm, 198 by graff, 198 the same; 0 cmark-gfm's alone, 0 graff's alone
+anchors of headings: 198 read by cmark-gfm, 198 by graff, 198 the same; 0 cmark-gfm's alone, 0 graff's alone
+custom anchors: 0 read by cmark-gfm, 0 by graff, 0 the same; 0 cmark-gfm's alone, 0 graff's alone
+links: 137 read by cmark-gfm, 137 by graff, 137 the same; 0 cmark-gfm's alone, 0 graff's alone
+mentions: 231 read by cmark-gfm, 231 by graff, 231 the same; 0 cmark-gfm's alone, 0 graff's alone
+links GitHub follows from HTML, `<a href>`, which graff does not read: 5

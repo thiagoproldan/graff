@@ -972,7 +972,7 @@ mod tests {
         assert!(done.success());
         write(&root, "src/a.rs", "fn a() {}\n", OLD);
         write(&root, "src/b.rs", "fn b() { a(); }\n", OLD);
-        write(&root, "README.md", "# A repository\n", OLD);
+        write(&root, "notes.txt", "A repository\n", OLD);
         root
     }
 

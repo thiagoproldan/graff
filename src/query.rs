@@ -60,6 +60,11 @@ impl From<store::Error> for Error {
     }
 }
 
+/// What a Rust module's callers are: graff ties Rust's uses to what they
+/// name in a module, `store::Storage` to `Storage`, so that only Markdown's
+/// links and mentions of its file reach the module.
+const MODULE_CALLERS: &str = "links and mentions only, as Rust's uses reach what they name in it";
+
 /// The kinds whose impl blocks `def` lists.
 const IMPLEMENTED: [Kind; 5] = [
     Kind::Struct,
@@ -144,14 +149,18 @@ pub fn callers(
                 .iter()
                 .filter(|edge| may_reach(edge, target) && as_named(edge, of, &written)),
         );
-        let text = format!(
+        let mut text = format!(
             "{}: {}, {} possible",
             code.describe(target),
             count(sure.len(), "caller"),
             possible.len()
         );
-        let item =
+        let mut item =
             json!({"target": code.json(target), "callers": sure.len(), "possible": possible.len()});
+        if code.symbol(target).kind == Kind::Module {
+            text.push_str(&format!("; {MODULE_CALLERS}"));
+            item["only"] = json!(MODULE_CALLERS);
+        }
         lines.push(Line::new(text, item, rank(5, n), "definitions"));
         for (caller, uses) in &sure {
             let text = format!("  {}: {}", code.caller_text(*caller), uses_text(uses));
@@ -181,7 +190,20 @@ pub fn callees(
     options: &Options,
 ) -> Result<String, Error> {
     let mut code = Code::open(store, root)?;
-    let sources = code.find_targets(symbol)?;
+    let mut sources = code.find_targets(symbol)?;
+    // A module's code is the definitions it holds, each with callees of its own.
+    let modules: Vec<String> = sources
+        .iter()
+        .filter(|&&d| code.symbol(d).kind == Kind::Module)
+        .map(|&d| code.describe(d))
+        .collect();
+    sources.retain(|&d| code.symbol(d).kind != Kind::Module);
+    if sources.is_empty() {
+        return Err(Error::Refused(format!(
+            "{symbol} names a module ({}), whose code is what it holds: graff outline FILE lists that",
+            modules.join(", ")
+        )));
+    }
     let mut lines = Vec::new();
     for (n, &source) in sources.iter().enumerate() {
         let path = code.path(source).to_string();
@@ -285,9 +307,10 @@ pub fn outline(
         .filter(|s| s.kind != Kind::Argument)
         .map(|s| (s.start, s.end))
         .collect();
+    // A Markdown file's custom anchors are places for links, not symbols.
     order.retain(|&s| {
         let symbol = &symbols[s];
-        symbol.kind != Kind::File
+        !matches!(symbol.kind, Kind::File | Kind::Anchor)
             && !(symbol.kind == Kind::Argument && made.contains(&(symbol.start, symbol.end)))
     });
     let defined = order.len();
@@ -396,12 +419,12 @@ pub fn impact(
         .iter()
         .enumerate()
         .map(|(n, &t)| {
-            Line::new(
-                code.describe(t),
-                json!({"target": code.json(t)}),
-                rank(6, n),
-                "definitions",
-            )
+            let (mut text, mut item) = (code.describe(t), json!({"target": code.json(t)}));
+            if code.symbol(t).kind == Kind::Module {
+                text.push_str(&format!("; {MODULE_CALLERS}"));
+                item["only"] = json!(MODULE_CALLERS);
+            }
+            Line::new(text, item, rank(6, n), "definitions")
         })
         .collect();
     let written = Named::parse(symbol).parts;
@@ -531,6 +554,8 @@ impl Used {
             Use::Import => "use",
             Use::File => "path",
             Use::Setting => "set",
+            Use::Link => "link",
+            Use::Mention => "mention",
         };
         let candidates = match &edge.resolution {
             Resolution::Ambiguous(found) => found.len(),
@@ -652,9 +677,19 @@ impl<'s> Code<'s> {
     fn edges_named(&mut self, found: &[Definition]) -> Result<Vec<Edge>, Error> {
         let mut names: Vec<String> = Vec::new();
         for &d in found {
-            let name = &self.symbol(d).name;
-            if !names.contains(name) {
-                names.push(name.clone());
+            let symbol = self.symbol(d);
+            // A file is named in code only through the imports that write
+            // its path, which are always read, but a Python module also by
+            // the name an import binds it to.
+            let name = match symbol.kind {
+                Kind::File if self.worktree.languages[d.file] == Language::Python => {
+                    module_name(self.path(d)).to_string()
+                }
+                Kind::File => continue,
+                _ => symbol.name.clone(),
+            };
+            if !names.contains(&name) {
+                names.push(name);
             }
         }
         let mut i = 0;
@@ -691,6 +726,31 @@ impl<'s> Code<'s> {
         Some(Definition { file, symbol: s })
     }
 
+    /// The section of a Markdown file an anchor names: by its own anchor, or
+    /// the one a custom anchor, `<a id="x">`, is in.
+    fn anchored(&self, file: usize, anchor: &str) -> Option<Definition> {
+        let symbols = &self.worktree.files[file].1.symbols;
+        if let Some(s) = symbols
+            .iter()
+            .position(|s| s.kind == Kind::Section && s.qualified == anchor)
+        {
+            return Some(Definition { file, symbol: s });
+        }
+        let line = symbols
+            .iter()
+            .find(|s| s.kind == Kind::Anchor && s.name == anchor)?
+            .start;
+        (0..symbols.len())
+            .filter(|&s| {
+                symbols[s].kind == Kind::Section
+                    && symbols[s].start <= line
+                    && line <= symbols[s].end
+            })
+            .max_by_key(|&s| symbols[s].start)
+            .map(|symbol| Definition { file, symbol })
+            .or_else(|| self.whole(file))
+    }
+
     fn path(&self, d: Definition) -> &str {
         &self.worktree.files[d.file].0
     }
@@ -709,6 +769,16 @@ impl<'s> Code<'s> {
             // Its qualified name says it is one: `impl Display for Storage`.
             Kind::Impl => format!("{} {}", self.range(d), symbol.qualified),
             Kind::File => format!("{} file", self.range(d)),
+            // A Markdown section's heading, and the anchor a link names it
+            // by: a custom one its heading holds, `<a id="858">`, else its own.
+            Kind::Section if self.worktree.languages[d.file] == Language::Markdown => {
+                let symbols = &self.worktree.files[d.file].1.symbols;
+                let anchor = symbols
+                    .iter()
+                    .find(|s| s.kind == Kind::Anchor && s.start == symbol.start)
+                    .map_or(symbol.qualified.as_str(), |s| s.name.as_str());
+                format!("{} section {} #{anchor}", self.range(d), symbol.name)
+            }
             kind => format!("{} {} {}", self.range(d), kind.name(), symbol.qualified),
         };
         match self.written(d) {
@@ -847,17 +917,46 @@ impl<'s> Code<'s> {
     /// Each definition a written name names, the whole name first; an error
     /// that gives the nearest names when none does.
     fn find(&self, written: &str) -> Result<Vec<Definition>, Error> {
-        // A Nix file, a script, a Python module or a C file is named by its
-        // path, as `graff outline` names one; a bare word with no extension,
+        // A Nix file, a script, a Python module, a C file or a Markdown one
+        // is named by its path, as `graff outline` names one, and a Rust
+        // file names the module it is; a bare word with no extension,
         // `handoff`, names symbols.
-        if (written.contains('/')
-            || [".nix", ".sh", ".bash", ".py", ".c", ".h"]
-                .iter()
-                .any(|extension| written.ends_with(extension)))
-            && let Ok(f) = self.file(written)
-            && let Some(whole) = self.whole(f)
+        let path_like = written.contains('/')
+            || [
+                ".rs",
+                ".nix",
+                ".sh",
+                ".bash",
+                ".py",
+                ".c",
+                ".h",
+                ".md",
+                ".markdown",
+            ]
+            .iter()
+            .any(|extension| written.ends_with(extension));
+        let as_file = path_like.then(|| self.file(written));
+        let path_alone = !written.contains([':', '#']);
+        if let Some(Ok(f)) = as_file {
+            if let Some(whole) = self.whole(f).or_else(|| self.module_of(f)) {
+                return Ok(vec![whole]);
+            }
+            if self.worktree.languages[f] == Language::Rust {
+                return Err(Error::Refused(format!(
+                    "no `mod` item declares {written}, as none does a crate's root: graff outline {written} lists what it holds"
+                )));
+            }
+        }
+        // A Markdown section by its file and anchor, as a link names it:
+        // `readme.md#stable-ids`.
+        if let Some((path, anchor)) = written.split_once('#')
+            && [".md", ".markdown"].iter().any(|e| path.ends_with(e))
+            && let Ok(f) = self.file(path)
         {
-            return Ok(vec![whole]);
+            return self
+                .anchored(f, anchor)
+                .map(|d| vec![d])
+                .ok_or_else(|| Error::Refused(format!("{path} has no section #{anchor}")));
         }
         let named = Named::parse(written);
         let file = named.file.map(|file| self.file(file)).transpose()?;
@@ -894,8 +993,12 @@ impl<'s> Code<'s> {
                 let in_crate = top
                     .flatten()
                     .is_none_or(|package| self.places[d.file].0 == package);
+                // A Markdown section is named by its heading or its anchor.
+                if self.worktree.languages[d.file] == Language::Markdown {
+                    return top.is_none() && names_section(self.symbol(d), named.name);
+                }
                 in_crate
-                    && self.symbol(d).kind != Kind::Argument
+                    && !matches!(self.symbol(d).kind, Kind::Argument | Kind::Anchor)
                     && names(parts, &self.full_name(d), top.is_some())
             })
             .collect();
@@ -954,16 +1057,24 @@ impl<'s> Code<'s> {
         if !found.is_empty() {
             return Ok(found);
         }
+        // A path that names no file, nor any symbol, is refused as `graff
+        // outline` refuses it, not with the names nearest its text.
+        if let Some(Err(error)) = as_file
+            && path_alone
+        {
+            return Err(error);
+        }
         let near: Vec<String> = self
             .nearest(&named, file)
             .iter()
             .map(|&d| {
-                let joint = if Language::of(self.path(d), b"") == Some(Language::Nix) {
-                    "."
-                } else {
-                    "::"
+                let name = match self.worktree.languages[d.file] {
+                    // A Markdown section by its heading, as a question names it.
+                    Language::Markdown => self.symbol(d).name.clone(),
+                    Language::Nix => self.full_name(d).join("."),
+                    _ => self.full_name(d).join("::"),
                 };
-                format!("{} ({})", self.full_name(d).join(joint), self.range(d))
+                format!("{name} ({})", self.range(d))
             })
             .collect();
         let place = match file {
@@ -995,24 +1106,31 @@ impl<'s> Code<'s> {
             })
     }
 
-    /// The definitions a written name names that uses are tied to: not a
-    /// module, which graff ties none to, nor a C prototype of what the
-    /// worktree defines.
+    /// The definitions a written name names that uses are tied to: not a C
+    /// prototype of what the worktree defines.
     fn find_targets(&self, written: &str) -> Result<Vec<Definition>, Error> {
         let found = self.find(written)?;
-        let targets: Vec<Definition> = found
+        Ok(found
             .iter()
             .copied()
-            .filter(|&d| self.symbol(d).kind != Kind::Module && !self.declares_defined(d, &found))
-            .collect();
-        if targets.is_empty() {
-            let modules: Vec<String> = found.iter().map(|&d| self.describe(d)).collect();
-            return Err(Error::Refused(format!(
-                "{written} names a module ({}), and graff ties no uses to modules: graff outline FILE lists what one holds",
-                modules.join(", ")
-            )));
+            .filter(|&d| !self.declares_defined(d, &found))
+            .collect())
+    }
+
+    /// A Rust file's `mod` item, which stands for it as the file of another
+    /// language does: `src/store.rs` is the `store` module `src/lib.rs`
+    /// declares. A crate's root has none.
+    fn module_of(&self, file: usize) -> Option<Definition> {
+        let (krate, module) = &self.places[file];
+        if self.worktree.languages[file] != Language::Rust || module.is_empty() {
+            return None;
         }
-        Ok(targets)
+        let module: Vec<&str> = module.iter().map(String::as_str).collect();
+        self.definitions(None).find(|&d| {
+            self.symbol(d).kind == Kind::Module
+                && self.places[d.file].0 == *krate
+                && self.full_name(d) == module
+        })
     }
 
     /// Whether a Nix binding's own path -- the names it writes, after those
@@ -1053,7 +1171,7 @@ impl<'s> Code<'s> {
             .filter(|&s| {
                 symbols[s].start <= line
                     && line <= symbols[s].end
-                    && !matches!(symbols[s].kind, Kind::Impl | Kind::File)
+                    && !matches!(symbols[s].kind, Kind::Impl | Kind::File | Kind::Anchor)
             })
             .max_by_key(|&s| (symbols[s].start, Reverse(symbols[s].end)))
             .map(|symbol| Definition { file, symbol })
@@ -1088,10 +1206,26 @@ impl<'s> Code<'s> {
         let mut near: Vec<(usize, Definition)> = self
             .definitions(file)
             .filter_map(|d| {
-                let name = self.symbol(d).name.to_lowercase();
-                let held =
-                    name.contains(&wanted) || (name.chars().count() >= 3 && wanted.contains(&name));
-                let distance = if held { 0 } else { edits(&wanted, &name) };
+                let symbol = self.symbol(d);
+                let name = symbol.name.to_lowercase();
+                let distance = match symbol.kind {
+                    // A custom anchor is a place a link names, not a name.
+                    Kind::Anchor => return None,
+                    // A heading holds words a name of code may be part of,
+                    // `reloads` holds `load`: it is near a name only whole,
+                    // as is its anchor, and never near a qualified one.
+                    Kind::Section if self.worktree.languages[d.file] == Language::Markdown => {
+                        if named.parts.len() > 1 {
+                            return None;
+                        }
+                        edits(&wanted, &name).min(edits(&wanted, &symbol.qualified))
+                    }
+                    _ => {
+                        let held = name.contains(&wanted)
+                            || (name.chars().count() >= 3 && wanted.contains(&name));
+                        if held { 0 } else { edits(&wanted, &name) }
+                    }
+                };
                 (distance <= most).then_some((distance, d))
             })
             .collect();
@@ -1282,8 +1416,29 @@ fn precedence(kind: Kind) -> u8 {
         Kind::Variable => 3,
         Kind::Attribute => 4,
         Kind::Declaration => 5,
+        Kind::Section => 6,
         _ => 0,
     }
+}
+
+/// The name an import binds a Python module to: its file's, `draw` for
+/// `evals/verdict/draw.py`, or its folder's for a package's `__init__.py`.
+fn module_name(path: &str) -> &str {
+    let path = path.strip_suffix("/__init__.py").unwrap_or(path);
+    let file = path.rsplit('/').next().unwrap_or(path);
+    file.strip_suffix(".py").unwrap_or(file)
+}
+
+/// Whether a written name names a Markdown section: its heading as written,
+/// its anchor, or what GitHub would make the anchor of: `Stable ids`,
+/// `stable-ids`, `stable IDs`.
+fn names_section(symbol: &Symbol, written: &str) -> bool {
+    let written = written.trim();
+    symbol.kind == Kind::Section
+        && !written.is_empty()
+        && (symbol.name == written
+            || symbol.qualified == written
+            || symbol.qualified == crate::extract::markdown::slug(written))
 }
 
 /// Whether a written segment names one of a qualified name: `load` names

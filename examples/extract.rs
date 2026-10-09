@@ -96,6 +96,9 @@ fn walk(language: Language, source: &[u8]) -> (usize, Option<(usize, String)>) {
         Language::Bash => tree_sitter_bash::LANGUAGE,
         Language::Python => tree_sitter_python::LANGUAGE,
         Language::C => tree_sitter_c::LANGUAGE,
+        // CommonMark reads any text: Markdown has no syntax error, and
+        // pulldown-cmark makes no tree to measure.
+        Language::Markdown => return (0, None),
     };
     let mut parser = tree_sitter::Parser::new();
     parser

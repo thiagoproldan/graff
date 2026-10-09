@@ -37,3 +37,28 @@ store::Storage as Db;`, then `Db::open()`), which `callers Storage` missed at
 first: full resolution ties `Db` to `Storage`, but no site was named
 `Storage`. The crate tests/cli.rs builds has one, and `callers` now reads the
 sites named as such use items rename the symbol too.
+
+## Result, 2026-10-09 (task 16)
+
+The check now reads every file graff reads, in each of its languages, on
+both sides: `git ls-files -co --exclude-standard` lists them, and a file in
+no language graff reads is left out of full resolution as the index leaves
+it out. Each definition is asked for by how `graff callers` names it: a
+file by its path, a Markdown section by `file.md#anchor`, others by
+`path:qualified name`. Markdown's links and mentions (task 16) are among
+the edges; a Rust module's are its links and mentions alone (decision 131).
+
+|                   | ekko v0.40.0-1-ga4c9c8d     | graff, task 16's tree   |
+| ----------------- | --------------------------- | ----------------------- |
+| files graff reads | 280, 217 of them Markdown   | 89, 20 of them Markdown |
+| control           | 15 of 3,228 the same        | 13 of 1,625 the same    |
+| same edges        | 3,228 of 3,228 definitions  | 1,625 of 1,625          |
+| edges             | 21,094, 2,402 from Markdown | 9,220, 82 from Markdown |
+
+It found one defect, fixed (note 130 on the board): `graff callers` of a
+Python module missed the uses of the name an import binds it to. On
+graff's tree, evals/verdict/draw.py lost the 2 references of
+evals/verdict/test_draw.py, `draw.WORK, draw.REVIEW = ..`, which full
+resolution ties to the module: the question loaded the sites named as the
+file's symbol, whose name is empty. A Python file is now looked for by its
+module's name, `draw`, or its package's for an `__init__.py`.

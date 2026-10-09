@@ -10,7 +10,7 @@ Bash, Python, C and Markdown.
 
 ## Status
 
-graff reads Rust, Nix, Bash, Python and C so far: definitions, calls,
+graff reads Rust, Nix, Bash, Python, C and Markdown: definitions, calls,
 references and use items, each with its lines (`src/extract/`), kept in an
 index in `~/.cache/graff` that each query will bring up to date by itself,
 reading again only what changed (`src/store.rs`). It ties each call and
@@ -63,8 +63,18 @@ to the x.h in the including file's folder, else to the one file of the
 worktree whose path ends so, with no build file read; a name to its file's
 definition, else to one in what the file includes or, for a header, in what
 includes it, else to the only one not `static` the linker would find, and a
-prototype to the definition it declares (`src/resolve/c.rs`). It answers
-five questions (`src/query.rs`):
+prototype to the definition it declares (`src/resolve/c.rs`). In
+Markdown, read as GitHub shows it, a file and each heading are
+definitions, a heading's section running to the next heading of its level
+or a higher one, named by its text and by the anchor GitHub gives it
+(`src/extract/markdown.rs`). A link to a place of the worktree, a path
+written in a code span or in the prose (`src/store.rs:120`), and a name a
+code span writes as code names one (`Storage::load`, `k3_mmw()`,
+`CTX_MIN`, not a bare `kind`) are tied to the file, the section, the
+definition holding the line, or the one definition out of test code
+whose full name ends as written; a Rust file stands for the `mod` item
+that makes it a module (`src/resolve/markdown.rs`). It answers five
+questions (`src/query.rs`):
 
     graff def Storage::load        # its lines, doc, signature, a type's impl blocks
     graff callers Storage::load    # what reaches it, by the definition each use is in
@@ -74,18 +84,28 @@ five questions (`src/query.rs`):
 
 A symbol is named by the end of its path (`load`, `store::Storage::load`),
 with its file (`src/store.rs:Storage::load`) or by a line
-(`src/store.rs:120`); a Nix file, a script, a Python module or a C file by
-its path (`src/lib/ledger.sh`, `k3.h`), whose callers are what imports,
-sources or includes it. `def` gives a C function's definition before its
-prototypes, which a budget cuts first. An answer is cut to `--budget`
-tokens, 2,000 unless told, counted as 4 bytes each, least important lines
-first, and its last line says what it left out and the budget that would
-hold it all; `--json` gives the same answer as one object. Uses graff cannot
-tie to one definition, mostly method calls on what it cannot tell the type
-of, are listed apart as possible. On ekko's 34 files, each question took 12
-to 25 ms here, the freshness check included, and `impact` to depth 3, over
-284 callers, 104 to 108 ms (seven runs each). `graff index` runs the
-freshness check alone.
+(`src/store.rs:120`); a Nix file, a script, a Python module, a C file or a
+Markdown one by its path (`src/lib/ledger.sh`, `k3.h`), whose callers are
+what imports, sources, includes or links to it; a Rust file by its path
+too, whose callers are the links and mentions of its module; and a
+Markdown section by its heading, its anchor, or its file and anchor
+(`Stable ids`, `stable-ids`, `readme.md#stable-ids`). `def` gives a C
+function's definition before its prototypes, which a budget cuts first.
+An answer is cut to `--budget` tokens, 2,000 unless told, counted as 4
+bytes each, least important lines first, and its last line says what it
+left out and the budget that would hold it all; `--json` gives the same
+answer as one object. Uses graff cannot tie to one definition, mostly
+method calls on what it cannot tell the type of, are listed apart as
+possible. On ekko's 280 files graff reads at a4c9c8d, 217 of them
+Markdown, each question took 54 to 92 ms here, the freshness check
+included, and `impact` to depth 3, over 332 callers, 1,128 to 1,155 ms;
+without Markdown, which graff did not read before task 16, 41 to 72 ms
+and, over 326 callers, 1,076 to 1,118 ms (seven runs each, 2026-10-09, on
+battery with TLP's balanced power profile, the CPU's boost off; with its
+performance profile, half an hour before, each took about half as long).
+Task 12 measured `impact` at 104 to 108 ms on ekko's 34 files then; why
+it is slower now is task 132. `graff index` runs the freshness check
+alone.
 
 What counts as graff working was fixed before its first line of code, in
 `evals/`:
@@ -107,7 +127,8 @@ What graff does so far is measured there too:
 - `evals/resolve/`: the edges graff draws against rust-analyzer's, on ekko and
   on graff's own source.
 - `evals/query/`: the edges a question resolves for itself against those of
-  the whole worktree resolved, the same for each of ekko's 1,701 definitions.
+  the whole worktree resolved, the same for each of ekko's 3,228 definitions
+  in every language it reads.
 - `evals/nix/`: Nix against nix's evaluation of a NixOS host (options
   declared and set, the module graph) and against nil's ties of names, on a
   NixOS flake and on nixpkgs.
@@ -118,6 +139,11 @@ What graff does so far is measured there too:
   tools/, on ekko's and graff's evals/, and on Python 3.14's library.
 - `evals/c/`: C against clangd's ties of names, on kimi-k3-in-c, with
   graphify's call edges there beside graff's, and on tree-sitter's C.
+- `evals/markdown/`: Markdown against cmark-gfm, GitHub's parser, against
+  the anchors GitHub gave and its rules for links, with marksman beside
+  them, and its mentions of code against a model's reading of a sample,
+  on ekko, ctx, kimi-k3-in-c and graff, and held out, a cargo registry's
+  crates.
 
 ## Building
 

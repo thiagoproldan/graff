@@ -1,0 +1,9 @@
+graff e33d74c with uncommitted changes; ctx: /projects/ctx at 6a6d80a (git archive); 4 Markdown files, 51,631 bytes; cmark-gfm 0.29.0.gfm.13 - CommonMark with GitHub Flavored Markdown converter with table, strikethrough, tasklist, footnotes, autolink; 2026-10-09
+control, each file's truth against the next file's extraction: 0 of 192 the same
+headings: 22 read by cmark-gfm, 22 by graff, 22 the same; 0 cmark-gfm's alone, 0 graff's alone
+sections: 22 read by cmark-gfm, 22 by graff, 22 the same; 0 cmark-gfm's alone, 0 graff's alone
+anchors of headings: 22 read by cmark-gfm, 22 by graff, 22 the same; 0 cmark-gfm's alone, 0 graff's alone
+custom anchors: 0 read by cmark-gfm, 0 by graff, 0 the same; 0 cmark-gfm's alone, 0 graff's alone
+links: 0 read by cmark-gfm, 0 by graff, 0 the same; 0 cmark-gfm's alone, 0 graff's alone
+mentions: 126 read by cmark-gfm, 126 by graff, 126 the same; 0 cmark-gfm's alone, 0 graff's alone
+links GitHub follows from HTML, `<a href>`, which graff does not read: 0

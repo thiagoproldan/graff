@@ -1,0 +1,17 @@
+graff e33d74c with uncommitted changes; ekko: /projects/ekko at a69258f (git archive); 217 Markdown files, 1,134,169 bytes; cmark-gfm 0.29.0.gfm.13 - CommonMark with GitHub Flavored Markdown converter with table, strikethrough, tasklist, footnotes, autolink; 2026-10-09
+control, each file's truth against the next file's extraction: 433 of 6586 the same
+headings: 1074 read by cmark-gfm, 1074 by graff, 1073 the same; 1 cmark-gfm's alone, 1 graff's alone
+sections: 1074 read by cmark-gfm, 1074 by graff, 1074 the same; 0 cmark-gfm's alone, 0 graff's alone
+anchors of headings: 1074 read by cmark-gfm, 1074 by graff, 1073 the same; 1 cmark-gfm's alone, 1 graff's alone
+custom anchors: 545 read by cmark-gfm, 545 by graff, 545 the same; 0 cmark-gfm's alone, 0 graff's alone
+links: 1998 read by cmark-gfm, 1998 by graff, 1998 the same; 0 cmark-gfm's alone, 0 graff's alone
+mentions: 821 read by cmark-gfm, 821 by graff, 821 the same; 0 cmark-gfm's alone, 0 graff's alone
+links GitHub follows from HTML, `<a href>`, which graff does not read: 0
+anchors of headings, graff alone:
+    docs/gotchas.md:484 ('438-read-claude-codes-docs-raw-not-through-webfetchs-summary-curl--ssfl-httpscodeclaudecomdocsenpagemd-then',)
+anchors of headings, truth alone:
+    docs/gotchas.md:484 ('438-read-claude-codes-docs-raw-not-through-webfetchs-summary-curl--ssfl-httpscodeclaudecomdocsenltpagemd-then',)
+headings, graff alone:
+    docs/gotchas.md:484 ("438. Read Claude Code's docs raw, not through WebFetch's summary: curl -sSfL https://code.claude.com/docs/en/<page>.md, then…",)
+headings, truth alone:
+    docs/gotchas.md:484 ("438. Read Claude Code's docs raw, not through WebFetch's summary: curl -sSfL https://code.claude.com/docs/en/&lt;page>.md, then…",)

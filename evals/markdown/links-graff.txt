@@ -1,0 +1,11 @@
+graff e33d74c with uncommitted changes; graff: /projects/graff at e33d74c (git archive); 2026-10-09
+control, graff's resolver broken on purpose: of the 58 the rules tie to something, 0 the same as the rules, against graff's 58
+158 of 158 links and written paths reach what the rules say (100.0%)
+    path to ambiguous: 1 the same, 0 otherwise
+    path to file: 34 the same, 0 otherwise
+    path to module: 23 the same, 0 otherwise
+    path to nothing: 93 the same, 0 otherwise
+    path:Name to nothing: 1 the same, 0 otherwise
+    path:line to definition: 1 the same, 0 otherwise
+    path:line to nothing: 5 the same, 0 otherwise
+marksman, at each link to a Markdown file: none

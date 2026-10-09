@@ -5,6 +5,7 @@
 
 pub mod bash;
 pub mod c;
+pub mod markdown;
 pub mod nix;
 pub mod python;
 pub mod rust;
@@ -15,7 +16,7 @@ use crate::lang::Language;
 
 /// Bumped whenever what an extractor produces changes, so that results kept
 /// from an older extractor are read again rather than trusted.
-pub const VERSION: u32 = 6;
+pub const VERSION: u32 = 8;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Extraction {
@@ -109,7 +110,7 @@ pub enum Kind {
     Input,
     /// A file as a whole: a Nix file a path imports, a script `.` sources
     /// or a command runs, a Python module an import names, a C file an
-    /// `#include` names.
+    /// `#include` names, a Markdown file a link names.
     File,
     /// A binding of the attrset a Nix helper of the worktree is called with,
     /// `name = "x";` in `myLib.mkSys { name = "x"; .. }`: the helper's
@@ -122,13 +123,17 @@ pub enum Kind {
     /// first assignment: the scripts it runs read it from their environment.
     Environment,
     /// A part of a file a comment banner opens, `# --- title ---`, which runs
-    /// to the next banner of the same rule.
+    /// to the next banner of the same rule; a Markdown heading's, to the next
+    /// heading of its level or a higher one, named by its anchor.
     Section,
     /// A Python class.
     Class,
     /// A C declaration of what is defined elsewhere, or later: a function's
     /// prototype, `int f(void);`, or an `extern` variable.
     Declaration,
+    /// A place a Markdown file names for links of its own, `<a id="x">`:
+    /// a link to `#x` reaches the section it is in.
+    Anchor,
 }
 
 /// A call: what is called, by name as written, from where.
@@ -203,6 +208,9 @@ pub enum RefKind {
     /// A shell variable given a value past its first assignment in the
     /// file, or for one command: `x` in `x=2`, `X=1 cmd`, `read x`.
     Set,
+    /// A Markdown code span that names code as code names it:
+    /// `Storage::load`, `k3_mmw()`, `CTX_MIN_LINES` (decision 128).
+    Mention,
 }
 
 /// One name a `use` item brings in, its tree flattened: `use a::{b, c as d};`
@@ -224,12 +232,14 @@ pub struct Import {
     /// or runs it. Python: `import` or `from`; `class` for a class's base,
     /// the class's qualified name in `from`; `sys.path.insert` or
     /// `sys.path.append` for a folder a file adds to where its imports are
-    /// looked for. C: `include`.
+    /// looked for. C: `include`. Markdown: `link` for a link, with its
+    /// fragment, `#x` alone for one of its own file; `mention` for a path a
+    /// code span or the prose writes, with a `:line` or a `:Name` after it.
     pub via: Option<String>,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 23] = [
+    pub const ALL: [Kind; 24] = [
         Kind::Function,
         Kind::Method,
         Kind::Struct,
@@ -253,6 +263,7 @@ impl Kind {
         Kind::Section,
         Kind::Class,
         Kind::Declaration,
+        Kind::Anchor,
     ];
 
     /// Its name as stored and shown, the same as serde's.
@@ -281,6 +292,7 @@ impl Kind {
             Kind::Section => "section",
             Kind::Class => "class",
             Kind::Declaration => "declaration",
+            Kind::Anchor => "anchor",
         }
     }
 }
@@ -305,7 +317,13 @@ impl CallKind {
 }
 
 impl RefKind {
-    pub const ALL: [RefKind; 4] = [RefKind::Type, RefKind::Path, RefKind::Value, RefKind::Set];
+    pub const ALL: [RefKind; 5] = [
+        RefKind::Type,
+        RefKind::Path,
+        RefKind::Value,
+        RefKind::Set,
+        RefKind::Mention,
+    ];
 
     /// Its name as stored and shown, the same as serde's.
     pub fn name(self) -> &'static str {
@@ -314,6 +332,7 @@ impl RefKind {
             RefKind::Path => "path",
             RefKind::Value => "value",
             RefKind::Set => "set",
+            RefKind::Mention => "mention",
         }
     }
 }
@@ -363,6 +382,7 @@ pub fn extract(language: Language, source: &[u8]) -> Extraction {
         Language::Bash => bash::extract(source),
         Language::Python => python::extract(source),
         Language::C => c::extract(source),
+        Language::Markdown => markdown::extract(source),
     }
 }
 

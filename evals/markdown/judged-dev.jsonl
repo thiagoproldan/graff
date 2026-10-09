@@ -1,0 +1,212 @@
+{"key": "ekko/readme.md:309 guarded", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/wake.rs", 63]]}
+{"key": "ekko/readme.md:285 review", "decoy": false, "model": "claude-haiku-5-5", "answer": 2, "shown": [["src/serve.rs", 736], ["src/menu.rs", 552], ["src/ops.rs", 831]]}
+{"key": "ekko/docs/tasks/274.md:17 ekko", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["flake.nix", 67], ["flake.nix", 62], ["tests/serve.rs", 48], ["src/main.rs", 12]]}
+{"key": "ctx/src/skills/code-writer/SKILL.md:25 CTX_MODEL", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/lib/transport.sh", 42]]}
+{"key": "ctx/src/skills/code-writer/SKILL.md:25 CTX_TIMEOUT_SECONDS", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/lib/transport.sh", 43]]}
+{"key": "graff/evals/nix/README.md:55 set", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/extract/nix.rs", 586]]}
+{"key": "ekko/readme.md:263 answer", "decoy": true, "model": "claude-haiku-5-5", "answer": 0, "shown": [["evals/claude-code/transcripts.py", 69]]}
+{"key": "ekko/readme.md:285 apply", "decoy": false, "model": "claude-haiku-5-5", "answer": 2, "shown": [["src/guard.rs", 738], ["src/item.rs", 1340], ["src/ops.rs", 1137], ["src/artifact.rs", 7449]]}
+{"key": "ekko/readme.md:273 create", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/ops.rs", 1154]]}
+{"key": "ekko/docs/tasks/808.md:175 transcript", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/repeats.rs", 883], ["tests/mcp.rs", 44]]}
+{"key": "ekko/readme.md:281 ask", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/ops.rs", 1235], ["src/guard.rs", 787], ["src/mcp.rs", 566], ["tests/mcp.rs", 832], ["src/artifact.rs", 7455], ["src/serve.rs", 235]]}
+{"key": "ctx/README.md:121 CTX_HANDOFF_5H", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/test-hooks.sh", 429]]}
+{"key": "ekko/readme.md:257 create", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/ops.rs", 1154]]}
+{"key": "graff/evals/nix/README.md:83 def", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/query.rs", 76]]}
+{"key": "kimi-k3-in-c.git/README.md:585 O_DIRECT", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/io/k3_portable_io.h", 65]]}
+{"key": "ekko/readme.md:283 guarded", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/wake.rs", 63]]}
+{"key": "ekko/readme.md:767 changes", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/agent.rs", 2300]]}
+{"key": "ekko/readme.md:285 edit", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/anchors.rs", 778], ["src/ops.rs", 1912]]}
+{"key": "ctx/README.md:268 tab", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/test-hooks.sh", 1082], ["src/hooks/handoff", 233]]}
+{"key": "ekko/readme.md:261 link", "decoy": false, "model": "claude-haiku-5-5", "answer": 2, "shown": [["evals/docs/topics.py", 16], ["src/ops.rs", 2123], ["src/docs.rs", 201], ["src/project.rs", 377]]}
+{"key": "ekko/readme.md:253 context", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/agent.rs", 1740]]}
+{"key": "kimi-k3-in-c.git/README.md:600 O_DIRECT", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/io/k3_portable_io.h", 65]]}
+{"key": "kimi-k3-in-c.git/CHANGELOG.md:41 K3_TRUNK_ALIGN", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/io/k3_trunk.h", 59]]}
+{"key": "ctx/README.md:480 PATH", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/test-hooks.sh", 66]]}
+{"key": "ekko/docs/tasks/469.md:7 ekko", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/main.rs", 12], ["tests/serve.rs", 48], ["flake.nix", 62], ["flake.nix", 67]]}
+{"key": "ctx/README.md:578 PATH", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/test-hooks.sh", 66]]}
+{"key": "graff/evals/python/README.md:97 unique", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/resolve.rs", 833], ["src/resolve/nix.rs", 239]]}
+{"key": "kimi-k3-in-c.git/README.md:460 OMP_NUM_THREADS", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["scripts/jetson-proof-of-life.sh", 131]]}
+{"key": "ekko/readme.md:721 git", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["evals/paired/harness.py", 136], ["src/commits.rs", 124]]}
+{"key": "kimi-k3-in-c.git/docs/ROADMAP.md:23 OMP_NUM_THREADS", "decoy": true, "model": "claude-haiku-5-5", "answer": 1, "shown": [["third_party/tok_unicode.h", 159]]}
+{"key": "ekko/readme.md:311 prime", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/agent.rs", 1305]]}
+{"key": "kimi-k3-in-c.git/tests/fixtures/README.md:46 A_log", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["tools/k3_ref.py", 233]]}
+{"key": "kimi-k3-in-c.git/docs/ROADMAP.md:23 OMP_NUM_THREADS", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["scripts/jetson-proof-of-life.sh", 131]]}
+{"key": "ekko/readme.md:745 ask", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/artifact.rs", 7455], ["src/ops.rs", 1235], ["tests/mcp.rs", 832], ["src/mcp.rs", 566], ["src/guard.rs", 787], ["src/serve.rs", 235]]}
+{"key": "ctx/README.md:633 CTX_HANDOFF_TOKENS", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/test-hooks.sh", 427]]}
+{"key": "graff/evals/query/README.md:6 callees", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/query.rs", 177]]}
+{"key": "ekko/readme.md:900 with", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/serve.rs", 1054]]}
+{"key": "kimi-k3-in-c.git/CHANGELOG.md:28 open()", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/io/k3_portable_io.h", 166]]}
+{"key": "graff/evals/nix/README.md:158 callers", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/query.rs", 124]]}
+{"key": "ctx/README.md:535 $HOME", "decoy": false, "model": "claude-haiku-5-5", "answer": 3, "shown": [["src/lib/shell_calls.py", 23], ["src/lib/guards.py", 9], ["src/test-hooks.sh", 366]]}
+{"key": "kimi-k3-in-c.git/README.md:1796 K3_ROPE_AT(s)", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/core/k3_ops.c", 352]]}
+{"key": "ekko/readme.md:374 append", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/serve.rs", 402], ["src/repeats.rs", 890]]}
+{"key": "ekko/readme.md:263 ask", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/mcp.rs", 566], ["src/artifact.rs", 7455], ["src/serve.rs", 235], ["src/ops.rs", 1235], ["tests/mcp.rs", 832], ["src/guard.rs", 787]]}
+{"key": "ekko/readme.md:744 wait", "decoy": false, "model": "claude-haiku-5-5", "answer": 5, "shown": [["src/ops.rs", 1740], ["src/mcp.rs", 1492]]}
+{"key": "kimi-k3-in-c.git/CHANGELOG.md:55 posix_memalign", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/io/k3_portable_io.h", 178]]}
+{"key": "ekko/docs/tasks/512.md:23 context", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/agent.rs", 1740]]}
+{"key": "graff/evals/c/README.md:94 file", "decoy": false, "model": "claude-haiku-5-5", "answer": 4, "shown": [["evals/ceiling/ceiling.py", 211], ["src/resolve/nix/instance.rs", 803], ["src/extract/nix.rs", 350], ["src/query.rs", 812], ["evals/questions/mine.py", 104]]}
+{"key": "graff/evals/extract/README.md:84 a_tree_deeper_than_graff_reads_is_cut_and_said", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/extract/nix.rs", 1611], ["src/extract/rust.rs", 1729]]}
+{"key": "ctx/README.md:256 CLAUDE_CODE_ENTRYPOINT", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/test-hooks.sh", 689]]}
+{"key": "ekko/readme.md:1122 pending", "decoy": true, "model": "claude-haiku-5-5", "answer": 0, "shown": [["evals/resume/run.sh", 62]]}
+{"key": "ekko/readme.md:769 move_to", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/move_to.rs", 604], ["src/main.rs", 23], ["src/move_to.rs", 102]]}
+{"key": "graff/evals/c/README.md:94 include", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/resolve/c.rs", 312], ["src/extract/c.rs", 873]]}
+{"key": "ekko/readme.md:252 next", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/agent.rs", 804], ["src/agent.rs", 1581], ["tests/mcp.rs", 842]]}
+{"key": "ekko/readme.md:521 uid", "decoy": false, "model": "claude-haiku-5-5", "answer": 3, "shown": [["src/move_to.rs", 645], ["evals/agent/scale.py", 39], ["src/agent.rs", 655], ["src/docs.rs", 907]]}
+{"key": "ekko/readme.md:251 prime", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/agent.rs", 1305]]}
+{"key": "ekko/docs/tasks/178.md:17 ekko", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["flake.nix", 62], ["flake.nix", 67], ["tests/serve.rs", 48], ["src/main.rs", 12]]}
+{"key": "ekko/tests/golden/README.md:44 render_with", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/render.rs", 1507]]}
+{"key": "graff/evals/bash/README.md:187 then", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/extract/bash.rs", 643]]}
+{"key": "ekko/readme.md:1131 ready", "decoy": true, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/ops.rs", 1137]]}
+{"key": "ekko/tests/golden/README.md:45 GOLDEN_DAY", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/render.rs", 1498]]}
+{"key": "ekko/readme.md:750 ekko", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["tests/serve.rs", 48], ["flake.nix", 67], ["flake.nix", 62], ["src/main.rs", 12]]}
+{"key": "ekko/tests/golden/README.md:5 render", "decoy": false, "model": "claude-haiku-5-5", "answer": 2, "shown": [["src/ekko.rs", 568], ["src/main.rs", 27], ["src/mcp.rs", 1759], ["src/ekko.rs", 147]]}
+{"key": "ekko/readme.md:374 edit", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/ops.rs", 1912], ["src/anchors.rs", 778]]}
+{"key": "ctx/src/skills/bulk-reader/SKILL.md:50 CTX_TIMEOUT_SECONDS", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/lib/transport.sh", 43]]}
+{"key": "kimi-k3-in-c.git/docs/API.md:68 K3KdaW", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["include/k3/k3.h", 447]]}
+{"key": "kimi-k3-in-c.git/README.md:203 O_DIRECT", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/io/k3_portable_io.h", 65]]}
+{"key": "ekko/readme.md:1189 error", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/render.rs", 1455]]}
+{"key": "ekko/readme.md:285 after", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/item.rs", 1222]]}
+{"key": "kimi-k3-in-c.git/docs/notes/int8-draft-container.md:34 k3_bind_layer_mem", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/model/k3_bind.c", 324], ["src/model/k3_bind.h", 138]]}
+{"key": "ekko/readme.md:275 link", "decoy": false, "model": "claude-haiku-5-5", "answer": 3, "shown": [["evals/docs/topics.py", 16], ["src/project.rs", 377], ["src/ops.rs", 2123], ["src/docs.rs", 201]]}
+{"key": "ekko/readme.md:996 checked", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/doctor.rs", 228]]}
+{"key": "ctx/README.md:350 CLAUDE_CONFIG_DIR", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/test-hooks.sh", 36]]}
+{"key": "ekko/readme.md:721 ekko", "decoy": false, "model": "claude-haiku-5-5", "answer": 2, "shown": [["tests/serve.rs", 48], ["src/main.rs", 12], ["flake.nix", 67], ["flake.nix", 62]]}
+{"key": "kimi-k3-in-c.git/CONTRIBUTING.md:12 main", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["tools/ref_forward.py", 188], ["tools/int8_trunk.py", 47], ["tests/unit/test_st.c", 61], ["tools/verify_kda.py", 74], ["tools/tok.py", 119], ["tests/unit/k3_model.c", 241]]}
+{"key": "graff/evals/bash/README.md:89 SPREAD", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["evals/bash/xtrace.py", 62]]}
+{"key": "kimi-k3-in-c.git/docs/ARCHITECTURE.md:130 pread", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/io/k3_portable_io.h", 130]]}
+{"key": "ekko/readme.md:742 ask", "decoy": true, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/ops.rs", 3211]]}
+{"key": "ekko/readme.md:1189 check", "decoy": false, "model": "claude-haiku-5-5", "answer": 2, "shown": [["evals/agent/semantics.py", 21], ["src/dialog.rs", 177], ["scripts/release.sh", 59]]}
+{"key": "ekko/readme.md:275 kind", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/docs.rs", 310]]}
+{"key": "graff/evals/bar/README.md:90 query", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/lib.rs", 5]]}
+{"key": "ekko/readme.md:279 $TERMINAL", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/menu.rs", 40]]}
+{"key": "kimi-k3-in-c.git/docs/notes/int8-draft-container.md:33 k3_mmw", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["include/k3/k3.h", 289]]}
+{"key": "ekko/readme.md:281 answered", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/mcp.rs", 678]]}
+{"key": "ekko/readme.md:564 gotcha", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/anchors.rs", 770]]}
+{"key": "graff/evals/python/README.md:96 import", "decoy": false, "model": "claude-haiku-5-5", "answer": 2, "shown": [["src/extract/bash.rs", 1046], ["src/resolve/python.rs", 808], ["src/extract/python.rs", 1949]]}
+{"key": "graff/evals/nix/README.md:213 with", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/extract/nix.rs", 876]]}
+{"key": "ekko/docs/tasks/512.md:19 search", "decoy": false, "model": "claude-haiku-5-5", "answer": 2, "shown": [["evals/agent/prototype.py", 193], ["src/agent.rs", 1940]]}
+{"key": "ekko/readme.md:271 project", "decoy": false, "model": "claude-haiku-5-5", "answer": 2, "shown": [["src/claims.rs", 256], ["src/main.rs", 25], ["src/anchors.rs", 562], ["src/move_to.rs", 599]]}
+{"key": "ekko/readme.md:1120 task", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/docs.rs", 407], ["src/claims.rs", 278], ["src/tasklist.rs", 129], ["src/docs.rs", 889]]}
+{"key": "ekko/readme.md:412 complete", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/mcp.rs", 1826]]}
+{"key": "ekko/readme.md:285 edit", "decoy": true, "model": "claude-haiku-5-5", "answer": 0, "shown": [["tests/serve.rs", 36]]}
+{"key": "ekko/readme.md:1200 ekko", "decoy": false, "model": "claude-haiku-5-5", "answer": 2, "shown": [["flake.nix", 67], ["tests/serve.rs", 48], ["src/main.rs", 12], ["flake.nix", 62]]}
+{"key": "kimi-k3-in-c.git/README.md:440 FILE", "decoy": true, "model": "claude-haiku-5-5", "answer": 0, "shown": [["docs/images/_gen.py", 32]]}
+{"key": "ekko/readme.md:283 git", "decoy": false, "model": "claude-haiku-5-5", "answer": 2, "shown": [["evals/paired/harness.py", 136], ["src/commits.rs", 124]]}
+{"key": "graff/evals/python/README.md:97 receiver", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/resolve/python.rs", 541]]}
+{"key": "ekko/readme.md:1131 ready", "decoy": false, "model": "claude-haiku-5-5", "answer": 2, "shown": [["evals/resume/run.sh", 96], ["src/agent.rs", 768]]}
+{"key": "ekko/readme.md:309 heard", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/wake.rs", 98], ["src/shell.rs", 174]]}
+{"key": "ctx/README.md:213 handoff", "decoy": true, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/test-hooks.sh", 852]]}
+{"key": "ekko/readme.md:750 ekko", "decoy": true, "model": "claude-haiku-5-5", "answer": 2, "shown": [["src/agent.rs", 1940]]}
+{"key": "ekko/readme.md:1126 checked", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/doctor.rs", 228]]}
+{"key": "ctx/src/skills/bulk-reader/SKILL.md:43 limit", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/hooks/check-file-size", 24]]}
+{"key": "ekko/readme.md:1038 search", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/agent.rs", 1940], ["evals/agent/prototype.py", 193]]}
+{"key": "graff/evals/nix/README.md:158 callers", "decoy": true, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/resolve.rs", 115]]}
+{"key": "kimi-k3-in-c.git/README.md:600 posix_memalign", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/io/k3_portable_io.h", 178]]}
+{"key": "ekko/readme.md:277 next", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/agent.rs", 804], ["tests/mcp.rs", 842], ["src/agent.rs", 1581]]}
+{"key": "ekko/readme.md:1200 ekko", "decoy": true, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/agent.rs", 2424]]}
+{"key": "ekko/readme.md:269 move_to", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/move_to.rs", 604], ["src/move_to.rs", 102], ["src/main.rs", 23]]}
+{"key": "ekko/readme.md:1189 code", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/ekko.rs", 98], ["src/guard.rs", 352]]}
+{"key": "ekko/readme.md:721 ekko", "decoy": true, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/storage.rs", 438]]}
+{"key": "ekko/readme.md:744 project", "decoy": false, "model": "claude-haiku-5-5", "answer": 3, "shown": [["src/move_to.rs", 599], ["src/claims.rs", 256], ["src/anchors.rs", 562], ["src/main.rs", 25]]}
+{"key": "ekko/readme.md:1189 command", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["flake.nix", 64], ["flake.nix", 67]]}
+{"key": "ctx/README.md:213 handoff", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/hooks/cold-return", 111]]}
+{"key": "graff/evals/nix/README.md:178 with", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/extract/nix.rs", 876]]}
+{"key": "ekko/readme.md:262 batch", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/mcp.rs", 1303], ["src/ops.rs", 2562], ["src/move_to.rs", 624]]}
+{"key": "graff/evals/c/README.md:93 scope", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/resolve/nix/instance.rs", 850]]}
+{"key": "kimi-k3-in-c.git/README.md:440 FILE", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["examples/03-long-prompt.sh", 14]]}
+{"key": "graff/evals/python/README.md:96 path", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/resolve/python.rs", 593], ["src/resolve.rs", 958], ["evals/questions/mine.py", 98], ["evals/verdict/draw.py", 100], ["evals/bash/xtrace.py", 194], ["src/extract/nix.rs", 1150]]}
+{"key": "ekko/readme.md:279 aids", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/menu.rs", 699], ["src/ops.rs", 391]]}
+{"key": "ekko/readme.md:48 uid", "decoy": false, "model": "claude-haiku-5-5", "answer": 2, "shown": [["src/docs.rs", 907], ["src/agent.rs", 655], ["evals/agent/scale.py", 39], ["src/move_to.rs", 645]]}
+{"key": "ekko/readme.md:275 update", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/ops.rs", 1970]]}
+{"key": "ekko/readme.md:281 wait", "decoy": false, "model": "claude-haiku-5-5", "answer": 2, "shown": [["src/ops.rs", 1740], ["src/mcp.rs", 1492]]}
+{"key": "ekko/readme.md:259 edit", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/ops.rs", 1912], ["src/anchors.rs", 778]]}
+{"key": "ctx/README.md:383 source", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/hooks/window", 85]]}
+{"key": "ekko/readme.md:1038 search", "decoy": true, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/agent.rs", 3951]]}
+{"key": "ekko/readme.md:996 cancelled", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/mcp.rs", 722]]}
+{"key": "ctx/README.md:66 CTX_COLD_TOKENS", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/test-hooks.sh", 1645]]}
+{"key": "kimi-k3-in-c.git/docs/API.md:81 k3_mmw()", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["include/k3/k3.h", 289]]}
+{"key": "ekko/readme.md:1137 gotcha", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/anchors.rs", 770]]}
+{"key": "kimi-k3-in-c.git/CHANGELOG.md:39 load_run()", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/io/k3_trunk.c", 398]]}
+{"key": "graff/evals/python/README.md:60 import", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/extract/python.rs", 1949], ["src/resolve/python.rs", 808], ["src/extract/bash.rs", 1046]]}
+{"key": "ctx/README.md:102 handoff", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/hooks/cold-return", 111]]}
+{"key": "kimi-k3-in-c.git/docs/notes/int8-draft-container.md:33 k3_mmw", "decoy": true, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/cache/k3_cache.h", 102]]}
+{"key": "graff/evals/extract/README.md:81 MAX_DEPTH", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/extract/mod.rs", 36]]}
+{"key": "ekko/readme.md:255 changes", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/agent.rs", 2300]]}
+{"key": "ekko/readme.md:729 ekko", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["flake.nix", 62], ["flake.nix", 67], ["src/main.rs", 12], ["tests/serve.rs", 48]]}
+{"key": "kimi-k3-in-c.git/README.md:851 k3_kda_step", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/core/k3_ops.c", 186], ["include/k3/k3.h", 164]]}
+{"key": "kimi-k3-in-c.git/docs/API.md:124 k3_expert_drops", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/core/k3_ops.c", 108], ["include/k3/k3.h", 388]]}
+{"key": "kimi-k3-in-c.git/docs/API.md:91 k3_decoder_layer_inc()", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/core/k3_ops.c", 947], ["include/k3/k3.h", 517]]}
+{"key": "graff/evals/python/README.md:154 from", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/query.rs", 58], ["src/store.rs", 139], ["src/extract/python.rs", 1202], ["src/extract/bash.rs", 1003]]}
+{"key": "kimi-k3-in-c.git/docs/API.md:80 K3_WF32", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["include/k3/k3.h", 270]]}
+{"key": "kimi-k3-in-c.git/docs/API.md:27 k3_cfg_load_file", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["include/k3/k3_cfg.h", 253]]}
+{"key": "kimi-k3-in-c.git/README.md:585 O_DIRECT", "decoy": true, "model": "claude-haiku-5-5", "answer": 0, "shown": [["tests/unit/test_ops.c", 30]]}
+{"key": "ekko/readme.md:309 ekko", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["tests/serve.rs", 48], ["flake.nix", 67], ["flake.nix", 62], ["src/main.rs", 12]]}
+{"key": "graff/evals/bash/README.md:165 bash", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/resolve.rs", 17], ["src/extract/mod.rs", 6]]}
+{"key": "ctx/README.md:654 CTX_MODEL", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/lib/transport.sh", 42]]}
+{"key": "ekko/readme.md:283 ask", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/mcp.rs", 566], ["tests/mcp.rs", 832], ["src/serve.rs", 235], ["src/ops.rs", 1235], ["src/artifact.rs", 7455], ["src/guard.rs", 787]]}
+{"key": "ctx/README.md:331 CTX_HANDOFF_5H", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/test-hooks.sh", 429]]}
+{"key": "ekko/readme.md:291 FORCE_COLOR", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["media/capture/shot.sh", 13]]}
+{"key": "kimi-k3-in-c.git/README.md:603 posix_memalign", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/io/k3_portable_io.h", 178]]}
+{"key": "kimi-k3-in-c.git/docs/notes/int8-draft-container.md:48 k3_matmul_q8", "decoy": false, "model": "claude-haiku-5-5", "answer": 2, "shown": [["include/k3/k3.h", 285], ["src/core/k3_ops.c", 1204]]}
+{"key": "ekko/readme.md:279 cue", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/guard.rs", 745], ["src/ops.rs", 328]]}
+{"key": "ekko/readme.md:279 link_project", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/ekko.rs", 2000]]}
+{"key": "kimi-k3-in-c.git/CHANGELOG.md:32 posix_memalign", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/io/k3_portable_io.h", 178]]}
+{"key": "graff/evals/resolve/README.md:120 prepare", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/store.rs", 823]]}
+{"key": "ekko/readme.md:742 ask", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/mcp.rs", 566], ["src/artifact.rs", 7455], ["src/guard.rs", 787], ["src/ops.rs", 1235], ["src/serve.rs", 235], ["tests/mcp.rs", 832]]}
+{"key": "graff/evals/c/README.md:179 impact", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/query.rs", 385]]}
+{"key": "kimi-k3-in-c.git/docs/API.md:112 get", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["tools/verify_real_layer.py", 77]]}
+{"key": "ekko/readme.md:894 create", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/ops.rs", 1154]]}
+{"key": "kimi-k3-in-c.git/README.md:932 O_DIRECT", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/io/k3_portable_io.h", 65]]}
+{"key": "graff/evals/query/README.md:3 callers", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/query.rs", 124]]}
+{"key": "ctx/README.md:656 CTX_MAX_PAYLOAD_BYTES", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/lib/transport.sh", 52]]}
+{"key": "ekko/readme.md:1189 code", "decoy": true, "model": "claude-haiku-5-5", "answer": 0, "shown": [["tests/mcp.rs", 1111]]}
+{"key": "graff/evals/verdict/README.md:89 claude", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["evals/verdict/checks.py", 71]]}
+{"key": "ekko/readme.md:279 answer", "decoy": false, "model": "claude-haiku-5-5", "answer": 2, "shown": [["src/artifact.rs", 7472], ["src/ops.rs", 1261], ["src/serve.rs", 775], ["src/guard.rs", 801], ["evals/claude-code/structured_content.py", 36]]}
+{"key": "ctx/README.md:638 CTX_HANDOFF_7D", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/test-hooks.sh", 420]]}
+{"key": "graff/evals/bash/README.md:157 local", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/extract/bash.rs", 222]]}
+{"key": "ctx/README.md:250 KONSOLE_DBUS_SERVICE", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/test-hooks.sh", 42]]}
+{"key": "ekko/docs/tasks/512.md:29 search", "decoy": false, "model": "claude-haiku-5-5", "answer": 2, "shown": [["evals/agent/prototype.py", 193], ["src/agent.rs", 1940]]}
+{"key": "ekko/readme.md:285 context", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/agent.rs", 1740]]}
+{"key": "kimi-k3-in-c.git/README.md:439 N", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["scripts/download-model.sh", 132], ["scripts/pack-trunk.sh", 22], ["tools/devbw.py", 30], ["scripts/jetson-proof-of-life.sh", 30], ["scripts/k3-doctor.sh", 130]]}
+{"key": "ekko/readme.md:271 destroy", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/project.rs", 771]]}
+{"key": "ekko/readme.md:263 link_project", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/ekko.rs", 2000]]}
+{"key": "ekko/readme.md:285 artifact", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/mcp.rs", 1414], ["tests/serve.rs", 64], ["src/main.rs", 3], ["src/ops.rs", 1445], ["src/artifact.rs", 7442]]}
+{"key": "ekko/docs/tasks/845.md:7 gotcha", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/anchors.rs", 770]]}
+{"key": "ctx/README.md:655 CTX_TIMEOUT_SECONDS", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/lib/transport.sh", 43]]}
+{"key": "ekko/readme.md:1195 uid", "decoy": false, "model": "claude-haiku-5-5", "answer": 4, "shown": [["src/move_to.rs", 645], ["src/docs.rs", 907], ["evals/agent/scale.py", 39], ["src/agent.rs", 655]]}
+{"key": "ekko/docs/tasks/178.md:17 ekko", "decoy": true, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/main.rs", 31]]}
+{"key": "kimi-k3-in-c.git/docs/TESTING.md:40 full_attn_layers", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["tools/k3_ref.py", 134]]}
+{"key": "graff/evals/nix/README.md:143 def", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/query.rs", 76]]}
+{"key": "graff/evals/resolve/README.md:53 Node::children", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["evals/nix/nil.py", 49]]}
+{"key": "graff/evals/python/README.md:95 file", "decoy": false, "model": "claude-haiku-5-5", "answer": 2, "shown": [["evals/ceiling/ceiling.py", 211], ["evals/questions/mine.py", 104], ["src/query.rs", 812], ["src/extract/nix.rs", 350], ["src/resolve/nix/instance.rs", 803]]}
+{"key": "kimi-k3-in-c.git/docs/API.md:68 K3MoeW", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["include/k3/k3.h", 357]]}
+{"key": "kimi-k3-in-c.git/docs/TUNING.md:140 OMP_NUM_THREADS", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["scripts/jetson-proof-of-life.sh", 131]]}
+{"key": "graff/evals/bar/README.md:81 extract", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/lib.rs", 3], ["src/extract/mod.rs", 359], ["src/extract/rust.rs", 52], ["src/extract/nix.rs", 76], ["src/extract/python.rs", 69], ["src/extract/bash.rs", 125]]}
+{"key": "graff/evals/resolve/README.md:101 next", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["evals/python/pyright.py", 136], ["evals/bash/bashls.py", 77], ["evals/nix/nil.py", 147]]}
+{"key": "ekko/docs/tasks/260.md:23 ekko", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["tests/serve.rs", 48], ["flake.nix", 67], ["src/main.rs", 12], ["flake.nix", 62]]}
+{"key": "ekko/readme.md:442 ekko", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["tests/serve.rs", 48], ["flake.nix", 62], ["flake.nix", 67], ["src/main.rs", 12]]}
+{"key": "ekko/readme.md:628 uid", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["evals/agent/scale.py", 39], ["src/agent.rs", 655], ["src/docs.rs", 907], ["src/move_to.rs", 645]]}
+{"key": "ekko/readme.md:1122 pending", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["evals/recall/quality.py", 17]]}
+{"key": "ctx/README.md:657 CTX_DISABLE", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/lib/transport.sh", 122], ["src/test-hooks.sh", 169]]}
+{"key": "kimi-k3-in-c.git/README.md:722 O_DIRECT", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/io/k3_portable_io.h", 65]]}
+{"key": "graff/evals/nix/README.md:136 imports", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/extract/python.rs", 2282], ["src/extract/bash.rs", 1532]]}
+{"key": "ctx/README.md:671 CTX_SECRET_ROOTS", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/test-hooks.sh", 1816]]}
+{"key": "ekko/readme.md:263 answer", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/serve.rs", 775], ["evals/claude-code/structured_content.py", 36], ["src/ops.rs", 1261], ["src/guard.rs", 801], ["src/artifact.rs", 7472]]}
+{"key": "graff/evals/c/README.md:112 open", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/store.rs", 365], ["src/query.rs", 559], ["evals/c/clangd.py", 107], ["src/extract/python.rs", 215], ["evals/bash/bashls.py", 122], ["src/main.rs", 130]]}
+{"key": "graff/evals/resolve/README.md:101 lines", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["evals/extract/check.py", 60], ["evals/bash/test_xtrace.py", 44]]}
+{"key": "ekko/docs/tasks/862.md:11 claude", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["evals/paired/grade.py", 350]]}
+{"key": "graff/evals/bar/README.md:23 query", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/lib.rs", 5]]}
+{"key": "ekko/readme.md:660 context", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/agent.rs", 1740]]}
+{"key": "ctx/README.md:340 CTX_HANDOFF_7D", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/test-hooks.sh", 420]]}
+{"key": "ekko/readme.md:745 project", "decoy": false, "model": "claude-haiku-5-5", "answer": 1, "shown": [["src/anchors.rs", 562], ["src/main.rs", 25], ["src/claims.rs", 256], ["src/move_to.rs", 599]]}
+{"key": "kimi-k3-in-c.git/docs/API.md:68 K3KdaW", "decoy": true, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/io/k3_st.c", 44]]}
+{"key": "ekko/readme.md:281 answered", "decoy": true, "model": "claude-haiku-5-5", "answer": 0, "shown": [["evals/agent/retrieval.py", 216]]}
+{"key": "graff/evals/nix/README.md:129 def", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/query.rs", 76]]}
+{"key": "ekko/docs/tasks/178.md:13 ekko", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["flake.nix", 67], ["tests/serve.rs", 48], ["src/main.rs", 12], ["flake.nix", 62]]}
+{"key": "ekko/readme.md:287 context", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/agent.rs", 1740]]}
+{"key": "ctx/src/skills/bulk-reader/SKILL.md:43 offset", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/hooks/check-file-size", 23]]}
+{"key": "ekko/readme.md:285 ask", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/guard.rs", 787], ["src/artifact.rs", 7455], ["src/mcp.rs", 566], ["src/ops.rs", 1235], ["tests/mcp.rs", 832], ["src/serve.rs", 235]]}
+{"key": "ekko/readme.md:247 ask", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/mcp.rs", 566], ["tests/mcp.rs", 832], ["src/ops.rs", 1235], ["src/serve.rs", 235], ["src/artifact.rs", 7455], ["src/guard.rs", 787]]}
+{"key": "kimi-k3-in-c.git/README.md:845 A_log", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["tools/k3_ref.py", 233]]}
+{"key": "kimi-k3-in-c.git/README.md:722 O_DIRECT", "decoy": true, "model": "claude-haiku-5-5", "answer": 0, "shown": [["tools/cmp_logits.py", 33]]}
+{"key": "ekko/readme.md:247 initialize", "decoy": false, "model": "claude-haiku-5-5", "answer": 0, "shown": [["src/mcp.rs", 918]]}

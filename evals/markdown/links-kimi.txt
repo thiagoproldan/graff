@@ -1,0 +1,11 @@
+graff e33d74c with uncommitted changes; kimi: /home/roldant/.local/share/graff/repos/kimi-k3-in-c.git at ac1584a (git archive); 2026-10-09
+control, graff's resolver broken on purpose: of the 161 the rules tie to something, 0 the same as the rules, against graff's 161
+213 of 213 links and written paths reach what the rules say (100.0%)
+    link to file: 40 the same, 0 otherwise
+    link to nothing: 34 the same, 0 otherwise
+    link#fragment to section: 63 the same, 0 otherwise
+    path to file: 58 the same, 0 otherwise
+    path to nothing: 18 the same, 0 otherwise
+marksman, at each link to a Markdown file:
+    to a file: 40 the same
+    to a heading's anchor: 63 the same

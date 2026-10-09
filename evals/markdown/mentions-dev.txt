@@ -1,0 +1,26 @@
+graff e33d74c with uncommitted changes; dev: /projects/ekko at a69258f (git archive); /projects/ctx at 6a6d80a (git archive); /home/roldant/.local/share/graff/repos/kimi-k3-in-c.git at ac1584a (git archive); /projects/graff at e33d74c (git archive); 2026-10-09
+366 spans name a definition by the end of its name; 200 drawn with seed 16, and 20 decoys; judge: claude-haiku-5-5 through claude -p --safe-mode, 20 to a batch
+decoys the judge said meant none: 18 of 20
+precision: 37 of the 44 spans graff ties, the judge picked its tie (84.1%)
+recall: of the 143 spans whose candidate the judge picked, graff tied 37 to it (25.9%); missed: {'a lower-case word': 95, 'test code': 11}
+    call: 5 spans; graff ties 5, 5 picked; the judge picked a candidate for 5, graff tied 5 of them to it
+    capital: 41 spans; graff ties 26, 20 picked; the judge picked a candidate for 29, graff tied 20 of them to it
+    lower-case word: 136 spans; graff ties 0, 0 picked; the judge picked a candidate for 95, graff tied 0 of them to it
+    qualified: 1 spans; graff ties 0, 0 picked; the judge picked a candidate for 0, graff tied 0 of them to it
+    underscore or digit: 17 spans; graff ties 13, 12 picked; the judge picked a candidate for 14, graff tied 12 of them to it
+graff's ties the judge did not pick:
+    kimi-k3-in-c.git/README.md:440 FILE: graff ('examples/03-long-prompt.sh', 14), judge None
+    kimi-k3-in-c.git/README.md:600 posix_memalign: graff ('src/io/k3_portable_io.h', 178), judge None
+    kimi-k3-in-c.git/README.md:932 O_DIRECT: graff ('src/io/k3_portable_io.h', 65), judge None
+    ekko/readme.md:291 FORCE_COLOR: graff ('media/capture/shot.sh', 13), judge None
+    kimi-k3-in-c.git/README.md:585 O_DIRECT: graff ('src/io/k3_portable_io.h', 65), judge None
+    kimi-k3-in-c.git/README.md:845 A_log: graff ('tools/k3_ref.py', 233), judge None
+    kimi-k3-in-c.git/docs/TUNING.md:140 OMP_NUM_THREADS: graff ('scripts/jetson-proof-of-life.sh', 131), judge None
+the prompt:
+    You judge whether a code span in a Markdown document refers to a definition in the code of the same repository.
+    
+    Each item gives: the document's path, the heading and paragraph the span is in, the span as written, and numbered candidate definitions, each with its file, kind, qualified name, doc and first lines of code.
+    
+    Answer with the number of the candidate the span refers to, or 0 if it refers to none of them: for example an English word, a parameter, field or option name, a command or flag, a value, or code from outside these candidates. If the span refers to a definition of that name but you cannot tell which of several candidates, answer the one that fits best. Judge only from what is shown.
+    
+    Write one line per item, in the form `ITEM_ID: NUMBER`, and nothing else.

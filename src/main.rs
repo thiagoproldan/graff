@@ -75,8 +75,9 @@ enum Command {
 
 #[derive(Args)]
 struct Symbol {
-    /// load, Storage::load, src/store.rs:Storage::load, or src/store.rs:120
-    /// for the definition around a line
+    /// load, Storage::load, src/store.rs:Storage::load, src/store.rs:120 for
+    /// the definition around a line, a file by its path, or a Markdown
+    /// section by its heading or its anchor: readme.md#usage
     symbol: String,
 }
 

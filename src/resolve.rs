@@ -16,6 +16,7 @@
 
 pub mod bash;
 pub mod c;
+pub mod markdown;
 pub mod nix;
 pub mod python;
 
@@ -173,6 +174,11 @@ pub enum Use {
     File,
     /// A Nix binding that sets an option: `services.foo.enable = true;`.
     Setting,
+    /// A Markdown link: `[the store](src/store.rs)`, `[usage](#usage)`.
+    Link,
+    /// A Markdown code span or path in the prose that names code or a file:
+    /// `Storage::load`, `src/store.rs:120` (decision 128).
+    Mention,
 }
 
 impl Use {
@@ -184,6 +190,8 @@ impl Use {
             Use::Qualifier => "qualifier".to_string(),
             Use::File => "file".to_string(),
             Use::Setting => "setting".to_string(),
+            Use::Link => "link".to_string(),
+            Use::Mention => "mention".to_string(),
         }
     }
 }
@@ -209,14 +217,16 @@ pub enum Rule {
     /// the class, or of its bases, through `self` or `super()`.
     Receiver,
     /// The only definition of that name in the crate; Python: the only
-    /// method of that name in the worktree.
+    /// method of that name in the worktree; Markdown: the only definition
+    /// of the worktree's code a name written as code names.
     Unique,
     /// Nix: the binding the name is bound to in its file; Bash: the
     /// function or variable of the script's own file; Python: the
     /// definition the file binds the name to, in a scope the use sees.
     Scope,
     /// Nix: the file a path names, or its folder's default.nix; Bash: the
-    /// file a script sources or runs; Python: the module an import names.
+    /// file a script sources or runs; Python: the module an import names;
+    /// Markdown: the file a link or a path names.
     File,
     /// Nix: a file of a folder a function lists with `builtins.readDir`.
     Folder,
@@ -231,6 +241,9 @@ pub enum Rule {
     /// C: a definition of a file the file includes, or of one that
     /// includes it; or the definition a prototype found there declares.
     Include,
+    /// Markdown: what a link's fragment names, a section by its anchor or
+    /// code by its line, or a path's `:line` or `:Name`.
+    Anchor,
 }
 
 impl Rule {
@@ -251,6 +264,7 @@ impl Rule {
             Rule::Source => "source",
             Rule::Environment => "environment",
             Rule::Include => "include",
+            Rule::Anchor => "anchor",
         }
     }
 }
@@ -1161,6 +1175,7 @@ pub fn resolve(files: &[File], libraries: &[Library]) -> Vec<Edge> {
     edges.extend(bash::resolve(files));
     edges.extend(python::resolve(files));
     edges.extend(c::resolve(files));
+    edges.extend(markdown::resolve(files));
     edges
 }
 

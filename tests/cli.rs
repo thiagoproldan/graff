@@ -513,13 +513,28 @@ fn a_name_graff_does_not_know_is_refused_with_the_nearest() {
         )
     );
     assert_eq!(
-        demo.refused(&["callers", "store"]),
-        "graff: store names a module (src/lib.rs:1 module store), and graff ties no uses to modules: graff outline FILE lists what one holds\n"
+        demo.refused(&["callees", "store"]),
+        "graff: store names a module (src/lib.rs:1 module store), whose code is what it holds: graff outline FILE lists that\n"
+    );
+    assert_eq!(
+        demo.refused(&["callers", "src/lib.rs"]),
+        "graff: no `mod` item declares src/lib.rs, as none does a crate's root: graff outline src/lib.rs lists what it holds\n"
     );
     assert_eq!(
         demo.refused(&["def", "src/store.rs:"]),
         "graff: src/store.rs: names no symbol: write load, Storage::load, src/store.rs:Storage::load or src/store.rs:120\n"
     );
+    // A path that names no file is refused as outline refuses it, not with
+    // the names nearest its text.
+    for written in ["src/stor.rs", "tools/draw.py", "docs/nowhere.md"] {
+        assert_eq!(
+            demo.refused(&["callers", written]),
+            demo.rooted(&format!(
+                "graff: {written} is no file graff reads in ROOT\n"
+            )),
+            "{written}"
+        );
+    }
 }
 
 /// A flake with a host, a folder of modules and functions of its own.
@@ -1343,6 +1358,217 @@ depth 2: 1 caller
   src/cli/k3_run.c:4-10 function main
 depth 3: 0 callers
 2 callers in 2 files, to depth 3
+"
+        )
+    );
+}
+
+const MARKDOWN_DEMO: &[(&str, &str)] = &[
+    (
+        "readme.md",
+        r#"# K3
+
+A small engine. See [the guide](docs/guide.md).
+
+## Code
+
+`k3_matmul` multiplies, at [its line](src/k3_ops.c#L4); `src/k3_ops.c:8` runs it,
+and so does src/k3_run.c. `kind` is a word, and `K3_MAX` is no name here.
+
+## Usage
+
+[Why](docs/guide.md#why-it-works), [the 30th](docs/guide.md#30).
+
+## Usage
+
+Again.
+"#,
+    ),
+    (
+        "docs/guide.md",
+        r#"# Guide
+
+## Why it works
+
+Because [the readme](../readme.md#code) says so.
+
+## <a id="30"></a>30. Thirty
+
+Thirty.
+"#,
+    ),
+    (
+        "src/k3_ops.c",
+        r#"/* y = W . x */
+void k3_matmul(float *y, const float *x);
+
+void k3_matmul(float *y, const float *x) {
+    y[0] = x[0];
+}
+
+int main(void) {
+    float y[1], x[1] = { 1 };
+    k3_matmul(y, x);
+    return 0;
+}
+"#,
+    ),
+    ("src/k3_run.c", "int run(void) { return 0; }\n"),
+];
+
+#[test]
+fn markdown_outline_and_def_name_a_section_by_its_heading_or_its_anchor() {
+    let demo = Demo::of("md-outline", MARKDOWN_DEMO);
+    assert_eq!(
+        demo.ask(&["outline", "readme.md"]),
+        demo.rooted(
+            "outline readme.md in ROOT
+readme.md: 16 lines, 4 symbols
+  1-16 section K3
+    5-8 section Code
+    10-12 section Usage
+    14-16 section Usage
+"
+        )
+    );
+    for written in ["Why it works", "why-it-works", "docs/guide.md#why-it-works"] {
+        assert_eq!(
+            demo.ask(&["def", written]),
+            demo.rooted(&format!(
+                "def {written} in ROOT
+docs/guide.md:3-5 section Why it works #why-it-works
+  /// Because the readme says so.
+  ## Why it works
+"
+            )),
+            "{written}"
+        );
+    }
+    // A custom anchor names the section it is in; a second heading of one
+    // text is named by its anchor's number.
+    assert_eq!(
+        demo.ask(&["def", "docs/guide.md#30"]),
+        demo.rooted(
+            "def docs/guide.md#30 in ROOT
+docs/guide.md:7-9 section 30. Thirty #30
+  /// Thirty.
+  ## <a id=\"30\"></a>30. Thirty
+"
+        )
+    );
+    assert_eq!(
+        demo.ask(&["def", "usage-1"]),
+        demo.rooted(
+            "def usage-1 in ROOT
+readme.md:14-16 section Usage #usage-1
+  /// Again.
+  ## Usage
+"
+        )
+    );
+}
+
+/// A crate whose readme names its files and code, and a Python tool whose
+/// test sets a value through the module it imports.
+const DOCS_DEMO: &[(&str, &str)] = &[
+    ("Cargo.toml", DEMO_MANIFEST),
+    ("src/lib.rs", DEMO_LIB),
+    ("src/store.rs", DEMO_STORE),
+    (
+        "readme.md",
+        r#"# Demo
+
+## Storage
+
+`src/store.rs` keeps values, which `Storage::open` opens.
+
+## Reloads in silence
+
+Nothing.
+"#,
+    ),
+    ("tools/draw.py", "WORK = 'w'\n"),
+    ("tools/test_draw.py", "import draw\n\ndraw.WORK = 'x'\n"),
+];
+
+#[test]
+fn a_rust_file_s_callers_are_the_links_and_mentions_of_its_module() {
+    let demo = Demo::of("md-module", DOCS_DEMO);
+    for written in ["src/store.rs", "store.rs", "store"] {
+        assert_eq!(
+            demo.ask(&["callers", written]),
+            demo.rooted(&format!(
+                "callers {written} in ROOT
+src/lib.rs:1 module store: 1 caller, 0 possible; links and mentions only, as Rust's uses reach what they name in it
+  readme.md:3-5 section Storage #storage: mention 5
+"
+            )),
+            "{written}"
+        );
+    }
+    assert_eq!(
+        demo.refused(&["callees", "src/store.rs"]),
+        "graff: src/store.rs names a module (src/lib.rs:1 module store), whose code is what it holds: graff outline FILE lists that\n"
+    );
+    // A heading near a qualified name is no name near it, but one near a
+    // heading is.
+    assert_eq!(
+        demo.refused(&["def", "Storage::loads"]),
+        demo.rooted("graff: no definition named Storage::loads in ROOT, nor a name near it\n")
+    );
+    assert_eq!(
+        demo.refused(&["def", "Reloads in silenc"]),
+        demo.rooted(
+            "graff: no definition named Reloads in silenc in ROOT; nearest: Reloads in silence (readme.md:7-9)\n"
+        )
+    );
+}
+
+#[test]
+fn a_python_module_s_callers_hold_the_uses_of_the_name_an_import_binds() {
+    let demo = Demo::of("py-module", DOCS_DEMO);
+    assert_eq!(
+        demo.ask(&["callers", "tools/draw.py"]),
+        demo.rooted(
+            "callers tools/draw.py in ROOT
+tools/draw.py:1 file: 1 caller, 0 possible
+  tools/test_draw.py (top level): ref 3; use 1
+"
+        )
+    );
+}
+
+#[test]
+fn markdown_callers_and_callees_follow_links_and_mentions() {
+    let demo = Demo::of("md-callers", MARKDOWN_DEMO);
+    assert_eq!(
+        demo.ask(&["callers", "k3_matmul"]),
+        demo.rooted(
+            "callers k3_matmul in ROOT
+src/k3_ops.c:4-6 function k3_matmul: 2 callers, 0 possible
+  readme.md:5-8 section Code #code: link 7; mention 7
+  src/k3_ops.c:8-12 function main: call 10
+"
+        )
+    );
+    assert_eq!(
+        demo.ask(&["callers", "docs/guide.md#30"]),
+        demo.rooted(
+            "callers docs/guide.md#30 in ROOT
+docs/guide.md:7-9 section 30. Thirty #30: 1 caller, 0 possible
+  readme.md:10-12 section Usage #usage: link 12
+"
+        )
+    );
+    assert_eq!(
+        demo.ask(&["callees", "Code"]),
+        demo.rooted(
+            "callees Code in ROOT
+readme.md:5-8 section Code #code: 3 callees, 0 possible, 1 outside the worktree
+  src/k3_ops.c:4-6 function k3_matmul: link 7; mention 7
+  src/k3_ops.c:8-12 function main: mention 7
+  src/k3_run.c:1 file: mention 8
+  outside the worktree: K3_MAX
 "
         )
     );

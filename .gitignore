@@ -11,4 +11,5 @@ evals/bar/work/
 evals/bar/private/
 evals/store/bench/target/
 evals/extract/registry*.txt
+evals/python/pyright-stdlib*.txt
 evals/nix/private/

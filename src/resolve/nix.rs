@@ -56,7 +56,7 @@ fn wild(segment: &str) -> bool {
 }
 
 /// The folder a path is in, `` at the top.
-fn folder(path: &str) -> &str {
+pub(super) fn folder(path: &str) -> &str {
     path.rsplit_once('/').map_or("", |(folder, _)| folder)
 }
 

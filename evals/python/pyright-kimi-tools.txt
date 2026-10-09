@@ -1,0 +1,15 @@
+run 2026-10-09
+graff f127aae with uncommitted changes
+corpus kimi-tools: a git repository at ac1584a (git archive of tools), 23 Python files
+truth: pyright 1.1.414 (nixpkgs), default settings, Python 3.14.7 on PATH, each file opened as it is asked
+  3356 names asked, 2136 answered; 3 names not found on their line
+
+broken resolver: precision 0.000, recall 0.000
+graff: precision 1.000 (820 of 820 judged; 4 unjudged), recall 1.000 (788 of 788 names pyright places in the corpus)
+by rule: file 14/14 (3 unjudged), import 52/52 (0 unjudged), path 36/36 (0 unjudged), receiver 386/386 (0 unjudged), scope 331/331 (0 unjudged), unique 1/1 (1 unjudged)
+missed, by what graff did: 
+graff's untied edges, by pyright's place: ambiguous no place 26, ambiguous outside 6, external no place 1241, external outside 1422
+
+wrong edges:
+
+missed names:

@@ -1,0 +1,79 @@
+run 2026-10-09
+graff f127aae with uncommitted changes
+corpus kimi: a git repository at ac1584a (git archive), 32 C files, 17 translation units
+truth: clangd version 21.1.8 (nixpkgs), CMake's compile_commands.json (cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON), --background-index=false, every file opened and built first
+  4697 names asked, 4145 answered; 12 names not found on their line
+
+broken resolver: precision 0.000, recall 0.000
+graff: precision 0.991 (2422 of 2444 judged; 24 unjudged), recall 0.997 (2319 of 2326 names clangd places in the corpus)
+by rule: file 60/60 (0 unjudged), include 935/956 (5 unjudged), scope 1427/1428 (19 unjudged)
+missed, by what graff did: 7 ambiguous
+graff's untied edges, by clangd's place: ambiguous in the corpus 7, ambiguous outside 7, external no place 575, external outside 2001
+
+calls only, graff's and graphify's (its graph.json built at ac1584a): precision of the ties clangd judges, recall of the 1278 calls it places in the corpus and of the 554 pairs of caller and callee they make
+  graff: precision 0.987 (1323 of 1341 judged; 9 unjudged), recall 0.995 (1272), of pairs 0.991 (549)
+  graphify: precision 0.989 (525 of 531 judged; 5 unjudged), recall 0.411 (525), of pairs 0.948 (525)
+  graphify EXTRACTED: precision 0.996 (283 of 284 judged; 2 unjudged), recall 0.221 (283), of pairs 0.511 (283)
+  graphify INFERRED: precision 0.980 (242 of 247 judged; 3 unjudged), recall 0.189 (242), of pairs 0.437 (242)
+
+wrong edges:
+src/cache/k3_cache.c:325 posix_memalign (call free) -> src/io/k3_portable_io.h posix_memalign (include); clangd outside
+    if (posix_memalign((void **)&c->arena, al, want) != 0) {
+src/cache/k3_cache.c:330 madvise (call free) -> src/io/k3_portable_io.h madvise (include); clangd outside
+    if (huge) madvise(c->arena, want, MADV_HUGEPAGE);
+src/cache/k3_cache.c:329 MADV_HUGEPAGE (reference value) -> src/io/k3_portable_io.h MADV_HUGEPAGE (include); clangd outside
+    #if defined(MADV_HUGEPAGE)
+src/cache/k3_cache.c:330 MADV_HUGEPAGE (reference value) -> src/io/k3_portable_io.h MADV_HUGEPAGE (include); clangd outside
+    if (huge) madvise(c->arena, want, MADV_HUGEPAGE);
+src/io/k3_st.c:199 open (call free) -> src/io/k3_portable_io.h open (include); clangd outside
+    int fd = open(path, O_RDONLY);
+src/io/k3_st.c:203 pread (call free) -> src/io/k3_portable_io.h pread (include); clangd outside
+    if (pread(fd, lenbuf, 8, 0) != 8) {
+src/io/k3_st.c:221 pread (call free) -> src/io/k3_portable_io.h pread (include); clangd outside
+    ssize_t r = pread(fd, json + got, hlen - got, 8 + got);
+src/io/k3_st.c:347 open (call free) -> src/io/k3_portable_io.h open (include); clangd outside
+    s->dfd[shard] = open(path, O_RDONLY | O_DIRECT);
+src/io/k3_st.c:468 pread (call free) -> src/io/k3_portable_io.h pread (include); clangd outside
+    ssize_t r = pread(s->fd[shard], (char *)buf + got,
+src/io/k3_st.c:487 pread (call free) -> src/io/k3_portable_io.h pread (include); clangd outside
+    ssize_t r = pread(dfd, (char *)buf + got, (size_t)req, (off_t)(lo + got));
+src/io/k3_st.c:506 pread (call free) -> src/io/k3_portable_io.h pread (include); clangd outside
+    ssize_t r = pread(s->fd[t->shard], (char *)buf + got,
+src/io/k3_st.c:546 pread (call free) -> src/io/k3_portable_io.h pread (include); clangd outside
+    ssize_t r = pread(s->fd[t->shard], (char *)raw + got, (size_t)(want - got),
+src/io/k3_trunk.c:160 open (call free) -> src/io/k3_portable_io.h open (include); clangd outside
+    tr->fd = open(p, O_RDONLY | O_DIRECT);
+src/io/k3_trunk.c:165 open (call free) -> src/io/k3_portable_io.h open (include); clangd outside
+    tr->fd = open(p, O_RDONLY);
+src/io/k3_trunk.c:179 open (call free) -> src/io/k3_portable_io.h open (include); clangd outside
+    tr->fd = open(p, O_RDONLY);
+src/io/k3_trunk.c:382 posix_memalign (call free) -> src/io/k3_portable_io.h posix_memalign (include); clangd outside
+    if (posix_memalign(out, align, len) != 0) return -1;
+src/io/k3_trunk.c:384 madvise (call free) -> src/io/k3_portable_io.h madvise (include); clangd outside
+    if (huge) madvise(*out, len, MADV_HUGEPAGE);   /* advisory: failure is not an error */
+src/io/k3_trunk.c:383 MADV_HUGEPAGE (reference value) -> src/io/k3_portable_io.h MADV_HUGEPAGE (include); clangd outside
+    #if defined(MADV_HUGEPAGE)
+src/io/k3_trunk.c:384 MADV_HUGEPAGE (reference value) -> src/io/k3_portable_io.h MADV_HUGEPAGE (include); clangd outside
+    if (huge) madvise(*out, len, MADV_HUGEPAGE);   /* advisory: failure is not an error */
+src/model/k3_bind.c:560 posix_memalign (call free) -> src/io/k3_portable_io.h posix_memalign (include); clangd outside
+    if (posix_memalign((void **)&m->buf, K3_ST_ALIGN, m->bufcap) != 0) {
+tests/unit/test_expert.c:62 sync (call free) -> tests/unit/test_expert.c sync (scope); clangd outside
+    sync();
+tests/unit/test_trunk.c:495 open (call free) -> src/io/k3_portable_io.h open (include); clangd outside
+    int wfd = open(path, O_WRONLY);
+
+missed names:
+src/cache/k3_cache.c:357 k3_aligned_free (call free) -> src/io/k3_portable_io.h k3_aligned_free#2; graff: ambiguous
+    k3_aligned_free(c->arena); free(c->slot_of); free(c->key_of);
+src/io/k3_portable_io.h:212 k3_aligned_free (reference value) -> src/io/k3_portable_io.h k3_aligned_free#2; graff: ambiguous
+    #ifndef k3_aligned_free
+src/io/k3_st.c:348 k3_set_direct (call free) -> src/io/k3_portable_io.h k3_set_direct#3; graff: ambiguous
+    k3_set_direct(s->dfd[shard]);   /* no-op off Darwin; advisory, failure is fine */
+src/io/k3_trunk.c:161 k3_set_direct (call free) -> src/io/k3_portable_io.h k3_set_direct#3; graff: ambiguous
+    if (tr->fd >= 0 && k3_set_direct(tr->fd) != 0)
+src/io/k3_trunk.c:348 k3_aligned_free (call free) -> src/io/k3_portable_io.h k3_aligned_free#2; graff: ambiguous
+    if (tr->pin) { for (int i = 0; i < tr->npin; i++) k3_aligned_free(tr->pin[i]); free(tr->pin); }
+src/io/k3_trunk.c:349 k3_aligned_free (call free) -> src/io/k3_portable_io.h k3_aligned_free#2; graff: ambiguous
+    k3_aligned_free(tr->arena); free(tr->layer_of); free(tr->slot_of);
+src/model/k3_bind.c:571 k3_aligned_free (call free) -> src/io/k3_portable_io.h k3_aligned_free#2; graff: ambiguous
+    k3_aligned_free(m->buf);

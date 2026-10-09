@@ -71,6 +71,8 @@ const IMPLEMENTED: [Kind; 5] = [
 
 /// Where a symbol is defined: each definition the name matches, with its
 /// doc's first sentence, its signature, and a type's or trait's impl blocks.
+/// A C prototype of what the worktree defines comes after the definition,
+/// and is the first a budget cuts.
 pub fn def(
     store: &mut Store,
     root: &Path,
@@ -88,7 +90,8 @@ pub fn def(
         let signature = code.signature(d);
         let mut text = code.describe(d);
         let mut item = json!({"definition": code.json(d), "doc": doc, "signature": signature});
-        if IMPLEMENTED.contains(&defined.kind) {
+        if IMPLEMENTED.contains(&defined.kind) && code.worktree.languages[d.file] == Language::Rust
+        {
             text.push_str(&format!(", {}", count(blocks.len(), "impl block")));
             item["impl_blocks"] = json!(blocks.len());
         }
@@ -97,6 +100,10 @@ pub fn def(
         }
         if let Some(signature) = &signature {
             text.push_str(&format!("\n  {signature}"));
+        }
+        if code.declares_defined(d, &found) {
+            lines.push(Line::new(text, item, rank(1, n), "declarations"));
+            continue;
         }
         lines.push(Line::new(text, item, rank(5, n), "definitions"));
         for &block in blocks {
@@ -198,9 +205,9 @@ pub fn callees(
                 continue;
             }
             match &edge.resolution {
-                Resolution::Resolved(d, _) => group(&mut sure, *d, Used::of(edge)),
+                Resolution::Resolved(d, _) => group(&mut sure, *d, code.used(edge)),
                 Resolution::Ambiguous(_) => {
-                    group(&mut possible, edge.name.as_str(), Used::of(edge))
+                    group(&mut possible, edge.name.as_str(), code.used(edge))
                 }
                 // The type a path goes through is in the path itself.
                 Resolution::External if edge.used == Use::Qualifier => {}
@@ -284,9 +291,18 @@ pub fn outline(
             && !(symbol.kind == Kind::Argument && made.contains(&(symbol.start, symbol.end)))
     });
     let defined = order.len();
+    // A Python attribute a method sets, `self.state = None`, is its class's,
+    // as its name says, not the method's its line is in.
+    let python = code.worktree.languages[f] == Language::Python;
+    let within = |s: usize, top: usize| {
+        let (inner, outer) = (&symbols[s].qualified, &symbols[top].qualified);
+        inner.len() > outer.len()
+            && inner.starts_with(outer.as_str())
+            && inner[outer.len()..].starts_with('.')
+    };
     for s in order {
         while let Some(&top) = open.last()
-            && symbols[s].end > symbols[top].end
+            && (symbols[s].end > symbols[top].end || (python && !within(s, top)))
         {
             open.pop();
         }
@@ -299,9 +315,10 @@ pub fn outline(
         }
         shown.push((s, open.len(), open.last().copied()));
         // What a helper writes, at the call's lines, holds none of the call's
-        // own bindings; a script's variable, none of those on its line.
+        // own bindings; a script's variable, none of those on its line; an
+        // enumerator of a C enum with no name, none of the others on its line.
         let d = Definition { file: f, symbol: s };
-        if code.written(d).is_none() && code.holds(d) {
+        if code.written(d).is_none() && code.holds(d) && symbols[s].kind != Kind::Variant {
             open.push(s);
         }
     }
@@ -494,17 +511,20 @@ enum Caller {
 /// A use of a name, as an answer gives it: how, at which line; and for one
 /// that may reach one of several definitions, how many the crate has, and
 /// whether it may reach one outside the crate instead, as a method call of a
-/// name std's types have too may.
+/// name std's types have too may, or in Python one of a name the types of
+/// Python's library have.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Used {
     how: &'static str,
     line: u32,
     candidates: usize,
     outside: bool,
+    /// What it may reach outside of: the crate, or for Python the worktree.
+    whole: &'static str,
 }
 
 impl Used {
-    fn of(edge: &Edge) -> Used {
+    fn of(edge: &Edge, language: Language) -> Used {
         let how = match edge.used {
             Use::Call(_) => "call",
             Use::Reference(_) | Use::Qualifier => "ref",
@@ -516,14 +536,21 @@ impl Used {
             Resolution::Ambiguous(found) => found.len(),
             _ => 0,
         };
-        let outside = candidates > 0
-            && edge.used == Use::Call(CallKind::Method)
-            && resolve::std_method(&edge.name);
+        let method = candidates > 0 && edge.used == Use::Call(CallKind::Method);
+        let (outside, whole) = match language {
+            Language::Rust => (method && resolve::std_method(&edge.name), "crate"),
+            Language::Python => (
+                method && resolve::python::library_method(&edge.name),
+                "worktree",
+            ),
+            _ => (false, "worktree"),
+        };
         Used {
             how,
             line: edge.line,
             candidates,
             outside,
+            whole,
         }
     }
 }
@@ -716,7 +743,8 @@ impl<'s> Code<'s> {
     }
 
     /// A definition's code, as its file has it now, to where its body
-    /// starts: a function's signature, the first line of anything else.
+    /// starts: a function's signature, a C prototype whole, a Python class's
+    /// line past its decorators, the first line of anything else.
     fn signature(&self, d: Definition) -> Option<String> {
         let symbol = self.symbol(d);
         let text = fs::read_to_string(self.root.join(self.path(d))).ok()?;
@@ -725,7 +753,16 @@ impl<'s> Code<'s> {
             .skip(symbol.start.checked_sub(1)? as usize)
             .take((symbol.end - symbol.start + 1) as usize)
             .collect();
-        signature(&lines, matches!(symbol.kind, Kind::Function | Kind::Method))
+        if self.worktree.languages[d.file] == Language::Python {
+            return python_signature(&lines);
+        }
+        signature(
+            &lines,
+            matches!(
+                symbol.kind,
+                Kind::Function | Kind::Method | Kind::Declaration
+            ),
+        )
     }
 
     /// The impl blocks of the types and traits among some definitions: those
@@ -810,10 +847,11 @@ impl<'s> Code<'s> {
     /// Each definition a written name names, the whole name first; an error
     /// that gives the nearest names when none does.
     fn find(&self, written: &str) -> Result<Vec<Definition>, Error> {
-        // A Nix file or a script is named by its path, as `graff outline`
-        // names one; a bare word with no extension, `handoff`, names symbols.
+        // A Nix file, a script, a Python module or a C file is named by its
+        // path, as `graff outline` names one; a bare word with no extension,
+        // `handoff`, names symbols.
         if (written.contains('/')
-            || [".nix", ".sh", ".bash"]
+            || [".nix", ".sh", ".bash", ".py", ".c", ".h"]
                 .iter()
                 .any(|extension| written.ends_with(extension)))
             && let Ok(f) = self.file(written)
@@ -943,14 +981,29 @@ impl<'s> Code<'s> {
         )))
     }
 
+    /// Whether a definition is a C prototype of what one of the others
+    /// found defines where other files reach it, so that uses reach that
+    /// definition and the prototype stands for none of them.
+    fn declares_defined(&self, d: Definition, found: &[Definition]) -> bool {
+        let symbol = self.symbol(d);
+        symbol.kind == Kind::Declaration
+            && found.iter().any(|&other| {
+                let defined = self.symbol(other);
+                defined.name == symbol.name
+                    && !defined.internal
+                    && !matches!(defined.kind, Kind::Declaration | Kind::File)
+            })
+    }
+
     /// The definitions a written name names that uses are tied to: not a
-    /// module, which graff ties none to.
+    /// module, which graff ties none to, nor a C prototype of what the
+    /// worktree defines.
     fn find_targets(&self, written: &str) -> Result<Vec<Definition>, Error> {
         let found = self.find(written)?;
         let targets: Vec<Definition> = found
             .iter()
             .copied()
-            .filter(|&d| self.symbol(d).kind != Kind::Module)
+            .filter(|&d| self.symbol(d).kind != Kind::Module && !self.declares_defined(d, &found))
             .collect();
         if targets.is_empty() {
             let modules: Vec<String> = found.iter().map(|&d| self.describe(d)).collect();
@@ -1103,11 +1156,16 @@ impl<'s> Code<'s> {
         }
     }
 
+    /// A use as an answer gives it, by its file's language.
+    fn used(&self, edge: &Edge) -> Used {
+        Used::of(edge, self.worktree.languages[edge.file])
+    }
+
     /// Edges by what they are in, in the answer's order, each with its uses.
     fn by_caller<'e>(&self, edges: impl Iterator<Item = &'e Edge>) -> Vec<(Caller, Vec<Used>)> {
         let mut groups = Vec::new();
         for edge in edges {
-            group(&mut groups, self.caller(edge), Used::of(edge));
+            group(&mut groups, self.caller(edge), self.used(edge));
         }
         for (_, uses) in &mut groups {
             uses.sort_by_key(|used| (used.how, used.line));
@@ -1214,14 +1272,16 @@ fn names_run(parts: &[&str], run: &[&str]) -> bool {
 }
 
 /// Where a Nix definition comes among those a name names: an option's
-/// declaration first, the bindings that may set it last. Rust's all come
-/// alike.
+/// declaration first, the bindings that may set it last. A C prototype
+/// comes after the definition it declares, as decision 108 has it. Rust's
+/// all come alike.
 fn precedence(kind: Kind) -> u8 {
     match kind {
         Kind::Input => 1,
         Kind::Function => 2,
         Kind::Variable => 3,
         Kind::Attribute => 4,
+        Kind::Declaration => 5,
         _ => 0,
     }
 }
@@ -1280,13 +1340,69 @@ fn signature(lines: &[&str], function: bool) -> Option<String> {
         .unwrap_or(&joined)
         .trim_end()
         .trim_end_matches(',');
-    if joined.is_empty() {
+    capped(joined)
+}
+
+/// A Python definition's signature: from its `def` or `class` line, past
+/// any decorator, to the colon that opens its body, comments left out; the
+/// first line of anything else.
+fn python_signature(lines: &[&str]) -> Option<String> {
+    let opens = |line: &&str| {
+        let line = line.trim_start();
+        ["def ", "async def ", "class "]
+            .iter()
+            .any(|keyword| line.starts_with(keyword))
+    };
+    let Some(start) = lines.iter().position(opens) else {
+        return capped(lines.first()?.trim());
+    };
+    let (mut joined, mut depth, mut quote) = (String::new(), 0i32, None);
+    for line in lines[start..].iter().take(12) {
+        let line = line.trim();
+        if !joined.is_empty() && !joined.ends_with(['(', '[']) && !line.starts_with([')', ']']) {
+            joined.push(' ');
+        }
+        let (mut end, mut escaped) = (line.len(), false);
+        for (i, c) in line.char_indices() {
+            if let Some(open) = quote {
+                if escaped {
+                    escaped = false;
+                } else if c == '\\' {
+                    escaped = true;
+                } else if c == open {
+                    quote = None;
+                }
+                continue;
+            }
+            match c {
+                '\'' | '"' => quote = Some(c),
+                '(' | '[' | '{' => depth += 1,
+                ')' | ']' | '}' => depth -= 1,
+                '#' => {
+                    end = i;
+                    break;
+                }
+                ':' if depth == 0 => {
+                    joined.push_str(line[..i].trim_end());
+                    return capped(&joined.replace(",)", ")"));
+                }
+                _ => {}
+            }
+        }
+        joined.push_str(line[..end].trim_end());
+    }
+    capped(&joined)
+}
+
+/// A signature as an answer gives it: at most 200 characters; none when empty.
+fn capped(text: &str) -> Option<String> {
+    if text.is_empty() {
         return None;
     }
-    Some(if joined.chars().count() > 200 {
-        format!("{}…", joined.chars().take(200).collect::<String>())
+    Some(if text.chars().count() > 200 {
+        format!("{}…", text.chars().take(200).collect::<String>())
     } else {
-        joined.to_string()
+        text.to_string()
     })
 }
 
@@ -1299,7 +1415,12 @@ fn first_sentence(doc: &str) -> Option<String> {
         .take_while(|line| !line.is_empty())
         .collect();
     let paragraph = paragraph.join(" ");
-    let sentence = match paragraph.find(". ") {
+    // A sentence ends with a word: `W[rows][in] . x[in]` writes a product.
+    let end = paragraph
+        .match_indices(". ")
+        .map(|(i, _)| i)
+        .find(|&i| paragraph[..i].ends_with(|c: char| !c.is_whitespace()));
+    let sentence = match end {
         Some(end) => &paragraph[..=end],
         None => paragraph.as_str(),
     };
@@ -1379,11 +1500,12 @@ fn uses_text(uses: &[Used]) -> String {
 }
 
 /// `(one of 3)`, `(one of 3, or outside the crate)`, or `(or outside the
-/// crate)` for a crate's only method of a name std's types have too.
+/// crate)` for a crate's only method of a name std's types have too; for
+/// Python, outside the worktree.
 fn candidates(used: &Used) -> String {
     match (used.candidates, used.outside) {
-        (1, true) => "(or outside the crate)".to_string(),
-        (n, true) => format!("(one of {n}, or outside the crate)"),
+        (1, true) => format!("(or outside the {})", used.whole),
+        (n, true) => format!("(one of {n}, or outside the {})", used.whole),
         (n, false) => format!("(one of {n})"),
     }
 }
@@ -1679,6 +1801,50 @@ mod tests {
             signature(&["pub struct Storage {", "    path: String,"], false).as_deref(),
             Some("pub struct Storage")
         );
+        // A C prototype over two lines, whole.
+        assert_eq!(
+            signature(
+                &[
+                    "void k3_matmul_mxfp4(float *y, const float *x,",
+                    "                     int in, int rows);",
+                ],
+                true
+            )
+            .as_deref(),
+            Some("void k3_matmul_mxfp4(float *y, const float *x, int in, int rows);")
+        );
+    }
+
+    #[test]
+    fn a_python_signature_runs_past_decorators_to_the_colon() {
+        let lines = [
+            "    @functools.cache",
+            "    @app.route(",
+            "        \"/x:y\",",
+            "    )",
+            "    async def get(self, key: str,  # the key",
+            "                  default: dict[str, int] = {\"a\": 1}) -> int:  # noqa",
+            "        \"\"\"Gets it: or not.\"\"\"",
+            "        return 1",
+        ];
+        assert_eq!(
+            python_signature(&lines).as_deref(),
+            Some("async def get(self, key: str, default: dict[str, int] = {\"a\": 1}) -> int")
+        );
+        assert_eq!(
+            python_signature(&["@dataclass", "class K3Config(Base):", "    dim: int = 8"])
+                .as_deref(),
+            Some("class K3Config(Base)")
+        );
+        assert_eq!(
+            python_signature(&["def f(a,", "      b=':'):", "    return a"]).as_deref(),
+            Some("def f(a, b=':')")
+        );
+        // Anything else: its first line.
+        assert_eq!(
+            python_signature(&["EXPERT_BYTES = 17_550_000  # MXFP4"]).as_deref(),
+            Some("EXPERT_BYTES = 17_550_000  # MXFP4")
+        );
     }
 
     #[test]
@@ -1697,6 +1863,12 @@ mod tests {
             Some(format!("{}…", "a".repeat(200)))
         );
         assert_eq!(first_sentence("\n\n"), None);
+        // A stop after a space ends no sentence: it is C's product.
+        assert_eq!(
+            first_sentence("y[rows] = W[rows][in] . x[in], with W read as MXFP4. Never more.")
+                .as_deref(),
+            Some("y[rows] = W[rows][in] . x[in], with W read as MXFP4.")
+        );
     }
 
     #[test]
@@ -1706,6 +1878,7 @@ mod tests {
             line,
             candidates,
             outside,
+            whole: "crate",
         };
         assert_eq!(
             uses_text(&[
@@ -1727,6 +1900,12 @@ mod tests {
             uses_text(&[used("call", 3, 1, true), used("call", 9, 2, true)]),
             "call 3 (or outside the crate), 9 (one of 2, or outside the crate)"
         );
+        // A Python method of a name the library's types have too.
+        let python = Used {
+            whole: "worktree",
+            ..used("call", 12, 1, true)
+        };
+        assert_eq!(uses_text(&[python]), "call 12 (or outside the worktree)");
     }
 
     fn line(text: &str, rank: u32, part: &'static str) -> Line {

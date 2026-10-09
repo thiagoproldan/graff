@@ -15,7 +15,9 @@
 //! `Storage::open()`.
 
 pub mod bash;
+pub mod c;
 pub mod nix;
+pub mod python;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
@@ -193,23 +195,28 @@ pub enum Rule {
     Nested,
     /// An item of the module the name is used in.
     Module,
-    /// A use item of that module.
+    /// A use item of that module; Python: what an import binds the name to.
     Import,
     /// A glob of that module, `use super::*` included, or an enum's
-    /// variants that `use Kind::*` brings in.
+    /// variants that `use Kind::*` brings in; Python: a star import, or the
+    /// base of a class a member is found in.
     Glob,
     /// A path followed to its end: a module's item, a type's associated
-    /// item, an enum's variant.
+    /// item, an enum's variant; Python: a module's name or submodule, a
+    /// class's member.
     Path,
-    /// A method of the type `self` is, in a method.
+    /// A method of the type `self` is, in a method; Python: a member of
+    /// the class, or of its bases, through `self` or `super()`.
     Receiver,
-    /// The only definition of that name in the crate.
+    /// The only definition of that name in the crate; Python: the only
+    /// method of that name in the worktree.
     Unique,
     /// Nix: the binding the name is bound to in its file; Bash: the
-    /// function or variable of the script's own file.
+    /// function or variable of the script's own file; Python: the
+    /// definition the file binds the name to, in a scope the use sees.
     Scope,
     /// Nix: the file a path names, or its folder's default.nix; Bash: the
-    /// file a script sources or runs.
+    /// file a script sources or runs; Python: the module an import names.
     File,
     /// Nix: a file of a folder a function lists with `builtins.readDir`.
     Folder,
@@ -221,6 +228,9 @@ pub enum Rule {
     Source,
     /// Bash: a variable another script exports to the commands it runs.
     Environment,
+    /// C: a definition of a file the file includes, or of one that
+    /// includes it; or the definition a prototype found there declares.
+    Include,
 }
 
 impl Rule {
@@ -240,6 +250,7 @@ impl Rule {
             Rule::Option => "option",
             Rule::Source => "source",
             Rule::Environment => "environment",
+            Rule::Include => "include",
         }
     }
 }
@@ -1148,6 +1159,8 @@ pub fn resolve(files: &[File], libraries: &[Library]) -> Vec<Edge> {
         .collect();
     edges.extend(nix::resolve(files));
     edges.extend(bash::resolve(files));
+    edges.extend(python::resolve(files));
+    edges.extend(c::resolve(files));
     edges
 }
 

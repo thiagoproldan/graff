@@ -678,7 +678,7 @@ impl Value {
 }
 
 /// A relative path with `.` and `..` folded in: `./../lib/./x` is `../lib/x`.
-fn normal(path: &str) -> String {
+pub(crate) fn normal(path: &str) -> String {
     let mut parts: Vec<&str> = Vec::new();
     for part in path.split('/') {
         match part {
@@ -900,6 +900,8 @@ impl<'s, 't> Reader<'s, 't> {
             start: 1,
             end: last,
             doc: self.header(),
+            internal: false,
+            typed: None,
         });
         let mut taken: HashMap<String, usize> = HashMap::new();
         for p in pending {
@@ -929,6 +931,8 @@ impl<'s, 't> Reader<'s, 't> {
                 start: p.start,
                 end: p.end,
                 doc: p.doc,
+                internal: false,
+                typed: None,
             });
         }
     }
@@ -1035,6 +1039,7 @@ impl<'s, 't> Reader<'s, 't> {
             line: line(node),
             from: self.from(node),
             local: self.variables.get(name).cloned(),
+            typed: None,
         });
     }
 
@@ -1192,6 +1197,7 @@ impl<'s, 't> Reader<'s, 't> {
                         from: self.from(name),
                         receiver: None,
                         local: self.function_names.get(word).cloned(),
+                        typed: None,
                     });
                     if word == "env" {
                         self.env(&arguments, &words);

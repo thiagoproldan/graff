@@ -538,6 +538,8 @@ log() { helper; echo "$1" >>"$LOG_FILE"; }
             start: 1,
             end: 1,
             doc: None,
+            internal: false,
+            typed: None,
         });
         let file = |path| File {
             path,

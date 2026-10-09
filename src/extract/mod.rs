@@ -4,7 +4,9 @@
 //! work, across files.
 
 pub mod bash;
+pub mod c;
 pub mod nix;
+pub mod python;
 pub mod rust;
 
 use serde::{Deserialize, Serialize};
@@ -13,7 +15,7 @@ use crate::lang::Language;
 
 /// Bumped whenever what an extractor produces changes, so that results kept
 /// from an older extractor are read again rather than trusted.
-pub const VERSION: u32 = 4;
+pub const VERSION: u32 = 6;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Extraction {
@@ -51,39 +53,63 @@ pub struct Symbol {
     pub start: u32,
     pub end: u32,
     pub doc: Option<String>,
+    /// Whether only its own file reaches it by its name: C's `static`, of
+    /// internal linkage in C's words, and what a header defines so is
+    /// reached by the files that include it. False in other languages.
+    pub internal: bool,
+    /// Python: the class a variable's value is an instance of, or a
+    /// function's return annotation names, as written: `Shards` for
+    /// `sh = Shards(d)` or `sh: Shards`, `K3Config` for `def tiny() ->
+    /// K3Config`; for a value a call returns, the callee, `tiny_config`.
+    #[serde(default)]
+    pub typed: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Kind {
     /// A function: free, nested in another, or of a type and called by its
-    /// path, as `Storage::open()`.
+    /// path, as `Storage::open()`; a Python function outside a class; a C
+    /// function's definition.
     Function,
-    /// A function of an impl or a trait that takes `self`.
+    /// A function of an impl or a trait that takes `self`; a Python
+    /// function of a class.
     Method,
+    /// A Rust struct; a C struct, by its tag, else by the typedef that names
+    /// it, `typedef struct { .. } K3Cfg;`.
     Struct,
+    /// A Rust or a C enum, named as a C struct is.
     Enum,
     Union,
     Trait,
     Impl,
     Module,
+    /// A Rust const; a Python name written in capitals, `MAX_ENTRIES = 8`.
     Const,
     Static,
+    /// A Rust macro; a C `#define`, one a function defines for itself too.
     Macro,
+    /// A Rust type alias; a C typedef's name, but the one that names the
+    /// struct, union or enum it defines with no tag, or the one that is
+    /// its tag.
     TypeAlias,
-    /// An enum's variant, inside it: `State::Pending`.
+    /// An enum's variant, inside it: `State::Pending`; a C enumerator.
     Variant,
     /// A Nix attrset's binding: `services.openssh.enable = true;`.
     Attribute,
     /// A Nix `let` binding; a shell variable a script assigns, at its first
-    /// assignment.
+    /// assignment; a Python name a module or a class assigns, or a method
+    /// sets through `self`, the class's, at its first assignment; a C
+    /// variable a file defines.
     Variable,
     /// A NixOS option a binding declares with mkOption, mkEnableOption or
     /// mkPackageOption.
     Option,
     /// A flake's input: `nixpkgs` in `inputs.nixpkgs.url = ...;`.
     Input,
-    /// A Nix file as a whole, which a path imports.
+    /// A file as a whole: a Nix file a path imports, a script `.` sources
+    /// or a command runs, a Python module an import names, a C file an
+    /// `#include` names.
     File,
     /// A binding of the attrset a Nix helper of the worktree is called with,
     /// `name = "x";` in `myLib.mkSys { name = "x"; .. }`: the helper's
@@ -98,6 +124,11 @@ pub enum Kind {
     /// A part of a file a comment banner opens, `# --- title ---`, which runs
     /// to the next banner of the same rule.
     Section,
+    /// A Python class.
+    Class,
+    /// A C declaration of what is defined elsewhere, or later: a function's
+    /// prototype, `int f(void);`, or an `extern` variable.
+    Declaration,
 }
 
 /// A call: what is called, by name as written, from where.
@@ -119,6 +150,12 @@ pub struct Call {
     /// Nix: the qualified name of the binding in the file the name, or the
     /// start of the path, is bound to, when one is.
     pub local: Option<String>,
+    /// Python: the class the receiver, or the start of the path, is an
+    /// instance of, as written where it gets its value: `Shards` for
+    /// `sh.get()` after `sh = Shards(d)` or with `sh: Shards`; none for a
+    /// name given a value more than once.
+    #[serde(default)]
+    pub typed: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -147,6 +184,10 @@ pub struct Reference {
     /// Nix: the qualified name of the binding in the file the name, or the
     /// start of the path, is bound to, when one is.
     pub local: Option<String>,
+    /// Python: the class the start of the path is an instance of, as for
+    /// a call.
+    #[serde(default)]
+    pub typed: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -176,15 +217,19 @@ pub struct Import {
     /// `pub use`: a re-export.
     pub public: bool,
     pub line: u32,
-    /// Nix: the qualified name of the definition the path is in.
+    /// Nix, Python: the qualified name of the definition the path is in.
     pub from: Option<String>,
     /// Nix: the function the path is passed to, as written: `import`,
-    /// `pkgs.callPackage`, `myLib.importDir`.
+    /// `pkgs.callPackage`, `myLib.importDir`. Bash: the command that sources
+    /// or runs it. Python: `import` or `from`; `class` for a class's base,
+    /// the class's qualified name in `from`; `sys.path.insert` or
+    /// `sys.path.append` for a folder a file adds to where its imports are
+    /// looked for. C: `include`.
     pub via: Option<String>,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 21] = [
+    pub const ALL: [Kind; 23] = [
         Kind::Function,
         Kind::Method,
         Kind::Struct,
@@ -206,6 +251,8 @@ impl Kind {
         Kind::Argument,
         Kind::Environment,
         Kind::Section,
+        Kind::Class,
+        Kind::Declaration,
     ];
 
     /// Its name as stored and shown, the same as serde's.
@@ -232,6 +279,8 @@ impl Kind {
             Kind::Argument => "argument",
             Kind::Environment => "environment",
             Kind::Section => "section",
+            Kind::Class => "class",
+            Kind::Declaration => "declaration",
         }
     }
 }
@@ -312,6 +361,8 @@ pub fn extract(language: Language, source: &[u8]) -> Extraction {
         Language::Rust => rust::extract(source),
         Language::Nix => nix::extract(source),
         Language::Bash => bash::extract(source),
+        Language::Python => python::extract(source),
+        Language::C => c::extract(source),
     }
 }
 

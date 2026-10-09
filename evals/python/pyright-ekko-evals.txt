@@ -1,0 +1,15 @@
+run 2026-10-09
+graff f127aae with uncommitted changes
+corpus ekko-evals: a git repository at 07e5ac7 (git archive of evals), 19 Python files
+truth: pyright 1.1.414 (nixpkgs), default settings, Python 3.14.7 on PATH, each file opened as it is asked
+  4402 names asked, 3876 answered; 0 names not found on their line
+
+broken resolver: precision 0.000, recall 0.000
+graff: precision 1.000 (1705 of 1705 judged; 132 unjudged), recall 1.000 (1602 of 1602 names pyright places in the corpus)
+by rule: file 14/14 (2 unjudged), import 171/171 (59 unjudged), path 75/75 (34 unjudged), receiver 203/203 (0 unjudged), scope 1242/1242 (26 unjudged), unique 0/0 (11 unjudged)
+missed, by what graff did: 
+graff's untied edges, by pyright's place: ambiguous no place 18, ambiguous outside 6, external no place 432, external outside 2371
+
+wrong edges:
+
+missed names:

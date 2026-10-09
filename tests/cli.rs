@@ -969,3 +969,381 @@ depth 3: 0 callers
         String::from_utf8_lossy(&refused.stderr)
     );
 }
+
+/// Python as kimi-k3-in-c's tools/ write it: a script that puts its own
+/// folder on sys.path to import its neighbours, a module of classes, and
+/// one of paths.
+const PYTHON_DEMO: &[(&str, &str)] = &[
+    (
+        "tools/_paths.py",
+        r#""""Where the fixtures live."""
+import os
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+FIXTURES = os.path.join(HERE, "fixtures")
+"#,
+    ),
+    (
+        "tools/k3_ref.py",
+        r#""""A reference model."""
+from dataclasses import dataclass
+
+
+@dataclass
+class K3Config:
+    """The model's sizes."""
+
+    dim: int = 8
+
+
+class Base:
+    def reset(self):
+        """Forgets the state."""
+        self.state = None
+
+
+class K3Model(Base):
+    """The whole model."""
+
+    def __init__(self, cfg: K3Config):
+        self.cfg = cfg
+        self.reset()
+
+    def forward(self, ids,
+                states=None):
+        return self.step(ids)
+
+    def step(self, ids):
+        return ids
+
+
+def tiny_config(**kw) -> K3Config:
+    """A small model. It has every mechanism."""
+    return K3Config(**kw)
+"#,
+    ),
+    (
+        "tools/make_oracle",
+        r#"#!/usr/bin/env python3
+"""Writes the oracle."""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from k3_ref import K3Model, tiny_config
+from _paths import FIXTURES
+
+
+def build():
+    model = K3Model(tiny_config())
+    return model.forward([1, 2]), model.items()
+
+
+def main():
+    print(FIXTURES, build())
+
+
+if __name__ == "__main__":
+    main()
+"#,
+    ),
+];
+
+#[test]
+fn python_def_and_callers_reach_through_imports_and_instances() {
+    let demo = Demo::of("python-callers", PYTHON_DEMO);
+    // The signature runs to the colon, past the decorator.
+    assert_eq!(
+        demo.ask(&["def", "forward"]),
+        demo.rooted(
+            "def forward in ROOT
+tools/k3_ref.py:25-27 method K3Model.forward
+  def forward(self, ids, states=None)
+"
+        )
+    );
+    assert_eq!(
+        demo.ask(&["def", "K3Config"]),
+        demo.rooted(
+            "def K3Config in ROOT
+tools/k3_ref.py:5-9 class K3Config
+  /// The model's sizes.
+  class K3Config
+"
+        )
+    );
+    // A method called on what a constructor made, and one called through
+    // self that a base defines.
+    assert_eq!(
+        demo.ask(&["callers", "K3Model.forward"]),
+        demo.rooted(
+            "callers K3Model.forward in ROOT
+tools/k3_ref.py:25-27 method K3Model.forward: 1 caller, 0 possible
+  tools/make_oracle:11-13 function build: call 13
+"
+        )
+    );
+    assert_eq!(
+        demo.ask(&["callers", "reset"]),
+        demo.rooted(
+            "callers reset in ROOT
+tools/k3_ref.py:13-15 method Base.reset: 1 caller, 0 possible
+  tools/k3_ref.py:21-23 method K3Model.__init__: call 23
+"
+        )
+    );
+    // A module is reached by the `from` imports that name it, found in the
+    // folder the script puts on sys.path.
+    assert_eq!(
+        demo.ask(&["callers", "k3_ref.py"]),
+        demo.rooted(
+            "callers k3_ref.py in ROOT
+tools/k3_ref.py:1-35 file: 1 caller, 0 possible
+  tools/make_oracle (top level): use 7
+"
+        )
+    );
+}
+
+#[test]
+fn python_outline_callees_and_impact() {
+    let demo = Demo::of("python-outline", PYTHON_DEMO);
+    // What a method sets through self is its class's.
+    assert_eq!(
+        demo.ask(&["outline", "tools/k3_ref.py"]),
+        demo.rooted(
+            "outline tools/k3_ref.py in ROOT
+tools/k3_ref.py: 35 lines, 11 symbols
+  5-9 class K3Config
+    9 variable dim
+  12-15 class Base
+    13-15 method reset
+    15 variable state
+  18-30 class K3Model
+    21-23 method __init__
+    22 variable cfg
+    25-27 method forward
+    29-30 method step
+  33-35 function tiny_config
+"
+        )
+    );
+    // A call of a class makes an instance; a method the worktree does not
+    // define is outside it.
+    assert_eq!(
+        demo.ask(&["callees", "build"]),
+        demo.rooted(
+            "callees build in ROOT
+tools/make_oracle:11-13 function build: 3 callees, 0 possible, 1 outside the worktree
+  tools/k3_ref.py:18-30 class K3Model: call 12
+  tools/k3_ref.py:25-27 method K3Model.forward: call 13
+  tools/k3_ref.py:33-35 function tiny_config: call 12
+  outside the worktree: .items
+"
+        )
+    );
+    assert_eq!(
+        demo.ask(&["impact", "tiny_config"]),
+        demo.rooted(
+            "impact tiny_config in ROOT
+tools/k3_ref.py:33-35 function tiny_config
+depth 1: 1 caller
+  tools/make_oracle:11-13 function build
+depth 2: 1 caller
+  tools/make_oracle:16-17 function main
+depth 3: 1 caller
+  tools/make_oracle (top level)
+3 callers in 1 file, to depth 3
+"
+        )
+    );
+}
+
+/// C as kimi-k3-in-c writes it: a header of prototypes, each with its
+/// comment, that includes a neighbour; a file that defines what the header
+/// declares; and one that calls it, both including the header by the end
+/// of its path.
+const C_DEMO: &[(&str, &str)] = &[
+    (
+        "include/k3/k3.h",
+        r#"#ifndef K3_H
+#define K3_H
+#include "types.h"
+
+/* Multiplies a matrix by a vector. See the definition. */
+void k3_matmul(float *y, const k3_tensor *w,
+               const float *x);
+
+enum { K3_WF32 = 0, K3_WBF16 = 1 };
+
+#endif
+"#,
+    ),
+    (
+        "include/k3/types.h",
+        r#"/* A tensor: its rows and its data. */
+typedef struct k3_tensor {
+    int rows;
+    float *data;
+} k3_tensor;
+"#,
+    ),
+    (
+        "src/core/k3_ops.c",
+        r#"#include "k3/k3.h"
+
+/* The dot product of two rows. */
+static float dot(const float *a, const float *b, int n) {
+    #define AT(i) (a[i] * b[i])
+    float s = 0;
+    for (int i = 0; i < n; i++) s += AT(i);
+    return s;
+}
+
+/* y = W . x, row by row. */
+void k3_matmul(float *y, const k3_tensor *w, const float *x)
+{
+    for (int r = 0; r < w->rows; r++)
+        y[r] = dot(w->data + r, x, w->rows);
+}
+"#,
+    ),
+    (
+        "src/cli/k3_run.c",
+        r#"#include "k3/k3.h"
+#include <stdio.h>
+
+int main(void) {
+    k3_tensor w = { 1, 0 };
+    float y[1], x[1] = { 1 };
+    k3_matmul(y, &w, x);
+    printf("%f\n", y[0]);
+    return K3_WF32 + (int)sizeof(k3_tensor);
+}
+"#,
+    ),
+];
+
+#[test]
+fn c_def_gives_the_definition_before_its_prototype() {
+    let demo = Demo::of("c-def", C_DEMO);
+    assert_eq!(
+        demo.ask(&["def", "k3_matmul"]),
+        demo.rooted(
+            "def k3_matmul in ROOT
+src/core/k3_ops.c:12-16 function k3_matmul
+  /// y = W . x, row by row.
+  void k3_matmul(float *y, const k3_tensor *w, const float *x)
+include/k3/k3.h:6-7 declaration k3_matmul
+  /// Multiplies a matrix by a vector.
+  void k3_matmul(float *y, const k3_tensor *w, const float *x);
+"
+        )
+    );
+    // The prototype is the first a budget cuts.
+    let whole = demo.ask(&["def", "k3_matmul"]);
+    let needed = whole.len().div_ceil(4);
+    let budget = (needed - 1).to_string();
+    let lines: Vec<&str> = whole.lines().collect();
+    assert_eq!(
+        demo.ask(&["def", "k3_matmul", "--budget", &budget]),
+        format!(
+            "{}\ncut to {budget} tokens, leaving out declarations 1; --budget {needed} holds it all\n",
+            lines[..4].join("\n")
+        )
+    );
+}
+
+#[test]
+fn c_callers_reach_the_definition_and_a_header_its_includers() {
+    let demo = Demo::of("c-callers", C_DEMO);
+    // The call reaches the definition behind the prototype it sees, which
+    // stands for no use of its own.
+    assert_eq!(
+        demo.ask(&["callers", "k3_matmul"]),
+        demo.rooted(
+            "callers k3_matmul in ROOT
+src/core/k3_ops.c:12-16 function k3_matmul: 1 caller, 0 possible
+  src/cli/k3_run.c:4-10 function main: call 7
+"
+        )
+    );
+    assert_eq!(
+        demo.ask(&["callers", "k3.h"]),
+        demo.rooted(
+            "callers k3.h in ROOT
+include/k3/k3.h:1-11 file: 2 callers, 0 possible
+  src/cli/k3_run.c (top level): use 1
+  src/core/k3_ops.c (top level): use 1
+"
+        )
+    );
+    // Through the header the header includes; `sizeof(k3_tensor)` names
+    // the type too.
+    assert_eq!(
+        demo.ask(&["callers", "k3_tensor"]),
+        demo.rooted(
+            "callers k3_tensor in ROOT
+include/k3/types.h:2-5 struct k3_tensor: 3 callers, 0 possible
+  include/k3/k3.h:6-7 declaration k3_matmul: ref 6
+  src/cli/k3_run.c:4-10 function main: ref 5, 9
+  src/core/k3_ops.c:12-16 function k3_matmul: ref 12
+"
+        )
+    );
+}
+
+#[test]
+fn c_outline_callees_and_impact() {
+    let demo = Demo::of("c-outline", C_DEMO);
+    // The enumerators of an enum with no name hold none of each other.
+    assert_eq!(
+        demo.ask(&["outline", "include/k3/k3.h"]),
+        demo.rooted(
+            "outline include/k3/k3.h in ROOT
+include/k3/k3.h: 11 lines, 3 symbols
+  6-7 declaration k3_matmul
+  9 variant K3_WF32
+  9 variant K3_WBF16
+"
+        )
+    );
+    // A macro a function defines for itself is the function's callee.
+    assert_eq!(
+        demo.ask(&["outline", "src/core/k3_ops.c"]),
+        demo.rooted(
+            "outline src/core/k3_ops.c in ROOT
+src/core/k3_ops.c: 16 lines, 3 symbols
+  4-9 function dot
+    5 macro AT
+  12-16 function k3_matmul
+"
+        )
+    );
+    assert_eq!(
+        demo.ask(&["callees", "main"]),
+        demo.rooted(
+            "callees main in ROOT
+src/cli/k3_run.c:4-10 function main: 3 callees, 0 possible, 1 outside the worktree
+  include/k3/k3.h:9 variant K3_WF32: ref 9
+  include/k3/types.h:2-5 struct k3_tensor: ref 5, 9
+  src/core/k3_ops.c:12-16 function k3_matmul: call 7
+  outside the worktree: printf
+"
+        )
+    );
+    assert_eq!(
+        demo.ask(&["impact", "dot"]),
+        demo.rooted(
+            "impact dot in ROOT
+src/core/k3_ops.c:4-9 function dot
+depth 1: 1 caller
+  src/core/k3_ops.c:12-16 function k3_matmul
+depth 2: 1 caller
+  src/cli/k3_run.c:4-10 function main
+depth 3: 0 callers
+2 callers in 2 files, to depth 3
+"
+        )
+    );
+}

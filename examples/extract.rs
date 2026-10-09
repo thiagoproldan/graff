@@ -80,12 +80,22 @@ fn main() -> ExitCode {
 }
 
 /// How many levels the file's syntax tree has, and the first syntax error in
-/// it: its line and what it holds.
+/// it: its line and what it holds. A C file is read as its extractor reads
+/// it, with what a C compiler never reads blanked.
 fn walk(language: Language, source: &[u8]) -> (usize, Option<(usize, String)>) {
+    let mended;
+    let source = if language == Language::C {
+        mended = extract::c::mend(source);
+        &mended[..]
+    } else {
+        source
+    };
     let grammar = match language {
         Language::Rust => tree_sitter_rust::LANGUAGE,
         Language::Nix => tree_sitter_nix::LANGUAGE,
         Language::Bash => tree_sitter_bash::LANGUAGE,
+        Language::Python => tree_sitter_python::LANGUAGE,
+        Language::C => tree_sitter_c::LANGUAGE,
     };
     let mut parser = tree_sitter::Parser::new();
     parser

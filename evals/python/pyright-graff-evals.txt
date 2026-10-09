@@ -1,0 +1,15 @@
+run 2026-10-09
+graff f127aae with uncommitted changes
+corpus graff-evals: a git repository at f127aae (git archive of evals), 31 Python files
+truth: pyright 1.1.414 (nixpkgs), default settings, Python 3.14.7 on PATH, each file opened as it is asked
+  4079 names asked, 3663 answered; 0 names not found on their line
+
+broken resolver: precision 0.003, recall 0.003
+graff: precision 1.000 (1369 of 1369 judged; 86 unjudged), recall 1.000 (1328 of 1328 names pyright places in the corpus)
+by rule: file 20/20 (9 unjudged), import 40/40 (16 unjudged), path 159/159 (47 unjudged), receiver 144/144 (0 unjudged), scope 1005/1005 (10 unjudged), unique 1/1 (4 unjudged)
+missed, by what graff did: 
+graff's untied edges, by pyright's place: ambiguous no place 4, ambiguous outside 23, external no place 359, external outside 2417
+
+wrong edges:
+
+missed names:

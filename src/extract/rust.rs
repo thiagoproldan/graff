@@ -336,6 +336,8 @@ impl<'s> Reader<'s> {
             start: line(node),
             end: end_line(node),
             doc,
+            internal: false,
+            typed: None,
         });
         qualified
     }
@@ -661,6 +663,7 @@ impl<'s> Reader<'s> {
             from: self.from.clone(),
             receiver: None,
             local: None,
+            typed: None,
         });
     }
 
@@ -965,6 +968,7 @@ impl<'s> Reader<'s> {
             line: line(at),
             from: self.from.clone(),
             local: None,
+            typed: None,
         });
     }
 

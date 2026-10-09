@@ -356,6 +356,8 @@ impl<'s> Reader<'s> {
             start: 1,
             end: end_line(root),
             doc: expression.and_then(|expression| self.doc(expression)),
+            internal: false,
+            typed: None,
         });
         let Some(expression) = expression else {
             return;
@@ -414,6 +416,8 @@ impl<'s> Reader<'s> {
                     start,
                     end,
                     doc,
+                    internal: false,
+                    typed: None,
                 });
             }
         }
@@ -438,6 +442,8 @@ impl<'s> Reader<'s> {
             start: line(node),
             end: end_line(node),
             doc,
+            internal: false,
+            typed: None,
         });
         qualified
     }
@@ -800,6 +806,7 @@ impl<'s> Reader<'s> {
                 line: line(value),
                 from: self.from.clone(),
                 local: None,
+                typed: None,
             });
         }
         self.visit(value);
@@ -1018,6 +1025,7 @@ impl<'s> Reader<'s> {
                     from: self.from.clone(),
                     receiver: None,
                     local: base.local,
+                    typed: None,
                 });
             } else {
                 self.out.references.push(Reference {
@@ -1031,6 +1039,7 @@ impl<'s> Reader<'s> {
                     line: line(at),
                     from: self.from.clone(),
                     local: base.local,
+                    typed: None,
                 });
             }
         }

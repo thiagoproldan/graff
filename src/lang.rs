@@ -9,10 +9,18 @@ pub enum Language {
     Rust,
     Nix,
     Bash,
+    Python,
+    C,
 }
 
 impl Language {
-    pub const ALL: [Language; 3] = [Language::Rust, Language::Nix, Language::Bash];
+    pub const ALL: [Language; 5] = [
+        Language::Rust,
+        Language::Nix,
+        Language::Bash,
+        Language::Python,
+        Language::C,
+    ];
 
     /// The language of a file, from its path, or for a file with no extension
     /// from the shebang on its first line or, with none, what its top says
@@ -22,9 +30,12 @@ impl Language {
             Some("rs") => Some(Language::Rust),
             Some("nix") => Some(Language::Nix),
             Some("sh" | "bash") => Some(Language::Bash),
+            Some("py") => Some(Language::Python),
+            Some("c" | "h") => Some(Language::C),
             Some(_) => None,
             None => match interpreter(head) {
                 Some("bash" | "sh") => Some(Language::Bash),
+                Some(program) if runs_python(program) => Some(Language::Python),
                 Some(_) => None,
                 // A script that is sourced, never run, needs no shebang;
                 // bash-completion's own names its mode for Emacs.
@@ -45,6 +56,8 @@ impl Language {
             Language::Rust => "rust",
             Language::Nix => "nix",
             Language::Bash => "bash",
+            Language::Python => "python",
+            Language::C => "c",
         }
     }
 
@@ -86,6 +99,18 @@ fn interpreter(head: &[u8]) -> Option<&str> {
         }
     }
     None
+}
+
+/// Whether a shebang's program is Python 3's: `python`, `python3`, or
+/// `python3` of a minor version, `python3.12`.
+fn runs_python(program: &str) -> bool {
+    match program.strip_prefix("python3") {
+        Some("") => true,
+        Some(minor) => minor
+            .strip_prefix('.')
+            .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())),
+        None => program == "python",
+    }
 }
 
 /// Whether a file with no shebang says at its top that it is for Bash or
@@ -186,7 +211,7 @@ mod tests {
             );
         }
         for head in [
-            &b"#!/usr/bin/env python3\n"[..],
+            &b"#!/usr/bin/env perl\n"[..],
             b"#!/usr/bin/env\n",
             b"#!/bin/zsh\n",
             b"# bash, but no shebang\n",
@@ -230,7 +255,7 @@ mod tests {
             b"# shellcheck shell=ksh\n",
             b"# shellcheckers shell=bash\n",
             // A shebang decides, even one that names no program.
-            b"#!/usr/bin/env python3\n# -*- shell-script -*-\n",
+            b"#!/usr/bin/env ruby\n# -*- shell-script -*-\n",
             b"#!/usr/bin/env\n# shellcheck shell=bash\n",
         ] {
             assert_eq!(
@@ -247,6 +272,54 @@ mod tests {
         for language in Language::ALL {
             assert_eq!(Language::from_name(language.name()), Some(language));
         }
-        assert_eq!(Language::from_name("python"), None);
+        assert_eq!(Language::from_name("ruby"), None);
+    }
+
+    #[test]
+    fn a_python_file_is_python_by_its_extension_or_with_none_by_its_shebang() {
+        assert_eq!(
+            Language::of("tools/sim_cache.py", b""),
+            Some(Language::Python)
+        );
+        for head in [
+            &b"#!/usr/bin/env python3\n"[..],
+            b"#!/usr/bin/env python\n",
+            b"#!/usr/bin/python3.12 -u\n",
+            b"#!/nix/store/0abc-python3-3.13.5/bin/python3\n",
+            b"#!/usr/bin/env -S python3 -X utf8\n",
+        ] {
+            assert_eq!(
+                Language::of("bin/replay", head),
+                Some(Language::Python),
+                "{}",
+                String::from_utf8_lossy(head)
+            );
+        }
+        for head in [
+            &b"#!/usr/bin/env python2\n"[..],
+            b"#!/usr/bin/python3.\n",
+            b"#!/usr/bin/python3.x\n",
+            b"#!/usr/bin/env pythonista\n",
+            b"# -*- python -*-\n",
+        ] {
+            assert_eq!(
+                Language::of("bin/replay", head),
+                None,
+                "{}",
+                String::from_utf8_lossy(head)
+            );
+        }
+        // A `.pyi` stub declares what another file defines.
+        assert_eq!(Language::of("typings/x.pyi", b""), None);
+        assert_eq!(Language::of("notes.txt", b"#!/usr/bin/env python3\n"), None);
+    }
+
+    #[test]
+    fn a_c_file_or_header_is_c() {
+        assert_eq!(Language::of("src/core/k3_ops.c", b""), Some(Language::C));
+        assert_eq!(Language::of("include/k3/k3.h", b""), Some(Language::C));
+        for path in ["src/x.cc", "src/x.cpp", "src/x.hpp", "src/x.H", "Makefile"] {
+            assert_eq!(Language::of(path, b""), None, "{path}");
+        }
     }
 }

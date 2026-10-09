@@ -205,6 +205,8 @@ pub fn instantiate(files: &[File], read: &dyn Fn(&str) -> Option<Vec<u8>>) -> In
                 start: symbol.start,
                 end: symbol.end,
                 doc: symbol.doc.clone(),
+                internal: false,
+                typed: None,
             };
             instances.made.push((f, made, None));
         }
@@ -226,6 +228,8 @@ pub fn instantiate(files: &[File], read: &dyn Fn(&str) -> Option<Vec<u8>>) -> In
                 start,
                 end,
                 doc: walk.doc(placed.origin),
+                internal: false,
+                typed: None,
             };
             instances.made.push((f, symbol, written));
         }

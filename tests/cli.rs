@@ -855,11 +855,12 @@ fn nix_callees_leave_out_what_a_package_is_made_of() {
             ),
             (
                 "host.nix",
-                "{ lib, pkgs, ... }:\nlet\n  env = kbd: pkgs.buildEnv {\n    name = \"console-env\";\n  };\n  named = kbd: lib.mapAttrs (n: v: {\n    name = n;\n  }) { };\nin\n{ }\n",
+                "{ lib, pkgs, ... }:\nlet\n  env = kbd: pkgs.buildEnv {\n    name = \"console-env\";\n  };\n  named = kbd: {\n    services.foo.instances = lib.mapAttrs (n: v: {\n      name = n;\n    }) { };\n  };\nin\n{ }\n",
             ),
         ],
     );
-    // buildEnv's `name` is the package's; one mapAttrs makes may be an option's.
+    // buildEnv's `name` is the package's; one mapAttrs makes for
+    // `services.foo.instances` is the option's submodule's.
     assert_eq!(
         demo.ask(&["callees", "host.nix:3"]),
         demo.rooted(
@@ -870,11 +871,11 @@ host.nix:3-5 function env: 0 callees, 0 possible, 1 outside the worktree
         )
     );
     assert_eq!(
-        demo.ask(&["callees", "host.nix:6"]),
+        demo.ask(&["callees", "host.nix:7"]),
         demo.rooted(
-            "callees host.nix:6 in ROOT
-host.nix:6-8 function named: 1 callee, 0 possible, 1 outside the worktree
-  foo.nix:4 option options.services.foo.instances.type.options.name: set 7
+            "callees host.nix:7 in ROOT
+host.nix:7-9 attribute named.services.foo.instances: 1 callee, 0 possible, 1 outside the worktree
+  foo.nix:4 option options.services.foo.instances.type.options.name: set 8
   outside the worktree: lib.mapAttrs
 "
         )

@@ -171,7 +171,8 @@ type Lines = (String, u32, u32);
 /// `files` are all of the worktree's, `read` gives a file's source by its
 /// path.
 pub fn instantiate(files: &[File], read: &dyn Fn(&str) -> Option<Vec<u8>>) -> Instances {
-    let index = Index::new(files);
+    // What a helper is, is found by its name, not by an option.
+    let index = Index::read(files);
     let sources: Vec<OnceCell<Option<Vec<u8>>>> = files.iter().map(|_| OnceCell::new()).collect();
     let trees: Vec<OnceCell<Option<Tree>>> = files.iter().map(|_| OnceCell::new()).collect();
     let mut instances = Instances::default();

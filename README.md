@@ -23,7 +23,9 @@ folder a `builtins.readDir` function lists to what it lists), `inputs.x` to
 the flake's input, and a binding to the option of the worktree it sets
 (`src/resolve/nix.rs`), but one in what a function of nixpkgs makes a
 package, a file or a string of, `pkgs.writeText`'s or `builtins.toJSON`'s,
-which sets none. A helper of the worktree a module calls,
+which sets none; a submodule's option is under the option whose type it
+is, wherever the declarations that name the submodule put it. A helper of
+the worktree a module calls,
 `myLib.mkSys { name = "x"; .. }`, is followed into and evaluated as far as a
 module's shape goes, so what it declares and sets stands in the calling
 file, as the module system files it (`src/resolve/nix/instance.rs`); the

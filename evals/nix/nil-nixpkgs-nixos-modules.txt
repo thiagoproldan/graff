@@ -1,5 +1,5 @@
-run 2026-10-09
-graff 7a9bbf6 with uncommitted changes
+run 2026-10-10
+graff 37301d4 with uncommitted changes
 corpus nixpkgs-nixos-modules: github:NixOS/nixpkgs/c59305bab2065cfecc4944690d9eedbb56f3a9fa (/nix/store/fd5qgysvbfx27wj651swlr899w6jnbwd-source), nixos/modules, 2489 .nix files
 truth nil 2026-07-23: 188544 names asked, 27485 with no definition nil finds; 65327 bound by let, 23442 bound by other, 72118 bound by parameter, 172 bound by rec
 

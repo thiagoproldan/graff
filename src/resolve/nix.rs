@@ -14,8 +14,14 @@
 //!   option a file of the worktree declares there, `${name}` matching any
 //!   name but the first, those with the most names first, and of those the
 //!   most written out; a path may go on into the option's value, as
-//!   `users.users.alice = { .. };` sets `users.users`. One no file declares
-//!   is nixpkgs' or a flake's: external.
+//!   `users.users.alice = { .. };` sets `users.users`. An option is where
+//!   the module system puts it: a submodule's under the option whose type
+//!   it is, any names in between (`users.users.<name>.home`), and what a
+//!   binding or a file holds under each declaration that names, calls or
+//!   imports it; a binding of the submodule's own sets its options. One no
+//!   path from the top reaches is left out, but where no other option's
+//!   path ends in its names. One no file declares is nixpkgs' or a flake's:
+//!   external.
 //! - Any other path, from a module's argument as `myLib.mkSys`, to the one
 //!   definition of the worktree named as its end, when only one is; from
 //!   nixpkgs (`pkgs`, `lib`, `builtins`), external.
@@ -25,7 +31,7 @@
 //! options it declares and the bindings it sets, in the calling file, as
 //! the module system files them.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::extract::{Import, Kind, Symbol};
 use crate::lang::Language;
@@ -57,6 +63,34 @@ fn wild(segment: &str) -> bool {
     segment.starts_with("${")
 }
 
+/// Whether a path ends in a declared one: a name as written or any for a
+/// `${..}`, a gap any run of names, none too. Matched as a glob is, from
+/// the path's start, with a gap before the declared path; on a name that
+/// does not match, the last gap takes one name more.
+fn fits(declared: &[Option<&str>], path: &[&str]) -> bool {
+    let (mut d, mut p) = (0, 0);
+    // Where the declared path goes on after its last gap, and the path's
+    // name that gap took up to.
+    let mut gap = (0, 0);
+    while p < path.len() {
+        match declared.get(d) {
+            Some(None) => {
+                d += 1;
+                gap = (d, p);
+            }
+            Some(Some(name)) if *name == path[p] || wild(name) => {
+                d += 1;
+                p += 1;
+            }
+            _ => {
+                gap.1 += 1;
+                (d, p) = gap;
+            }
+        }
+    }
+    declared[d..].iter().all(Option::is_none)
+}
+
 /// The folder a path is in, `` at the top.
 pub(super) fn folder(path: &str) -> &str {
     path.rsplit_once('/').map_or("", |(folder, _)| folder)
@@ -82,9 +116,97 @@ pub(super) fn joined(file: &str, written: &str) -> Option<String> {
     Some(parts.join("/"))
 }
 
-/// An option the worktree declares, its path -- the names after the last
-/// `options` -- and how many of those are written out, not interpolated.
-type Declared<'a> = (Definition, Vec<&'a str>, usize);
+/// A path an option's declaration gives it: its names, `None` for a gap any
+/// run of names fills, none too.
+type Pattern<'a> = Vec<Option<&'a str>>;
+
+/// An option the worktree declares, a path it goes by, and how many of that
+/// path's names are written out, not interpolated.
+type Declared<'a> = (Definition, Pattern<'a>, usize);
+
+/// Options, by the names their paths end in; one whose path starts with a
+/// name interpolated, which no path may name, or holds no name, left out.
+#[derive(Default)]
+struct Options<'a> {
+    /// Those whose paths end in two names written out, by those two, which
+    /// a path's last two are.
+    pairs: HashMap<(&'a str, &'a str), Vec<Declared<'a>>>,
+    /// Those whose paths end in one, after a gap, a name interpolated or
+    /// none: by that one, which a path's last name is.
+    by: HashMap<&'a str, Vec<Declared<'a>>>,
+    /// Those whose paths end in a name interpolated, which any path's last
+    /// name matches.
+    open: Vec<Declared<'a>>,
+}
+
+impl<'a> Options<'a> {
+    fn add(&mut self, d: Definition, mut path: Pattern<'a>) {
+        path.dedup_by(|a, b| a.is_none() && b.is_none());
+        // An option a declaration names as itself, `bar = barOption;`, is
+        // where the declaration is, not under it.
+        while path.last() == Some(&None) {
+            path.pop();
+        }
+        let Some(Some(last)) = path.last().copied() else {
+            return;
+        };
+        if path
+            .iter()
+            .flatten()
+            .next()
+            .is_some_and(|first| wild(first))
+        {
+            return;
+        }
+        let written = path.iter().flatten().filter(|name| !wild(name)).count();
+        let before = path.len().checked_sub(2).and_then(|i| path[i]);
+        let by = match before {
+            _ if wild(last) => &mut self.open,
+            Some(before) if !wild(before) => self.pairs.entry((before, last)).or_default(),
+            _ => self.by.entry(last).or_default(),
+        };
+        if !by.iter().any(|(e, p, _)| *e == d && *p == path) {
+            by.push((d, path, written));
+        }
+    }
+
+    /// The options a path may set or read: those whose paths it ends in; of
+    /// them, those whose paths hold the most names, and of those, the most
+    /// written out: a helper's `sys.${name}.enable` gives way to the
+    /// `sys.audio.enable` a call of it makes.
+    fn find(&self, path: &[&str]) -> Resolution {
+        let Some(last) = path.last() else {
+            return Resolution::External;
+        };
+        let mut found: Vec<Definition> = Vec::new();
+        let mut best = (0, 0);
+        let pair = path
+            .len()
+            .checked_sub(2)
+            .and_then(|i| self.pairs.get(&(path[i], *last)));
+        let ending = pair.into_iter().chain(self.by.get(last)).flatten();
+        for (d, names, written) in ending.chain(&self.open) {
+            let held = names.iter().flatten().count();
+            if !fits(names, path) || (held, *written) < best {
+                continue;
+            }
+            if (held, *written) > best {
+                best = (held, *written);
+                found.clear();
+            }
+            if !found.contains(d) {
+                found.push(*d);
+            }
+        }
+        // In the order the files declare them, those ending interpolated among the rest.
+        found.sort_unstable();
+        match found[..] {
+            [] => Resolution::External,
+            [d] => Resolution::Resolved(d, Rule::Option),
+            _ => Resolution::Ambiguous(found),
+        }
+    }
+}
 
 struct Index<'a> {
     files: &'a [File<'a>],
@@ -95,26 +217,59 @@ struct Index<'a> {
     /// The definitions a path may name by its end: functions, `let`
     /// bindings and attributes, by name.
     named: HashMap<&'a str, Vec<Definition>>,
-    /// Each option the worktree declares, by the last name of its path; one
-    /// whose path starts with a name interpolated, which no path may name,
-    /// left out.
-    options: HashMap<&'a str, Vec<Declared<'a>>>,
-    /// Those whose paths end in a name interpolated, which any path's last
-    /// name matches.
-    open: Vec<Declared<'a>>,
+    /// Each option the worktree declares where a module's path may name it.
+    options: Options<'a>,
+    /// The options each context below the top holds -- a submodule's,
+    /// `userOpts`, with those of what it names -- under their paths in it,
+    /// which its own bindings set.
+    submodules: HashMap<Context<'a>, Options<'a>>,
     /// Each flake's folder, and its inputs by name.
     flakes: Vec<(&'a str, HashMap<&'a str, Definition>)>,
 }
 
+/// Where a file's options are: under its module, ``, or under what a name
+/// of the file stands for, `userOpts`, `grafanaTypes.dashboardConfig`.
+type Context<'a> = (usize, &'a str);
+
+/// The names of a qualified name after its last `options`: `server` of
+/// `serverOptions.options.server`.
+fn after_options<'s>(raw: &[&'s str]) -> Vec<&'s str> {
+    let at = raw
+        .iter()
+        .rposition(|&name| bare(name) == "options")
+        .map_or(0, |i| i + 1);
+    raw[at..].iter().map(|&name| bare(name)).collect()
+}
+
+/// The first `k` of a path's names, as the path writes them, `` for none:
+/// `names` are the path's own.
+fn prefix<'s>(path: &'s str, names: &[&'s str], k: usize) -> &'s str {
+    match k.checked_sub(1) {
+        None => "",
+        Some(last) => {
+            let last = names[last];
+            &path[..last.as_ptr() as usize - path.as_ptr() as usize + last.len()]
+        }
+    }
+}
+
 impl<'a> Index<'a> {
     fn new(files: &'a [File<'a>]) -> Index<'a> {
+        let mut index = Index::read(files);
+        index.declare();
+        index
+    }
+
+    /// The index of the worktree's Nix files and their names, without the
+    /// options they declare.
+    fn read(files: &'a [File<'a>]) -> Index<'a> {
         let mut index = Index {
             files,
             paths: HashMap::new(),
             qualified: files.iter().map(|_| HashMap::new()).collect(),
             named: HashMap::new(),
-            options: HashMap::new(),
-            open: Vec::new(),
+            options: Options::default(),
+            submodules: HashMap::new(),
             flakes: Vec::new(),
         };
         for (f, file) in files.iter().enumerate() {
@@ -130,28 +285,6 @@ impl<'a> Index<'a> {
                     Kind::Function | Kind::Variable | Kind::Attribute => {
                         index.named.entry(&symbol.name).or_default().push(d);
                     }
-                    Kind::Option => {
-                        let names: Vec<&str> =
-                            segments(&symbol.qualified).into_iter().map(bare).collect();
-                        let at = names
-                            .iter()
-                            .rposition(|&name| name == "options")
-                            .map_or(0, |i| i + 1);
-                        let names = names[at..].to_vec();
-                        let written = names.iter().filter(|name| !wild(name)).count();
-                        let (Some(&first), Some(&last)) = (names.first(), names.last()) else {
-                            continue;
-                        };
-                        if wild(first) {
-                            continue;
-                        }
-                        let by = if wild(last) {
-                            &mut index.open
-                        } else {
-                            index.options.entry(last).or_default()
-                        };
-                        by.push((d, names, written));
-                    }
                     Kind::Input => {
                         inputs.insert(symbol.name.as_str(), d);
                     }
@@ -163,6 +296,332 @@ impl<'a> Index<'a> {
             }
         }
         index
+    }
+
+    /// The path a definition has in a context of its file, the first `k`
+    /// of its names (none for the file's module), and whether it is in an
+    /// option's declaration, past an `options`: `services.foo.enable` for
+    /// `options.services.foo.enable`, `home` for `userOpts.options.home`. An
+    /// option inside another's type, a submodule's, is under that option, a
+    /// gap any names fill (an attrsOf's `<name>`, none for a listOf's), then
+    /// its own: `options.services.foo.instances.type.options.name` is
+    /// `services.foo.instances`, a gap, `name`; so is one in the type of
+    /// what is an option's declaration, `settingsOption.type.options.mode`
+    /// with `mkOption settingsOption`.
+    fn relative(&self, file: usize, qualified: &'a str, k: usize) -> (Pattern<'a>, bool) {
+        if qualified.is_empty() {
+            return (Vec::new(), false);
+        }
+        let raw = segments(qualified);
+        let names: Vec<&str> = raw.iter().map(|&name| bare(name)).collect();
+        let option = |end: usize| {
+            self.qualified[file]
+                .get(prefix(qualified, &raw, end))
+                .is_some_and(|&s| self.symbols(file)[s].kind == Kind::Option)
+        };
+        let mut path = Vec::new();
+        // The context's options: `options`, after an `imports` list's module.
+        let mut i = k;
+        if names.get(i) == Some(&"imports") {
+            i += 1;
+        }
+        let mut declared = names.get(i) == Some(&"options");
+        i += usize::from(declared);
+        while i < names.len() {
+            let typed = option(i) || (k > 0 && i == k);
+            let inner = (names[i] == "type" && typed)
+                .then(|| (i + 1..names.len()).find(|&j| names[j] == "options"))
+                .flatten();
+            match inner {
+                Some(j) => {
+                    path.push(None);
+                    declared = true;
+                    i = j + 1;
+                }
+                None => {
+                    path.push(Some(names[i]));
+                    i += 1;
+                }
+            }
+        }
+        (path, declared)
+    }
+
+    /// Files the options the worktree declares under the paths a module
+    /// sets them by. A file's module is at the top, and so is what its
+    /// `imports` holds, unless a declaration names the file, `type =
+    /// submodule ./vhost-options.nix;`. What a declaration names -- a
+    /// binding of its file, as `userOpts` in `type = attrsOf (submodule
+    /// userOpts);`, a function it calls, a file it imports -- holds options
+    /// that go under the declaration's path, a gap after an option's
+    /// (`users.users`, a gap, `home`), wherever that is in turn, and under
+    /// their own paths in it, where its own bindings set them. A module no
+    /// declaration names, which only what no path from the top reaches
+    /// imports, as a test's, is taken for one at the top. Any other option
+    /// no path from the top reaches, as one a module in a list of Home
+    /// Manager's holds, is left out, but where no other option's path ends
+    /// in the names after its last `options`: then it goes by those.
+    fn declare(&mut self) {
+        let files = self.files;
+        // What each use in a declaration names -- a context of its file, or
+        // a file's module -- the file the use is in, the declaration's name,
+        // and whether the use imports.
+        let mut named: Vec<(Context<'a>, usize, &'a str, bool)> = Vec::new();
+        for (f, file) in files.iter().enumerate() {
+            if file.language != Language::Nix {
+                continue;
+            }
+            let extraction = file.extraction;
+            let references = extraction.references.iter().map(|r| {
+                let written = r.path.as_deref().unwrap_or(&r.name);
+                (r.local.as_deref(), written, r.from.as_deref())
+            });
+            let calls = extraction.calls.iter().map(|c| {
+                let written = c.path.as_deref().unwrap_or(&c.name);
+                (c.local.as_deref(), written, c.from.as_deref())
+            });
+            for (local, written, from) in references.chain(calls) {
+                let (Some(local), Some(from)) = (local, from) else {
+                    continue;
+                };
+                // What a module sets names nothing a declaration holds.
+                if bare(from.split('.').next().unwrap_or(from)) == "config" {
+                    continue;
+                }
+                // The longest start of the path that is a definition of the
+                // file, else the binding the name is bound to.
+                let names = segments(written);
+                let mut name = local.to_string();
+                let mut ends = vec![name.len()];
+                for part in &names[1..] {
+                    name.push('.');
+                    name.push_str(part);
+                    ends.push(name.len());
+                }
+                let held = ends
+                    .iter()
+                    .rev()
+                    .find_map(|&end| self.qualified[f].get_key_value(&name[..end]))
+                    .map_or(local, |(&held, _)| held);
+                named.push(((f, held), f, from, false));
+            }
+            for import in &extraction.imports {
+                if import.path.is_empty() {
+                    continue;
+                }
+                let target = joined(file.path, &import.path).and_then(|t| self.file_of(&t));
+                if let Some(t) = target {
+                    named.push(((t, ""), f, import.from.as_deref().unwrap_or(""), true));
+                }
+            }
+        }
+        let mut uses: HashMap<Context<'a>, Vec<usize>> = HashMap::new();
+        for (i, (held, ..)) in named.iter().enumerate() {
+            uses.entry(*held).or_default().push(i);
+        }
+        // The contexts each option is in, by how many of its names each
+        // takes, and every option's names by its last.
+        let mut placed: Vec<(Definition, &'a str, Vec<usize>)> = Vec::new();
+        let mut ends: HashMap<&'a str, Vec<Vec<&'a str>>> = HashMap::new();
+        for (f, file) in files.iter().enumerate() {
+            if file.language != Language::Nix {
+                continue;
+            }
+            for (s, symbol) in file.extraction.symbols.iter().enumerate() {
+                if symbol.kind != Kind::Option {
+                    continue;
+                }
+                let qualified = symbol.qualified.as_str();
+                let raw = segments(qualified);
+                ends.entry(bare(raw[raw.len() - 1]))
+                    .or_default()
+                    .push(raw.clone());
+                let module = matches!(bare(raw[0]), "options" | "imports");
+                let named_in = (1..=raw.len())
+                    .filter(|&k| uses.contains_key(&(f, prefix(qualified, &raw, k))));
+                let ks = module.then_some(0).into_iter().chain(named_in).collect();
+                placed.push((Definition { file: f, symbol: s }, qualified, ks));
+            }
+        }
+        // Where each context that holds options, or names one that does, is
+        // named: the context the declaration is in, and its path there.
+        let mut mounts: HashMap<Context<'a>, Vec<(Context<'a>, Pattern<'a>)>> = HashMap::new();
+        // Those a declaration names, a submodule's, which no module of the top is.
+        let mut inner: HashSet<Context<'a>> = HashSet::new();
+        let mut seen: HashSet<Context<'a>> = HashSet::new();
+        let mut fresh: Vec<Context<'a>> = Vec::new();
+        for (d, qualified, ks) in &placed {
+            let raw = segments(qualified);
+            for &k in ks {
+                let context = (d.file, prefix(qualified, &raw, k));
+                if seen.insert(context) {
+                    fresh.push(context);
+                }
+            }
+        }
+        while let Some(held) = fresh.pop() {
+            for &i in uses.get(&held).into_iter().flatten() {
+                let (_, f, from, import) = named[i];
+                let raw = segments(from);
+                let names: Vec<&str> = raw.iter().map(|&name| bare(name)).collect();
+                let option = self.qualified[f]
+                    .get(from)
+                    .is_some_and(|&s| self.symbols(f)[s].kind == Kind::Option);
+                let module = from.is_empty() || matches!(names[0], "options" | "imports");
+                let named_in =
+                    (1..=raw.len()).filter(|&k| uses.contains_key(&(f, prefix(from, &raw, k))));
+                for k in module.then_some(0).into_iter().chain(named_in) {
+                    // In what a module sets.
+                    if names.get(k) == Some(&"config") {
+                        continue;
+                    }
+                    let outer = (f, prefix(from, &raw, k));
+                    let (mut path, declared) = self.relative(f, from, k);
+                    // In an option's declaration, what it names is the option's
+                    // type, a level further down at most, or the option itself;
+                    // what the module's `options` or a binding is, or what its
+                    // `imports` holds, is at its path.
+                    let declaration = option || declared && !path.is_empty();
+                    if declaration {
+                        inner.insert(held);
+                        path.push(None);
+                    } else if import && !path.is_empty() {
+                        continue;
+                    }
+                    // In itself, or in what it holds.
+                    let inside = f == held.0
+                        && (outer.1 == held.1
+                            || !held.1.is_empty()
+                                && outer
+                                    .1
+                                    .strip_prefix(held.1)
+                                    .is_some_and(|rest| rest.starts_with('.')));
+                    if inside {
+                        continue;
+                    }
+                    mounts.entry(held).or_default().push((outer, path));
+                    if seen.insert(outer) {
+                        fresh.push(outer);
+                    }
+                }
+            }
+        }
+        let mut mounted: Vec<(Context<'a>, &Vec<(Context<'a>, Pattern<'a>)>)> = mounts
+            .iter()
+            .map(|(held, places)| (*held, places))
+            .collect();
+        mounted.sort_unstable_by_key(|(held, _)| *held);
+        // What a submodule's module names or imports is a submodule's too.
+        loop {
+            let more: Vec<Context<'a>> = mounted
+                .iter()
+                .filter(|(held, places)| {
+                    !inner.contains(held) && places.iter().any(|(outer, _)| inner.contains(outer))
+                })
+                .map(|(held, _)| *held)
+                .collect();
+            if more.is_empty() {
+                break;
+            }
+            inner.extend(more);
+        }
+        // Each context's paths under those it is named in, and in turn.
+        let mut under: HashMap<Context<'a>, Vec<(Context<'a>, Pattern<'a>)>> = HashMap::new();
+        for _ in 0..16 {
+            let mut changed = false;
+            for (held, places) in &mounted {
+                for (outer, path) in *places {
+                    let mut found = vec![(*outer, path.clone())];
+                    for (top, above) in under.get(outer).into_iter().flatten() {
+                        found.push((*top, above.iter().chain(path).copied().collect()));
+                    }
+                    let paths = under.entry(*held).or_default();
+                    // Not under itself, in a cycle.
+                    for (top, mut path) in found.into_iter().filter(|(top, _)| top != held) {
+                        path.dedup_by(|a, b| a.is_none() && b.is_none());
+                        if paths.len() < 256 && !paths.iter().any(|(t, p)| *t == top && *p == path)
+                        {
+                            paths.push((top, path));
+                            changed = true;
+                        }
+                    }
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        // A file's module no declaration names is at the top where nothing
+        // imports it, and taken to be where only what no path from the top
+        // reaches does.
+        let root = |context: &Context<'a>| {
+            context.1.is_empty() && !mounts.contains_key(context) && !inner.contains(context)
+        };
+        let anchors: HashSet<Context<'a>> = seen
+            .iter()
+            .filter(|context| {
+                context.1.is_empty()
+                    && !inner.contains(*context)
+                    && !under
+                        .get(*context)
+                        .is_some_and(|paths| paths.iter().any(|(t, _)| root(t)))
+            })
+            .copied()
+            .collect();
+        let anchor = |context: &Context<'a>| anchors.contains(context);
+        // Where a context's own bindings may set any option of the top's.
+        let tops: HashSet<Context<'a>> = seen
+            .iter()
+            .filter(|context| {
+                anchor(context)
+                    || under
+                        .get(*context)
+                        .is_some_and(|paths| paths.iter().any(|(t, p)| anchor(t) && p.is_empty()))
+            })
+            .copied()
+            .collect();
+        let top = |context: &Context<'a>| tops.contains(context);
+        for (d, qualified, ks) in placed {
+            let raw = segments(qualified);
+            let mut found = false;
+            for k in ks {
+                let context = (d.file, prefix(qualified, &raw, k));
+                let (path, _) = self.relative(d.file, qualified, k);
+                if anchor(&context) {
+                    self.options.add(d, path.clone());
+                    found = true;
+                }
+                for (outer, above) in under.get(&context).into_iter().flatten() {
+                    let whole: Pattern<'a> = above.iter().chain(&path).copied().collect();
+                    if anchor(outer) {
+                        self.options.add(d, whole);
+                        found = true;
+                    } else if !top(outer) {
+                        self.submodules.entry(*outer).or_default().add(d, whole);
+                    }
+                }
+                if !top(&context) {
+                    self.submodules.entry(context).or_default().add(d, path);
+                }
+            }
+            let tail = after_options(&raw);
+            // One whose names no other option's path ends in.
+            let alike = |other: &&Vec<&str>| {
+                other.len() >= tail.len()
+                    && other[other.len() - tail.len()..]
+                        .iter()
+                        .zip(&tail)
+                        .all(|(&a, &b)| bare(a) == b)
+            };
+            let last = bare(raw[raw.len() - 1]);
+            if !found
+                && ends
+                    .get(last)
+                    .is_some_and(|all| all.iter().filter(alike).count() == 1)
+            {
+                self.options.add(d, tail.into_iter().map(Some).collect());
+            }
+        }
     }
 
     fn symbols(&self, file: usize) -> &'a [Symbol] {
@@ -192,56 +651,17 @@ impl<'a> Index<'a> {
         })
     }
 
-    /// The options a path may set or read: those declared where the path
-    /// ends, a declaration's `${..}` matching any name after its first; of
-    /// them, those whose paths hold the most names, and of those, the most
-    /// written out: a helper's `sys.${name}.enable` gives way to the
-    /// `sys.audio.enable` a call of it makes. One whose path starts with a
-    /// name interpolated, `options.${name}.enable`, would match every
-    /// `.enable`: it matches none.
-    fn option(&self, path: &[&str]) -> Resolution {
-        let Some(last) = path.last() else {
-            return Resolution::External;
-        };
-        let mut found: Vec<Definition> = Vec::new();
-        let mut best = (0, 0);
-        let ending = self.options.get(last).into_iter().flatten();
-        for (d, names, written) in ending.chain(&self.open) {
-            let fits = names.len() <= path.len()
-                && names
-                    .iter()
-                    .rev()
-                    .zip(path.iter().rev())
-                    .all(|(declared, used)| declared == used || wild(declared));
-            if !fits || (names.len(), *written) < best {
-                continue;
-            }
-            if (names.len(), *written) > best {
-                best = (names.len(), *written);
-                found.clear();
-            }
-            found.push(*d);
-        }
-        // In the order the files declare them, those ending interpolated among the rest.
-        found.sort_unstable();
-        match found[..] {
-            [] => Resolution::External,
-            [d] => Resolution::Resolved(d, Rule::Option),
-            _ => Resolution::Ambiguous(found),
-        }
-    }
-
-    /// The option a path uses that ends where one of `ends` does, the
-    /// longest first: the path may go on into the option's value, as
-    /// `users.users.alice.home` does into `users.users`. How many names the
-    /// option's path took, with it.
+    /// The option of `options` a path uses that ends where one of `ends`
+    /// does, the longest first: the path may go on into the option's value,
+    /// as `users.users.alice.home` does into `users.users`. How many names
+    /// the option's path took, with it.
     fn through(
-        &self,
+        options: &Options<'a>,
         path: &[&str],
         ends: std::ops::RangeInclusive<usize>,
     ) -> Option<(usize, Resolution)> {
         ends.rev().find_map(|end| {
-            let found = self.option(&path[..end]);
+            let found = options.find(&path[..end]);
             (found != Resolution::External).then_some((end, found))
         })
     }
@@ -290,9 +710,10 @@ impl<'a> Index<'a> {
         }
         match names[..] {
             ["inputs", name, ..] => self.input(file, name),
-            ["config", ref rest @ ..] if !rest.is_empty() => self
-                .through(rest, 1..=rest.len())
-                .map_or(Resolution::External, |(_, found)| found),
+            ["config", ref rest @ ..] if !rest.is_empty() => {
+                Index::through(&self.options, rest, 1..=rest.len())
+                    .map_or(Resolution::External, |(_, found)| found)
+            }
             [first, .., last] if !OUTSIDE.contains(&first) => self.unique(last),
             _ => Resolution::External,
         }
@@ -434,26 +855,44 @@ impl<'a> Index<'a> {
             if symbol.kind != Kind::Attribute || symbol.consumed {
                 continue;
             }
-            let names: Vec<&str> = segments(&symbol.qualified).into_iter().map(bare).collect();
-            let skip = usize::from(names.first() == Some(&"config"));
+            let whole = segments(&symbol.qualified);
+            let names: Vec<&str> = whole.iter().map(|&name| bare(name)).collect();
+            // A binding in a module below the top, `userOpts.config.home`,
+            // or in a file a declaration names, sets the module's own
+            // options: those of the innermost such context it is in.
+            let below = (0..whole.len()).rev().find_map(|k| {
+                let context = (file, prefix(&symbol.qualified, &whole, k));
+                self.submodules.get(&context).map(|options| (k, options))
+            });
+            let (options, shown, skip) = match below {
+                Some((k, options)) => {
+                    let skip = k + usize::from(names.get(k) == Some(&"config"));
+                    (options, if k == 0 { skip } else { 0 }, skip)
+                }
+                None => {
+                    let skip = usize::from(names[0] == "config");
+                    (&self.options, skip, skip)
+                }
+            };
             let path = &names[skip..];
             if path.is_empty() || path[0] == "options" {
                 continue;
             }
             // What the binding is in: the longest start of its name that is a definition.
-            let whole = segments(&symbol.qualified);
             let within = (1..whole.len())
                 .rev()
                 .find(|&n| self.qualified[file].contains_key(whole[..n].join(".").as_str()));
             let own = within.unwrap_or(0).saturating_sub(skip);
-            let Some((end, resolution)) = self.through(path, (own + 1).max(1)..=path.len()) else {
+            let Some((end, resolution)) =
+                Index::through(options, path, (own + 1).max(1)..=path.len())
+            else {
                 continue;
             };
             edges.push(Edge {
                 file,
                 line: symbol.start,
                 name: path[end - 1].to_string(),
-                path: Some(path[..end].join(".")),
+                path: Some(names[shown..skip + end].join(".")),
                 used: Use::Setting,
                 from: within.map(|n| whole[..n].join(".")),
                 resolution,
@@ -904,6 +1343,180 @@ a
         );
     }
 
+    /// The options what each binding of `file` sets: its line, its path,
+    /// and the option's file and name, `Ambiguous(..)` where it is not one.
+    fn set(sources: &[(&str, &str)], file: &str) -> Vec<(u32, String, String)> {
+        let extractions: Vec<Extraction> = sources
+            .iter()
+            .map(|(_, source)| extract::extract(Language::Nix, source.as_bytes()))
+            .collect();
+        let files: Vec<File> = sources
+            .iter()
+            .zip(&extractions)
+            .map(|((path, _), extraction)| File {
+                path,
+                language: Language::Nix,
+                extraction,
+            })
+            .collect();
+        resolve(&files)
+            .into_iter()
+            .filter(|edge| edge.used == Use::Setting && files[edge.file].path == file)
+            .map(|edge| {
+                let option = match edge.resolution {
+                    Resolution::Resolved(d, _) => format!(
+                        "{} {}",
+                        files[d.file].path, files[d.file].extraction.symbols[d.symbol].qualified
+                    ),
+                    other => format!("{other:?}"),
+                };
+                (edge.line, edge.path.unwrap_or_default(), option)
+            })
+            .collect()
+    }
+
+    fn lines(found: &[(u32, &str, &str)]) -> Vec<(u32, String, String)> {
+        found
+            .iter()
+            .map(|(line, path, option)| (*line, path.to_string(), option.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn a_submodules_option_is_set_under_the_option_whose_type_it_is_alone() {
+        let sources = [
+            (
+                "mail.nix",
+                "{ lib, ... }:\n{\n  options.services.mail.boxes = lib.mkOption {\n    type = lib.types.attrsOf (lib.types.submodule { options.after = lib.mkOption { }; });\n  };\n}\n",
+            ),
+            (
+                "host.nix",
+                "{ ... }:\n{\n  services.mail.boxes.inbox.after = [ ];\n  systemd.services.x.after = [ ];\n}\n",
+            ),
+        ];
+        // A unit's `after`, which ends in the submodule's name, sets none.
+        assert_eq!(
+            set(&sources, "host.nix"),
+            lines(&[(
+                3,
+                "services.mail.boxes.inbox.after",
+                "mail.nix options.services.mail.boxes.type.options.after"
+            )])
+        );
+    }
+
+    #[test]
+    fn a_bound_submodule_goes_under_the_option_that_names_it_and_its_config_sets_it() {
+        let sources = [
+            (
+                "users.nix",
+                "{ lib, ... }:\nlet\n  userOpts = { name, ... }: {\n    options.home = lib.mkOption { };\n    config.home = \"/home/${name}\";\n  };\nin\n{\n  options.users.users = lib.mkOption {\n    type = lib.types.attrsOf (lib.types.submodule userOpts);\n  };\n}\n",
+            ),
+            (
+                "host.nix",
+                "{ ... }:\n{\n  users.users.alice.home = \"/srv/alice\";\n  services.web.home = \"/srv/web\";\n}\n",
+            ),
+        ];
+        let home = "users.nix userOpts.options.home";
+        assert_eq!(
+            set(&sources, "users.nix"),
+            lines(&[(5, "userOpts.config.home", home)])
+        );
+        assert_eq!(
+            set(&sources, "host.nix"),
+            lines(&[(3, "users.users.alice.home", home)])
+        );
+    }
+
+    #[test]
+    fn a_file_an_option_imports_holds_options_under_it_and_one_imports_holds_at_the_top() {
+        let sources = [
+            (
+                "web.nix",
+                "{ lib, ... }:\n{\n  imports = [ ./common.nix ];\n  options.services.web.vhosts = lib.mkOption {\n    type = lib.types.attrsOf (lib.types.submodule (import ./vhost.nix));\n  };\n}\n",
+            ),
+            (
+                "vhost.nix",
+                "{ lib, ... }:\n{\n  options.root = lib.mkOption { };\n}\n",
+            ),
+            (
+                "common.nix",
+                "{ lib, ... }:\n{\n  options.services.web.enable = lib.mkOption { };\n}\n",
+            ),
+            (
+                "host.nix",
+                "{ ... }:\n{\n  services.web.vhosts.site.root = \"/srv\";\n  services.web.enable = true;\n  boot.root = \"/\";\n}\n",
+            ),
+        ];
+        assert_eq!(
+            set(&sources, "host.nix"),
+            lines(&[
+                (3, "services.web.vhosts.site.root", "vhost.nix options.root"),
+                (
+                    4,
+                    "services.web.enable",
+                    "common.nix options.services.web.enable"
+                ),
+            ])
+        );
+    }
+
+    #[test]
+    fn a_binding_a_declaration_names_or_calls_holds_options_under_the_declaration() {
+        let sources = [
+            (
+                "prom.nix",
+                "{ lib, ... }:\nlet\n  types.static = lib.types.submodule { options.labels = lib.mkOption { }; };\n  mkCommon = { port }: { port = lib.mkOption { }; };\n  settingsOption = {\n    type = lib.types.attrsOf (lib.types.submodule { options.argument = lib.mkOption { }; });\n  };\n  node = { options.children = lib.mkOption { type = lib.types.attrsOf (lib.types.submodule node); }; options.value = lib.mkOption { }; };\nin\n{\n  options.services.prom.static = lib.mkOption { type = lib.types.attrsOf types.static; };\n  options.services.prom.exporter = lib.mkOption {\n    type = lib.types.submodule { options = mkCommon { port = 1; }; };\n  };\n  options.services.prom.tmp = lib.mkOption settingsOption;\n  options.tree = lib.mkOption { type = lib.types.submodule node; };\n}\n",
+            ),
+            (
+                "host.nix",
+                "{ ... }:\n{\n  services.prom.static.a.labels = { };\n  services.prom.exporter.port = 9100;\n  services.prom.tmp.a.argument = \"x\";\n  tree.children.a.children.b.value = 1;\n  labels = { };\n}\n",
+            ),
+        ];
+        // `types.static`, by its path; what `mkCommon` makes; what
+        // `mkOption` is given, whose type holds a submodule; and a submodule
+        // that names itself, at any depth. A path no option holds sets none.
+        assert_eq!(
+            set(&sources, "host.nix"),
+            lines(&[
+                (
+                    3,
+                    "services.prom.static.a.labels",
+                    "prom.nix types.static.options.labels"
+                ),
+                (4, "services.prom.exporter.port", "prom.nix mkCommon.port"),
+                (
+                    5,
+                    "services.prom.tmp.a.argument",
+                    "prom.nix settingsOption.type.options.argument"
+                ),
+                (
+                    6,
+                    "tree.children.a.children.b.value",
+                    "prom.nix node.options.value"
+                ),
+            ])
+        );
+    }
+
+    #[test]
+    fn an_option_no_path_from_the_top_reaches_is_left_out_but_where_its_names_are_alone() {
+        let sources = [
+            (
+                "mail.nix",
+                "{ lib, ... }:\nlet\n  unused = {\n    options.after = lib.mkOption { };\n    options.timeoutSec = lib.mkOption { };\n  };\nin\n{\n  options.services.mail.after = lib.mkOption { };\n}\n",
+            ),
+            (
+                "host.nix",
+                "{ ... }:\n{\n  x.after = [ ];\n  x.timeoutSec = 5;\n}\n",
+            ),
+        ];
+        assert_eq!(
+            set(&sources, "host.nix"),
+            lines(&[(4, "x.timeoutSec", "mail.nix unused.options.timeoutSec")])
+        );
+    }
+
     #[test]
     fn options_a_path_matches_alike_come_in_the_order_their_files_declare_them() {
         // `net.lan.dns` matches both, three names each, two written out: the
@@ -932,7 +1545,7 @@ a
             })
             .collect();
         let index = Index::new(&files);
-        let Resolution::Ambiguous(found) = index.option(&["net", "lan", "dns"]) else {
+        let Resolution::Ambiguous(found) = index.options.find(&["net", "lan", "dns"]) else {
             panic!("both options match, alike");
         };
         let declared: Vec<&str> = found.iter().map(|d| files[d.file].path).collect();

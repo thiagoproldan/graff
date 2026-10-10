@@ -115,7 +115,8 @@ flake's generated docs/ref/options.md headed with its name: declarations
 scored 0.500 at the line and at the file (127 of 254, 132 of 264) at
 1e06e63 and 5b91f3c. A section now answers a name only where no code
 definition has it; `file.md#anchor` names it alone. Run again with task
-144, the reports are the same past their first two lines.
+144, and again with task 152, the reports are the same past their first
+two lines.
 
 - **What step 1 misses is the helpers, as expected.** At the file, 83 of
   the 102 options missed are declared by a helper (`mkSys`, `mkSpec`,
@@ -142,7 +143,7 @@ definition has it; `file.md#anchor` names it alone. Run again with task
   are right, against 13 of 25 of the other bindings' (examples/resolve at
   1e06e63, 2026-10-09). Most of the wrong ones build data under a `let`
   binding, which no rule told from a module then (task 144, below), or
-  meet a submodule's option by its last names alone (task 152).
+  meet a submodule's option by its last names alone (task 152, below).
 - **What a function of nixpkgs consumes sets no option** (task 144). A
   binding in what a function that makes a package, a file or a string of
   it is given -- the builders of pkgs/build-support, stdenv's
@@ -172,6 +173,50 @@ definition has it; `file.md#anchor` names it alone. Run again with task
   `mapAttrs'`, `listToAttrs` or `nameValuePair` that a `systemd.services`
   takes. Data built under a `let` name and handed to such a function
   elsewhere is still read as settings (task 157).
+- **A submodule's option is set only where the module system puts it**
+  (task 152). An option a submodule declares went by the names after its
+  last `options`, so any path that ended in them met it: dovecot's
+  `imapsieve.mailbox.<name>.after` took every unit's
+  `systemd.services.x.after`. Each option now goes under the paths of
+  what holds it: a submodule's under the option whose type it is, a gap
+  any names fill for an attrsOf's `<name>`; what a binding of the file
+  holds (`userOpts`, `promTypes.static_config` by its path, a function a
+  declaration calls as `mkExporterOpts`, what `mkOption settingsOption`
+  is given) or a file does (`submodule (import ./vhost-options.nix)`)
+  under each declaration that names it, and so on up to a module at the
+  top; a binding of the submodule's own sets its options. An option no
+  path from the top reaches is left out, but where no other option's path
+  ends in its names: on nixos/modules 432 such, most of them the
+  prometheus exporters' `extraOpts`, which a `mapAttrs` merges in, and
+  254 of them stay. On nixpkgs' nixos/modules at c59305b, examples/resolve
+  ties 16,635 settings to one option and 2,655 to several, against 15,646
+  and 15,065 at 37301d4; 25 of the one-option ones read by hand (seed
+  1090) are all right, against 13 of 25 at 1e06e63 (task 90). Of the 5,504
+  tied to one option before and to none now, 20 read were all wrong
+  (units' `after`, `ProtectSystem` into gocron's hardening options,
+  `assertions.message` into gitwatch's `message`); of the 5,877 tied to
+  several before and to one now, 20 read are all right; of the 6,619 tied
+  to several before and to none now, 15 read set no option of the
+  worktree. A module's reads (`config.services.foo.x`) tied to several
+  options fall from 4,759 to 288: 2,032 of them read `services.foo`,
+  which no option is, and met the `services` options of three submodules,
+  firewalld's zones', now under them, and two of the modular services',
+  which no path from the top reaches. Of the 195 reads tied to one option
+  before and to none now, 13 of 14 read were wrong; the other was right by
+  its last name alone, `allowedPatterns.zluda.onFeatures`, whose option is
+  declared by `with lib.types; mkOption { .. }`, which graff does not take
+  for one (task 160). On lib/, settings tied to one option go from 747 to
+  555, and to several from 683 to 398: of the 286 tied to one before and
+  to none now, 273 are tests' data (`expected.a`, `expected.b`) that met
+  functionTo's submodule's `a` and `b`. On the flake, no edge changes, and
+  its 795 questions get the same answers; of nixos/modules' 122, one
+  changes: the callers of `users.mysql.pam`'s `where`
+  (`callers config/mysql.nix:149`) are 1 against 14, the 13 systemd
+  mounts' `where` gone. Options are indexed by the last two names of their
+  paths, so resolution on nixos/modules takes 369-442 ms, against 557-606
+  (seven alternating runs, 2026-10-10, on AC under TLP's performance
+  profile, boost on); `graff def`, `callers` and `outline` there take the
+  same time as before.
 - **What counts as wrong, read by hand**: 6 settings at each step. 3 at
   step 1 and 4 at step 2 sit under a `mkIf` the host's configuration makes
   false, which step 2 does not evaluate: it decides a condition on the
@@ -276,7 +321,8 @@ nixpkgs at c59305b (the host's), nil 2026-07-23.
   through each file's definitions: an `inherit` under a binding became one
   (task 90), and one in what a function of nixpkgs consumes stopped being
   one (task 144), so its precision on lib/ went to 0.063, then 0.062, and
-  on nixos/modules/ to 0.018 (2026-10-09).
+  on nixos/modules/ to 0.018 (2026-10-09). Task 152 changes none of the
+  three reports past their first two lines (2026-10-10).
 - **nixpkgs lib/ is no longer held out**: its first run scored 0.998 and
   0.987, and its misses fixed three rules. A `let` inside an option's
   declaration binds names (graff had taken it for the option's fields); a

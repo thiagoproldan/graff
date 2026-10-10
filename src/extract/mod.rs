@@ -16,7 +16,7 @@ use crate::lang::Language;
 
 /// Bumped whenever what an extractor produces changes, so that results kept
 /// from an older extractor are read again rather than trusted.
-pub const VERSION: u32 = 11;
+pub const VERSION: u32 = 12;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Extraction {
@@ -24,6 +24,13 @@ pub struct Extraction {
     pub calls: Vec<Call>,
     pub references: Vec<Reference>,
     pub imports: Vec<Import>,
+    /// C: the branches of the file's conditionals, which a build may leave
+    /// out, in the order they start; its include guard's `#ifndef` is none.
+    #[serde(default)]
+    pub branches: Vec<Branch>,
+    /// C: the macro the file's include guard defines, `K3_H`.
+    #[serde(default)]
+    pub guard: Option<String>,
     /// Whether the parser met a syntax error: around it, what was read may be
     /// partial.
     pub syntax_error: bool,
@@ -242,10 +249,27 @@ pub struct Import {
     /// or runs it. Python: `import` or `from`; `class` for a class's base,
     /// the class's qualified name in `from`; `sys.path.insert` or
     /// `sys.path.append` for a folder a file adds to where its imports are
-    /// looked for. C: `include`. Markdown: `link` for a link, with its
-    /// fragment, `#x` alone for one of its own file; `mention` for a path a
-    /// code span or the prose writes, with a `:line` or a `:Name` after it.
+    /// looked for. C: `include`; `system` for `#include <x.h>`, `x.h`.
+    /// Markdown: `link` for a link, with its fragment, `#x` alone for one of
+    /// its own file; `mention` for a path a code span or the prose writes,
+    /// with a `:line` or a `:Name` after it.
     pub via: Option<String>,
+}
+
+/// A branch of a C conditional: `#if`, `#ifdef`, `#ifndef`, `#elif`,
+/// `#elifdef`, `#elifndef` or `#else`, to the next directive of its
+/// conditional.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Branch {
+    /// First and last line, 1-based and inclusive: past its directive's
+    /// lines, to the line before the next directive of its conditional.
+    pub start: u32,
+    pub end: u32,
+    /// The condition under which a compiler reads it, as the directives
+    /// write it: `defined(_WIN32)` for `#ifdef _WIN32`, and for the `#elif
+    /// defined(_WIN32)` after an `#if defined(__APPLE__)`,
+    /// `!(defined(__APPLE__)) && (defined(_WIN32))`.
+    pub condition: String,
 }
 
 impl Kind {

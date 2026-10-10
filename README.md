@@ -70,7 +70,11 @@ to the x.h in the including file's folder, else to the one file of the
 worktree whose path ends so, with no build file read; a name to its file's
 definition, else to one in what the file includes or, for a header, in what
 includes it, else to the only one not `static` the linker would find, and a
-prototype to the definition it declares (`src/resolve/c.rs`). In
+prototype to the definition it declares; a definition in a branch of an
+`#if` the build leaves out is none, by what the host's compiler predefines
+and what the file and those it includes define, a header's include guard
+among them, and what a build's flags decide stays ambiguous
+(`src/resolve/c.rs`). In
 Markdown, read as GitHub shows it, a file and each heading are
 definitions, a heading's section running to the next heading of its level
 or a higher one, named by its text and by the anchor GitHub gives it

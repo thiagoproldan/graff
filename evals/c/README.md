@@ -11,8 +11,15 @@ folder, else the one file of the worktree whose path ends in `/x.h`, and
 `<x.h>` is the system's. A name is looked for in its file, then in what the
 file includes and, for a header, in the files that include it, then as the
 only definition not `static` the linker would find; a prototype found so
-stands for the definition it declares. One check holds it against what knows
-more:
+stands for the definition it declares. A definition in a branch of a
+conditional the build leaves out is no candidate for a use the build reads
+(task 117): which macros are defined is told by the host's compiler, gcc or
+clang on Linux here, which defines `__linux__` and not `_WIN32`, and by the
+file and those it includes, through a header's include guard, a macro they
+define outside any branch, or the limits of a standard header they include;
+a branch that turns on anything else, a build's `-D` flags among it, stays a
+candidate. A use in a branch the build leaves out is read as a build that
+takes the branch would read it. One check holds it against what knows more:
 
 - **clangd.py**: graff's ties of names, each call, reference and include,
   against clangd's, asked over the language server protocol with the corpus
@@ -60,6 +67,16 @@ is its answer; where it answers with a call of the name, it gives no place:
 C89 declares a function called where no declaration is seen at that call,
 and clangd names the first such call. Each place maps to graff's definition
 of that name whose lines hold it, else to the fewest lines that do.
+
+In a region the build leaves out clangd answers too, with what its index
+holds of the word (its textual fallback for go-to-definition), which is what
+the build reads, not what a build that takes the branch reads: Windows's
+code in tree-sitter's src/tree.c calls the `_ts_dup` of its own `#ifdef
+_WIN32`, and clangd answers with the other. A name in a region clangd says
+the build leaves out, by its `inactiveRegions` extension, is not judged; the
+report's first lines count them. The check said so before task 117 but did
+not do it: the result of 2026-10-09 judged 36 of the names clangd answered on
+kimi, and 388 on tree-sitter, so.
 
 - **precision**: of graff's edges tied to a definition, those where one of
   clangd's places is that definition; an edge clangd gives no place for is
@@ -162,6 +179,58 @@ Before, on 2026-10-07 (gotcha 110): a top-level syntax error was read as
 uses only, and src/subtree.h's whole file is one; a broken `#ifndef` hid
 the include guard, which became a macro; and
 `TS_PUBLIC void (*ts_current_free)(void *)` named a declaration `void`.
+
+### Result, 2026-10-10 (task 117)
+
+9eb544c's graff against task 117's, the check leaving out the names in the
+regions clangd says the build leaves out (315 on kimi, 1,195 on
+tree-sitter), so 9eb544c's numbers are not those of the table above:
+
+|                     | kimi, 9eb544c         | kimi, task 117        | tree-sitter, 9eb544c  | tree-sitter, task 117 |
+| ------------------- | --------------------- | --------------------- | --------------------- | --------------------- |
+| precision           | 0.992, 2,418 of 2,438 | 1.000, 2,425 of 2,425 | 0.990, 5,921 of 5,983 | 0.996, 6,257 of 6,281 |
+| recall              | 0.997, 2,315 of 2,322 | 1.000, 2,322 of 2,322 | 0.907, 5,721 of 6,307 | 0.960, 6,053 of 6,307 |
+| missed as ambiguous | 7                     | 0                     | 475                   | 144                   |
+
+graff's calls on kimi: precision 0.987 (1,322 of 1,339) to 1.000 (1,328 of
+1,328), recall of the 1,277 calls 0.995 to 1.000, of the 553 pairs 0.991 to
+1.000.
+
+- **kimi**: the 20 edges counted wrong, `open`, `pread`, `posix_memalign`,
+  `madvise` and `MADV_HUGEPAGE` tied to the Windows shims of `#elif
+  defined(_WIN32)` and `sync()` to the stub of an `#ifdef _WIN32`, are the
+  system's now, and the 7 names missed, `k3_aligned_free` and
+  `k3_set_direct`, reach the definition of the branch Linux takes: the
+  `#else` of `#if defined(__APPLE__)`/`#elif defined(_WIN32)`, and the
+  fallback under `#ifndef k3_aligned_free`, the one left once Windows's is
+  out.
+- **tree-sitter**: `TSSymbol`, `TSLanguage`, `TSStateId` and `TSFieldId`
+  reach api.h wherever its include guard is defined, which parser.h's
+  `#ifndef TREE_SITTER_API_H_` tests, and `#ifndef TREE_SITTER_API_H_`
+  reaches api.h; `UINT32_MAX`, `UINT16_MAX` and `UINT8_MAX` are
+  <stdint.h>'s, which umachine.h includes before its fallbacks (the 39
+  edges counted wrong); `atomic_inc` and `atomic_dec` reach the `#else` of
+  `#ifdef __TINYC__`/`#elif defined(_WIN32)`.
+- **What is left on tree-sitter**: of the 144 names missed as ambiguous,
+  `LOG` (31), `ts_assert` (29), the wasm store's functions (29) and
+  `TS_PUBLIC` (8) turn on `DEBUG_ANALYZE_QUERY`, `NDEBUG`,
+  `TREE_SITTER_FEATURE_WASM` and `TREE_SITTER_HIDE_SYMBOLS`, which a build's
+  flags define, and no build file is read (decision 108); `RS` and `LS` in
+  the wasm libc's memcpy.c (24), `UChar` (5) and `TS_PTR_SIZE` turn on a
+  comparison of values, `__BYTE_ORDER == __LITTLE_ENDIAN`, which graff does
+  not compute (task 172). The 24 edges counted wrong are the wasm libc's
+  (23) and `TSWasmStore` (1), as before.
+- **The cargo registry's C**, 42 crates, 1,697,945 edges: 3,430 changed,
+  1,345 ambiguous to resolved, 1,646 ambiguous among fewer definitions, 224
+  resolved to external, 190 ambiguous to external, 20 resolved to another
+  definition, 4 resolved to ambiguous, 1 external to resolved. Read by hand:
+  the `lseek` sqlite's `#ifdef __ANDROID__` defines as `lseek64` is the
+  system's on Linux; sqlite's `offsetof` fallback is <stddef.h>'s; the
+  `#define _BSD_SOURCE` sqlite3mc keeps for OpenBSD is left out, and its use
+  finds musl's two in sqlite-wasm-rs's shim, so it is ambiguous now. On
+  ekko's and graff's files, which hold no C, the edges are the same byte for
+  byte. examples/resolve on libsqlite3-sys's C, the largest, one run each on
+  AC power and the performance profile: 7.6 s before, 7.9 s now.
 
 ## def, a prototype and its definition
 

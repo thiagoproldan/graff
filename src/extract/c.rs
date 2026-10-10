@@ -15,7 +15,12 @@
 //! macro, a function passed along -- is a reference, and a type named is
 //! a type. A macro's body is read off its tokens: a name followed by `(`
 //! is a call, any other a reference, but the macro's parameters. A quoted
-//! `#include` is an import; one of `<..>` is the system's, left out.
+//! `#include` is an import; one of `<..>` is the system's, an import too
+//! (`system`), which no edge follows.
+//!
+//! Each branch of a conditional is kept with its lines and its condition,
+//! the include guard's `#ifndef` aside, and so is the macro the guard
+//! defines: resolution reads which branches a build leaves out.
 //!
 //! tree-sitter-c 0.24.2 reads the `}` that closes an `extern "C" {` under
 //! `#ifdef __cplusplus` as a syntax error (gotcha 110). What a C compiler
@@ -29,7 +34,8 @@ use std::collections::{HashMap, HashSet};
 use tree_sitter::{Node, Parser};
 
 use super::{
-    Call, CallKind, Extraction, Import, Kind, MAX_DEPTH, RefKind, Reference, Symbol, end_line, line,
+    Branch, Call, CallKind, Extraction, Import, Kind, MAX_DEPTH, RefKind, Reference, Symbol,
+    end_line, line,
 };
 
 /// C's keywords, and the words a macro's body holds that name nothing in
@@ -130,6 +136,8 @@ pub fn extract(source: &[u8]) -> Extraction {
     };
     reader.scan(root, 0);
     reader.guard = guard(root, source);
+    reader.out.guard = reader.guard.clone();
+    reader.out.branches = branches(&directives(source), reader.guard.as_deref(), end_line(root));
     reader.out.symbols.push(Symbol {
         name: String::new(),
         qualified: String::new(),
@@ -249,22 +257,27 @@ fn blank_attributes(source: &mut [u8]) {
     }
 }
 
-/// [`mend`]'s C++ branches, blanked.
-fn blank_cpp(source: &[u8]) -> Vec<u8> {
-    #[derive(Clone, Copy, PartialEq)]
-    enum Frame {
-        /// A conditional of something else, kept.
-        Other,
-        /// `#ifdef __cplusplus`, in its first branch or past its `#else`.
-        Cpp { past_else: bool },
-        /// `#ifndef __cplusplus`.
-        NotCpp { past_else: bool },
-    }
-    let mut mended = source.to_vec();
-    let mut frames: Vec<Frame> = Vec::new();
+/// A preprocessor directive, with the lines a backslash carries it over.
+struct Directive {
+    /// Its bytes, the newlines that end its lines but the last among them.
+    range: std::ops::Range<usize>,
+    /// Its first and last lines, 1-based.
+    first: u32,
+    last: u32,
+    /// What follows its `#`: `ifdef`.
+    name: String,
+    /// What follows its name, its lines joined, comments left out and
+    /// spaces collapsed: `defined(_WIN32) && !defined(__GNUC__)`.
+    rest: String,
+}
+
+/// Each directive of a source, by its lines.
+fn directives(source: &[u8]) -> Vec<Directive> {
+    let mut found = Vec::new();
     let mut start = 0;
+    let mut row = 1;
     while start < source.len() {
-        // A directive's line, with the lines a backslash carries it over.
+        // A line, with the lines a backslash carries it over.
         let mut end = start;
         loop {
             let next = source[end..]
@@ -278,42 +291,105 @@ fn blank_cpp(source: &[u8]) -> Vec<u8> {
             }
             end += 1;
         }
-        let text = std::str::from_utf8(&source[start..end]).unwrap_or("");
-        let directive = text.trim_start().strip_prefix('#').map(|rest| {
-            let rest = rest.trim_start();
-            let word: String = rest
+        let lines = source[start..end].iter().filter(|&&b| b == b'\n').count() as u32;
+        let text = String::from_utf8_lossy(&source[start..end]);
+        if let Some(after) = text.trim_start().strip_prefix('#') {
+            let after = after.trim_start();
+            let name: String = after
                 .chars()
                 .take_while(|c| c.is_ascii_alphabetic())
                 .collect();
-            let condition = &rest[word.len()..];
-            let condition = condition.split("//").next().unwrap_or(condition);
-            let condition = condition.split("/*").next().unwrap_or(condition);
-            let condition: String = condition
-                .chars()
-                .filter(|c| !c.is_whitespace() && !matches!(c, '(' | ')'))
-                .collect();
-            (word, condition)
-        });
-        let dead = |frames: &[Frame]| {
-            frames.iter().any(|f| {
-                matches!(
-                    f,
-                    Frame::Cpp { past_else: false } | Frame::NotCpp { past_else: true }
-                )
-            })
-        };
+            let joined = after[name.len()..]
+                .replace("\\\r\n", " ")
+                .replace("\\\n", " ");
+            let rest = uncommented(&joined);
+            found.push(Directive {
+                range: start..end,
+                first: row,
+                last: row + lines,
+                name,
+                rest: rest.split_whitespace().collect::<Vec<_>>().join(" "),
+            });
+        }
+        row += lines + 1;
+        start = end + 1;
+    }
+    found
+}
+
+/// A directive's text with its comments left out: `/* .. */` spans, and
+/// what follows a `//`.
+fn uncommented(text: &str) -> String {
+    let mut kept = String::new();
+    let mut rest = text;
+    loop {
+        let block = rest.find("/*");
+        let line = rest.find("//");
+        match (block, line) {
+            (Some(b), l) if l.is_none_or(|l| b < l) => {
+                kept.push_str(&rest[..b]);
+                kept.push(' ');
+                match rest[b + 2..].find("*/") {
+                    Some(close) => rest = &rest[b + 2 + close + 2..],
+                    None => return kept,
+                }
+            }
+            (_, Some(l)) => {
+                kept.push_str(&rest[..l]);
+                return kept;
+            }
+            _ => {
+                kept.push_str(rest);
+                return kept;
+            }
+        }
+    }
+}
+
+/// [`mend`]'s C++ branches, blanked.
+fn blank_cpp(source: &[u8]) -> Vec<u8> {
+    #[derive(Clone, Copy, PartialEq)]
+    enum Frame {
+        /// A conditional of something else, kept.
+        Other,
+        /// `#ifdef __cplusplus`, in its first branch or past its `#else`.
+        Cpp { past_else: bool },
+        /// `#ifndef __cplusplus`.
+        NotCpp { past_else: bool },
+    }
+    let dead = |frames: &[Frame]| {
+        frames.iter().any(|f| {
+            matches!(
+                f,
+                Frame::Cpp { past_else: false } | Frame::NotCpp { past_else: true }
+            )
+        })
+    };
+    let mut mended = source.to_vec();
+    let mut frames: Vec<Frame> = Vec::new();
+    // Where the lines past the last directive start.
+    let mut after = 0;
+    for directive in directives(source) {
+        if dead(&frames) {
+            blank(&mut mended[after..directive.range.start]);
+        }
+        let condition: String = directive
+            .rest
+            .chars()
+            .filter(|c| !c.is_whitespace() && !matches!(c, '(' | ')'))
+            .collect();
         let mut dropped = dead(&frames);
-        match directive.as_ref().map(|(w, c)| (w.as_str(), c.as_str())) {
-            Some(("ifdef", "__cplusplus")) | Some(("if", "defined__cplusplus" | "__cplusplus")) => {
+        match (directive.name.as_str(), condition.as_str()) {
+            ("ifdef", "__cplusplus") | ("if", "defined__cplusplus" | "__cplusplus") => {
                 frames.push(Frame::Cpp { past_else: false });
                 dropped = true;
             }
-            Some(("ifndef", "__cplusplus")) | Some(("if", "!defined__cplusplus")) => {
+            ("ifndef", "__cplusplus") | ("if", "!defined__cplusplus") => {
                 frames.push(Frame::NotCpp { past_else: false });
                 dropped = true;
             }
-            Some(("if" | "ifdef" | "ifndef", _)) => frames.push(Frame::Other),
-            Some(("else", _)) => {
+            ("if" | "ifdef" | "ifndef", _) => frames.push(Frame::Other),
+            ("else", _) => {
                 if let Some(Frame::Cpp { past_else } | Frame::NotCpp { past_else }) =
                     frames.last_mut()
                 {
@@ -321,7 +397,7 @@ fn blank_cpp(source: &[u8]) -> Vec<u8> {
                     dropped = true;
                 }
             }
-            Some(("endif", _)) => {
+            ("endif", _) => {
                 if matches!(frames.pop(), Some(Frame::Cpp { .. } | Frame::NotCpp { .. })) {
                     dropped = true;
                 }
@@ -329,11 +405,94 @@ fn blank_cpp(source: &[u8]) -> Vec<u8> {
             _ => {}
         }
         if dropped {
-            blank(&mut mended[start..end]);
+            blank(&mut mended[directive.range.clone()]);
         }
-        start = end + 1;
+        after = directive.range.end;
+    }
+    if dead(&frames) {
+        blank(&mut mended[after..]);
     }
     mended
+}
+
+/// The branches of a source's conditionals, its include guard's `#ifndef`
+/// aside: each under its own condition after the negations of those before
+/// it in its conditional. `last` is the source's last line.
+fn branches(directives: &[Directive], guard: Option<&str>, last: u32) -> Vec<Branch> {
+    /// A conditional open at a directive: the conditions of its branches
+    /// before the one being read, that one's, and where it starts.
+    struct Open {
+        before: Vec<String>,
+        condition: Option<String>,
+        start: u32,
+        guard: bool,
+    }
+    let mut found = Vec::new();
+    let mut open: Vec<Open> = Vec::new();
+    let close = |open: &Open, end: u32, found: &mut Vec<Branch>| {
+        if open.guard || open.start > end {
+            return;
+        }
+        let mut parts: Vec<String> = open.before.iter().map(|c| format!("!({c})")).collect();
+        let condition = match (&open.condition, parts.is_empty()) {
+            (Some(condition), true) => condition.clone(),
+            (Some(condition), false) => {
+                parts.push(format!("({condition})"));
+                parts.join(" && ")
+            }
+            (None, _) => parts.join(" && "),
+        };
+        found.push(Branch {
+            start: open.start,
+            end,
+            condition,
+        });
+    };
+    for directive in directives {
+        let rest = directive.rest.as_str();
+        let condition = match directive.name.as_str() {
+            "if" | "elif" => Some(rest.to_string()),
+            "ifdef" | "elifdef" => Some(format!("defined({rest})")),
+            "ifndef" | "elifndef" => Some(format!("!defined({rest})")),
+            _ => None,
+        };
+        match directive.name.as_str() {
+            "if" | "ifdef" | "ifndef" => {
+                let is_guard = directive.name == "ifndef"
+                    && open.is_empty()
+                    && found.is_empty()
+                    && Some(rest) == guard;
+                open.push(Open {
+                    before: Vec::new(),
+                    condition,
+                    start: directive.last + 1,
+                    guard: is_guard,
+                });
+            }
+            "elif" | "elifdef" | "elifndef" | "else" => {
+                if let Some(last) = open.last_mut() {
+                    close(last, directive.first - 1, &mut found);
+                    if let Some(before) = last.condition.take() {
+                        last.before.push(before);
+                    }
+                    last.condition = condition;
+                    last.start = directive.last + 1;
+                }
+            }
+            "endif" => {
+                if let Some(last) = open.pop() {
+                    close(&last, directive.first - 1, &mut found);
+                }
+            }
+            _ => {}
+        }
+    }
+    // A conditional the source never closes runs to its end.
+    while let Some(unclosed) = open.pop() {
+        close(&unclosed, last, &mut found);
+    }
+    found.sort_by_key(|b| (b.start, b.end));
+    found
 }
 
 /// The macro a header's include guard defines: `K3_H` for a file that is
@@ -871,19 +1030,30 @@ impl<'s, 't> Reader<'s, 't> {
         }
     }
 
-    /// `#include "x.h"`; `<x.h>` is the system's.
+    /// `#include "x.h"`; `<x.h>` is the system's, `system`.
     fn include(&mut self, node: Node) {
         let Some(path) = node.child_by_field_name("path") else {
             return;
         };
-        if path.kind() != "string_literal" {
-            return;
-        }
-        let written: String = named_children(path)
-            .iter()
-            .filter(|c| c.kind() == "string_content")
-            .map(|c| self.text(*c))
-            .collect();
+        let (written, via) = match path.kind() {
+            "string_literal" => (
+                named_children(path)
+                    .iter()
+                    .filter(|c| c.kind() == "string_content")
+                    .map(|c| self.text(*c))
+                    .collect::<String>(),
+                "include",
+            ),
+            "system_lib_string" => (
+                self.text(path)
+                    .trim_start_matches('<')
+                    .trim_end_matches('>')
+                    .trim()
+                    .to_string(),
+                "system",
+            ),
+            _ => return,
+        };
         if written.is_empty() {
             return;
         }
@@ -894,7 +1064,7 @@ impl<'s, 't> Reader<'s, 't> {
             public: false,
             line: line(node),
             from: None,
-            via: Some("include".to_string()),
+            via: Some(via.to_string()),
         });
     }
 
@@ -1335,14 +1505,22 @@ static inline float sq(float x) { return x * x; }
         // The prototype of a function the file defines is left out; its
         // comment is the prototype's.
         assert_eq!(symbol(&out, "k3_matmul").doc, None);
-        let imports: Vec<(&str, u32)> = out
+        let imports: Vec<(&str, u32, Option<&str>)> = out
             .imports
             .iter()
-            .map(|i| (i.path.as_str(), i.line))
+            .map(|i| (i.path.as_str(), i.line, i.via.as_deref()))
             .collect();
-        assert_eq!(imports, vec![("k3/types.h", 4)]);
-        // The include guard is no macro, nor a reference.
+        assert_eq!(
+            imports,
+            vec![
+                ("k3/types.h", 4, Some("include")),
+                ("stdio.h", 5, Some("system"))
+            ]
+        );
+        // The include guard is no macro, nor a reference, nor a branch.
         assert!(!out.references.iter().any(|r| r.name == "K3_H"));
+        assert_eq!(out.guard.as_deref(), Some("K3_H"));
+        assert!(out.branches.is_empty());
     }
 
     #[test]
@@ -1545,6 +1723,71 @@ int cpp_only;
                 ("c_only", Kind::Variable, 9, 9, false),
             ]
         );
+    }
+
+    #[test]
+    fn each_branch_of_a_conditional_is_read_with_its_condition() {
+        let out = extract(
+            br#"#ifndef A_H
+#define A_H
+#if defined(__APPLE__)
+int apple;
+#elif defined(_WIN32) /* Windows */ \
+    || defined(__CYGWIN__)
+int win;
+#else
+int other;
+#ifdef NDEBUG
+int fast;
+#endif
+#endif
+#ifndef X // fallback
+#define X 1
+#endif
+#if 0
+#endif
+#endif
+"#,
+        );
+        let branches: Vec<(u32, u32, &str)> = out
+            .branches
+            .iter()
+            .map(|b| (b.start, b.end, b.condition.as_str()))
+            .collect();
+        // Past each directive's lines, to the next of its conditional; the
+        // include guard's and an empty branch are none.
+        assert_eq!(
+            branches,
+            vec![
+                (4, 4, "defined(__APPLE__)"),
+                (
+                    7,
+                    7,
+                    "!(defined(__APPLE__)) && (defined(_WIN32) || defined(__CYGWIN__))"
+                ),
+                (
+                    9,
+                    12,
+                    "!(defined(__APPLE__)) && !(defined(_WIN32) || defined(__CYGWIN__))"
+                ),
+                (11, 11, "defined(NDEBUG)"),
+                (15, 15, "!defined(X)"),
+            ]
+        );
+        assert_eq!(out.guard.as_deref(), Some("A_H"));
+        // A conditional left open runs to the file's end; with no guard, an
+        // `#ifndef` is a branch like any other.
+        let out = extract(b"#ifndef B_H\nint b;\n#ifdef A\nint a;\nint c;\n");
+        let branches: Vec<(u32, u32, &str)> = out
+            .branches
+            .iter()
+            .map(|b| (b.start, b.end, b.condition.as_str()))
+            .collect();
+        assert_eq!(
+            branches,
+            vec![(2, 5, "!defined(B_H)"), (4, 5, "defined(A)")]
+        );
+        assert_eq!(out.guard, None);
     }
 
     #[test]

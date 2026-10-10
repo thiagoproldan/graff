@@ -30,6 +30,23 @@ class Column(unittest.TestCase):
         self.assertIsNone(clangd.column("x = rowsx;", edge("rows", "reference value")))
 
 
+class InactiveRegions(unittest.TestCase):
+    def test_a_place_in_a_region_clangd_says_is_inactive_is_left_out(self):
+        server = clangd.Clangd.__new__(clangd.Clangd)
+        server.built, server.inactive = set(), {}
+        uri = "file:///k/src/tree.c"
+        region = {"start": {"line": 139, "character": 0}, "end": {"line": 159, "character": 1}}
+        server.note({"method": "textDocument/inactiveRegions",
+                     "params": {"textDocument": {"uri": uri}, "regions": [region]}})
+        for line, character in [(155, 30), (139, 0), (159, 1)]:
+            self.assertTrue(server.left_out(uri, line, character), (line, character))
+        for line, character in [(138, 5), (159, 2), (160, 0)]:
+            self.assertFalse(server.left_out(uri, line, character), (line, character))
+        self.assertFalse(server.left_out("file:///k/src/other.c", 155, 30))
+        server.note({"method": "textDocument/publishDiagnostics", "params": {"uri": uri, "diagnostics": []}})
+        self.assertEqual(server.built, {uri})
+
+
 class DeclaredElsewhere(unittest.TestCase):
     # third_party/tok_unicode_o200k.h:226-227, opened alone: clangd 21.1.8
     # answers uni_in with its first call, at 226, from both calls.

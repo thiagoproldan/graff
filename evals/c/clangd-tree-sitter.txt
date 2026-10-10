@@ -1,94 +1,18 @@
-run 2026-10-09
-graff f127aae with uncommitted changes
+run 2026-10-10
+graff 9eb544c with uncommitted changes
 corpus tree-sitter: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tree-sitter-0.27.0 (copied), 75 C files, 14 translation units
 truth: clangd version 21.1.8 (nixpkgs), compile_commands.json written for src/*.c: cc -std=c11 -Isrc -Isrc/wasm -Iinclude -D_POSIX_C_SOURCE=200112L -D_DEFAULT_SOURCE, --background-index=false, every file opened and built first
-  8171 names asked, 6914 answered; 22 names not found on their line
+  8171 names asked, 6526 answered; 22 names not found on their line; 1195 in the 98 regions of 33 files clangd says the build leaves out, not judged
 
-broken resolver: precision 0.004, recall 0.003
-graff: precision 0.990 (6167 of 6230 judged; 284 unjudged), recall 0.902 (5966 of 6616 names clangd places in the corpus)
-by rule: file 148/148 (9 unjudged), include 3620/3661 (16 unjudged), scope 2389/2411 (259 unjudged), unique 10/10 (0 unjudged)
-missed, by what graff did: 538 ambiguous, 92 external, 1 include, 19 scope
-graff's untied edges, by clangd's place: ambiguous in the corpus 544, ambiguous no place 14, ambiguous outside 28, external in the corpus 97, external no place 1033, external outside 243
+broken resolver: precision 0.002, recall 0.002
+graff: precision 0.996 (6257 of 6281 judged; 573 unjudged), recall 0.960 (6053 of 6307 names clangd places in the corpus)
+by rule: file 149/149 (9 unjudged), include 3720/3722 (289 unjudged), scope 2378/2400 (275 unjudged), unique 10/10 (0 unjudged)
+missed, by what graff did: 144 ambiguous, 90 external, 1 include, 19 scope
+graff's untied edges, by clangd's place: ambiguous in the corpus 146, ambiguous no place 54, ambiguous outside 1, external in the corpus 95, external no place 1093, external outside 230
 
 wrong edges:
 include/tree_sitter/api.h:1422 struct TSWasmStore (reference type) -> src/wasm_store.c TSWasmStore (include); clangd include/tree_sitter/api.h TSWasmStore
     typedef struct TSWasmStore TSWasmStore;
-src/get_changed_ranges.c:108 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    if (range->end_byte != UINT32_MAX) {
-src/get_changed_ranges.c:115 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    range->end_byte = UINT32_MAX;
-src/get_changed_ranges.c:131 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    range->start_byte = UINT32_MAX;
-src/language.h:141 UINT16_MAX (reference value) -> src/unicode/umachine.h UINT16_MAX (include); clangd outside
-    .symbol = UINT16_MAX,
-src/length.h:15 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    static const Length LENGTH_MAX = {UINT32_MAX, {UINT32_MAX, UINT32_MAX}};
-src/length.h:15 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    static const Length LENGTH_MAX = {UINT32_MAX, {UINT32_MAX, UINT32_MAX}};
-src/length.h:15 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    static const Length LENGTH_MAX = {UINT32_MAX, {UINT32_MAX, UINT32_MAX}};
-src/lexer.c:35 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    .row = UINT32_MAX,
-src/lexer.c:36 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    .column = UINT32_MAX,
-src/lexer.c:39 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    .end_byte = UINT32_MAX
-src/parser.c:768 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    if (ts_subtree_is_eof(result)) end_byte_offset = UINT32_MAX;
-src/point.h:7 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    #define POINT_MAX ((TSPoint) {UINT32_MAX, UINT32_MAX})
-src/point.h:7 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    #define POINT_MAX ((TSPoint) {UINT32_MAX, UINT32_MAX})
-src/query.c:355 UINT16_MAX (reference value) -> src/unicode/umachine.h UINT16_MAX (include); clangd outside
-    static const uint16_t PATTERN_DONE_MARKER = UINT16_MAX;
-src/query.c:356 UINT16_MAX (reference value) -> src/unicode/umachine.h UINT16_MAX (include); clangd outside
-    static const uint16_t NONE = UINT16_MAX;
-src/query.c:357 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    static const uint32_t CAPTURE_LIST_NONE = UINT32_MAX;
-src/query.c:447 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    .max_capture_list_count = UINT32_MAX,
-src/query.c:455 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    array_get(&self->list, i)->size = UINT32_MAX;
-src/query.c:487 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    if (array_get(&self->list, i)->size == UINT32_MAX) {
-src/query.c:509 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    array_get(&self->list, id)->size = UINT32_MAX;
-src/query.c:3355 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    uint32_t step_index = UINT32_MAX;
-src/query.c:3436 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    .end_byte = UINT32_MAX,
-src/query.c:3442 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    .end_byte = UINT32_MAX,
-src/query.c:3444 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    .max_start_depth = UINT32_MAX,
-src/query.c:3548 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    end_byte = UINT32_MAX;
-src/query.c:3580 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    end_byte = UINT32_MAX;
-src/query.c:3616 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    *state_index = UINT32_MAX;
-src/query.c:3617 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    *byte_offset = UINT32_MAX;
-src/query.c:3618 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    *pattern_index = UINT32_MAX;
-src/query.c:3827 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    .id = UINT32_MAX,
-src/query.c:3829 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    .heap_insert_order = UINT32_MAX,
-src/query.c:3899 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    CaptureList *capture_list = ts_query_cursor__prepare_to_capture(self, state, UINT32_MAX);
-src/query.c:4676 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    if (state->id == UINT32_MAX) state->id = self->next_state_id++;
-src/query.c:4831 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    if (state->id == UINT32_MAX) state->id = self->next_state_id++;
-src/reusable_node.h:32 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    : UINT32_MAX;
-src/subtree.c:22 UINT8_MAX (reference value) -> src/unicode/umachine.h UINT8_MAX (include); clangd outside
-    #define TS_MAX_INLINE_TREE_LENGTH UINT8_MAX
-src/subtree.c:176 UINT8_MAX (reference value) -> src/unicode/umachine.h UINT8_MAX (include); clangd outside
-    symbol <= UINT8_MAX &&
-src/subtree.c:233 UINT8_MAX (reference value) -> src/unicode/umachine.h UINT8_MAX (include); clangd outside
-    ts_assert(symbol < UINT8_MAX);
 src/wasm-stdlib/libc/ctype/isblank.c:10 isblank (call free) -> src/wasm-stdlib/libc/ctype/isblank.c isblank (scope); clangd outside
     return isblank(c);
 src/wasm-stdlib/libc/ctype/isblank.c:13 __isblank_l (reference value) -> src/wasm-stdlib/libc/ctype/isblank.c __isblank_l (scope); clangd outside
@@ -135,8 +59,6 @@ src/wasm-stdlib/libc/string/stpncpy.c:31 __stpncpy (reference value) -> src/wasm
     weak_alias(__stpncpy, stpncpy);
 src/wasm-stdlib/libc/string/strchrnul.c:75 __strchrnul (reference value) -> src/wasm-stdlib/libc/string/strchrnul.c __strchrnul (scope); clangd src/wasm-stdlib/libc/string/strchrnul.c (file)
     weak_alias(__strchrnul, strchrnul);
-src/wasm_store.c:504 UINT32_MAX (reference value) -> src/unicode/umachine.h UINT32_MAX (include); clangd outside
-    if (!wasm_memory__string_length(memory, address, &len) || len > UINT32_MAX) {
 
 missed names:
 include/tree_sitter/api.h:49 TSLookaheadIterator (reference type) -> include/tree_sitter/api.h TSLookaheadIterator; graff: external
@@ -179,296 +101,20 @@ src/array.h:205 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: amb
     ts_assert(index < *size);
 src/array.h:269 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
     ts_assert(old_end <= *size);
-src/get_changed_ranges.c:142 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *language;
-src/get_changed_ranges.c:151 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *language
-src/get_changed_ranges.c:209 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol *alias_symbol,
-src/get_changed_ranges.c:356 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol old_alias_symbol = 0;
-src/get_changed_ranges.c:357 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol new_alias_symbol = 0;
-src/get_changed_ranges.c:360 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol old_symbol = ts_subtree_symbol(old_tree);
-src/get_changed_ranges.c:361 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol new_symbol = ts_subtree_symbol(new_tree);
-src/get_changed_ranges.c:369 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId old_state = ts_subtree_parse_state(old_tree);
-src/get_changed_ranges.c:370 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId new_state = ts_subtree_parse_state(new_tree);
-src/get_changed_ranges.c:416 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *language,
-src/get_changed_ranges.h:27 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *language,
 src/host.h:6 TS_BIG_ENDIAN (reference value) -> src/host.h TS_BIG_ENDIAN#2; graff: ambiguous
     #if !defined(TS_BIG_ENDIAN)
 src/host.h:15 TS_PTR_SIZE (reference value) -> src/host.h TS_PTR_SIZE#2; graff: ambiguous
     #if !defined(TS_PTR_SIZE)
-src/language.c:11 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    TSLanguage language;
-src/language.c:26 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    static inline TSUnparseableLanguage *ts_language__unparseable(const TSLanguage *self) {
-src/language.c:30 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    static inline bool ts_language__is_unparseable(const TSLanguage *self) {
-src/language.c:46 atomic_inc (call free) -> src/atomic.h atomic_inc#3; graff: ambiguous
-    result = atomic_inc(&ts_language_next_context_id);
-src/language.c:59 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *ts_language_copy(const TSLanguage *self) {
-src/language.c:62 atomic_inc (call free) -> src/atomic.h atomic_inc#3; graff: ambiguous
-    atomic_inc(&ts_language__unparseable(self)->ref_count);
 src/language.c:65 ts_language_is_wasm (call free) -> src/wasm_store.c ts_language_is_wasm#2; graff: ambiguous
     if (self && ts_language_is_wasm(self)) {
 src/language.c:66 ts_wasm_language_retain (call free) -> src/wasm_store.c ts_wasm_language_retain#2; graff: ambiguous
     ts_wasm_language_retain(self);
-src/language.c:71 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    void ts_language_delete(const TSLanguage *self) {
-src/language.c:75 atomic_dec (call free) -> src/atomic.h atomic_dec#3; graff: ambiguous
-    if (atomic_dec(&language->ref_count) == 0) {
 src/language.c:80 ts_language_is_wasm (call free) -> src/wasm_store.c ts_language_is_wasm#2; graff: ambiguous
     if (self && ts_language_is_wasm(self)) {
 src/language.c:81 ts_wasm_language_release (call free) -> src/wasm_store.c ts_wasm_language_release#2; graff: ambiguous
     ts_wasm_language_release(self);
-src/language.c:85 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    bool ts_language_is_parseable(const TSLanguage *self) {
-src/language.c:89 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *ts_language_copy_without_callbacks(const TSLanguage *self) {
-src/language.c:109 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    uint32_t ts_language_symbol_count(const TSLanguage *self) {
-src/language.c:113 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    uint32_t ts_language_state_count(const TSLanguage *self) {
-src/language.c:117 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSSymbol *ts_language_supertypes(const TSLanguage *self, uint32_t *length) {
-src/language.c:117 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    const TSSymbol *ts_language_supertypes(const TSLanguage *self, uint32_t *length) {
-src/language.c:127 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    const TSSymbol *ts_language_subtypes(
-src/language.c:128 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *self,
-src/language.c:129 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol supertype,
-src/language.c:146 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    uint32_t ts_language_abi_version(const TSLanguage *self) {
-src/language.c:150 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguageMetadata *ts_language_metadata(const TSLanguage *self) {
-src/language.c:150 TSLanguageMetadata (reference type) -> include/tree_sitter/api.h TSLanguageMetadata; graff: ambiguous
-    const TSLanguageMetadata *ts_language_metadata(const TSLanguage *self) {
-src/language.c:154 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const char *ts_language_name(const TSLanguage *self) {
-src/language.c:158 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    uint32_t ts_language_field_count(const TSLanguage *self) {
-src/language.c:163 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *self,
-src/language.c:164 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state,
-src/language.c:165 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol,
 src/language.c:173 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
     ts_assert(symbol < self->token_count);
-src/language.c:183 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *self,
-src/language.c:184 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state
-src/language.c:199 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *self,
-src/language.c:200 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state,
-src/language.c:201 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol
-src/language.c:216 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *self,
-src/language.c:217 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol
-src/language.c:228 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol ts_language_public_symbol(
-src/language.c:229 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *self,
-src/language.c:230 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol
-src/language.c:236 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId ts_language_next_state(
-src/language.c:237 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *self,
-src/language.c:238 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state,
-src/language.c:239 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol
-src/language.c:264 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *self,
-src/language.c:265 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol
-src/language.c:278 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol ts_language_symbol_for_name(
-src/language.c:279 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *self,
-src/language.c:286 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    for (TSSymbol i = 0; i < count; i++) {
-src/language.c:298 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *self,
-src/language.c:299 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol
-src/language.c:314 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *self,
-src/language.c:315 TSFieldId (reference type) -> include/tree_sitter/api.h TSFieldId; graff: ambiguous
-    TSFieldId id
-src/language.c:325 TSFieldId (reference type) -> include/tree_sitter/api.h TSFieldId; graff: ambiguous
-    TSFieldId ts_language_field_id_for_name(
-src/language.c:326 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *self,
-src/language.c:331 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    for (TSSymbol i = 1; i < count + 1; i++) {
-src/language.c:345 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    TSLookaheadIterator *ts_lookahead_iterator_new(const TSLanguage *self, TSStateId state) {
-src/language.c:345 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSLookaheadIterator *ts_lookahead_iterator_new(const TSLanguage *self, TSStateId state) {
-src/language.c:359 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    bool ts_lookahead_iterator_reset_state(TSLookaheadIterator * self, TSStateId state) {
-src/language.c:366 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *ts_lookahead_iterator_language(const TSLookaheadIterator *self) {
-src/language.c:371 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    bool ts_lookahead_iterator_reset(TSLookaheadIterator *self, const TSLanguage *language, TSStateId state) {
-src/language.c:371 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    bool ts_lookahead_iterator_reset(TSLookaheadIterator *self, const TSLanguage *language, TSStateId state) {
-src/language.c:374 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *previous = iterator->language;
-src/language.c:385 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol ts_lookahead_iterator_current_symbol(const TSLookaheadIterator *self) {
-src/language.h:29 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *language;
-src/language.h:38 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol;
-src/language.h:39 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId next_state;
-src/language.h:43 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    void ts_language_table_entry(const TSLanguage *self, TSStateId state, TSSymbol symbol, TableEntry *result);
-src/language.h:43 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    void ts_language_table_entry(const TSLanguage *self, TSStateId state, TSSymbol symbol, TableEntry *result);
-src/language.h:43 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    void ts_language_table_entry(const TSLanguage *self, TSStateId state, TSSymbol symbol, TableEntry *result);
-src/language.h:44 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    TSLexerMode ts_language_lex_mode_for_state(const TSLanguage *self, TSStateId state);
-src/language.h:44 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSLexerMode ts_language_lex_mode_for_state(const TSLanguage *self, TSStateId state);
-src/language.h:45 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    bool ts_language_is_reserved_word(const TSLanguage *self, TSStateId state, TSSymbol symbol);
-src/language.h:45 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    bool ts_language_is_reserved_word(const TSLanguage *self, TSStateId state, TSSymbol symbol);
-src/language.h:45 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    bool ts_language_is_reserved_word(const TSLanguage *self, TSStateId state, TSSymbol symbol);
-src/language.h:46 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    TSSymbolMetadata ts_language_symbol_metadata(const TSLanguage *self, TSSymbol symbol);
-src/language.h:46 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbolMetadata ts_language_symbol_metadata(const TSLanguage *self, TSSymbol symbol);
-src/language.h:47 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    TSSymbol ts_language_public_symbol(const TSLanguage *self, TSSymbol symbol);
-src/language.h:47 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol ts_language_public_symbol(const TSLanguage *self, TSSymbol symbol);
-src/language.h:48 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *ts_language_copy_without_callbacks(const TSLanguage *self);
-src/language.h:54 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *self,
-src/language.h:55 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state,
-src/language.h:56 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol,
-src/language.h:66 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *self,
-src/language.h:67 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state,
-src/language.h:68 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol
-src/language.h:83 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *self,
-src/language.h:84 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state,
-src/language.h:85 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol
-src/language.h:105 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *self,
-src/language.h:106 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state,
-src/language.h:107 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol
-src/language.h:119 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *self,
-src/language.h:120 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state
-src/language.h:175 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol = self->phase == LookaheadFresh ? 0 : self->symbol + 1;
-src/language.h:203 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *self,
-src/language.h:204 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state
-src/language.h:214 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *self,
-src/language.h:224 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    static inline const TSSymbol *ts_language_alias_sequence(
-src/language.h:225 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *self,
-src/language.h:233 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    static inline TSSymbol ts_language_alias_at(
-src/language.h:234 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *self,
-src/language.h:244 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *self,
-src/language.h:261 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *self,
-src/language.h:262 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol original_symbol,
-src/language.h:263 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    const TSSymbol **start,
-src/language.h:264 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    const TSSymbol **end
-src/language.h:271 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol = self->alias_map[idx++];
-src/language.h:284 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *self,
-src/language.h:286 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol
-src/node.c:13 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    const TSSymbol *alias_sequence;
-src/node.c:24 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol alias
-src/node.c:62 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    const TSSymbol *alias_sequence = ts_language_alias_sequence(
-src/node.c:86 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol alias_symbol = 0;
-src/node.c:114 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol alias = ts_node__alias(&self);
-src/node.c:457 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol ts_node_symbol(TSNode self) {
-src/node.c:458 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol = ts_node__alias(&self);
-src/node.c:464 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol = ts_node__alias(&self);
-src/node.c:469 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *ts_node_language(TSNode self) {
-src/node.c:473 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol ts_node_grammar_symbol(TSNode self) {
-src/node.c:478 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol = ts_subtree_symbol(ts_node__subtree(self));
-src/node.c:483 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol alias_symbol = ts_node__alias(&self);
-src/node.c:506 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol alias = ts_node__alias(&self);
-src/node.c:525 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol = ts_node_symbol(self);
-src/node.c:533 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId ts_node_parse_state(TSNode self) {
-src/node.c:537 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId ts_node_next_parse_state(TSNode self) {
-src/node.c:538 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *language = self.tree->language;
-src/node.c:601 TSFieldId (reference type) -> include/tree_sitter/api.h TSFieldId; graff: ambiguous
-    TSNode ts_node_child_by_field_id(TSNode self, TSFieldId field_id) {
-src/node.c:778 TSFieldId (reference type) -> include/tree_sitter/api.h TSFieldId; graff: ambiguous
-    TSFieldId field_id = ts_language_field_id_for_name(
-src/parser.c:93 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *language;
-src/parser.c:191 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state = ts_stack_state(self->stack, slice.version);
-src/parser.c:227 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state,
 src/parser.c:342 ts_language_is_wasm (call free) -> src/wasm_store.c ts_language_is_wasm#2; graff: ambiguous
     if (ts_language_is_wasm(self->language)) {
 src/parser.c:343 ts_wasm_store_call_lex_main (call free) -> src/wasm_store.c ts_wasm_store_call_lex_main#2; graff: ambiguous
@@ -499,74 +145,24 @@ src/parser.c:425 ts_wasm_store_call_scanner_deserialize (call free) -> src/wasm_
     ts_wasm_store_call_scanner_deserialize(
 src/parser.c:431 ts_wasm_store_has_error (call free) -> src/wasm_store.c ts_wasm_store_has_error#2; graff: ambiguous
     if (ts_wasm_store_has_error(self->wasm_store)) {
-src/parser.c:445 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId external_lex_state
 src/parser.c:447 ts_language_is_wasm (call free) -> src/wasm_store.c ts_language_is_wasm#2; graff: ambiguous
     if (ts_language_is_wasm(self->language)) {
 src/parser.c:448 ts_wasm_store_call_scanner_scan (call free) -> src/wasm_store.c ts_wasm_store_call_scanner_scan#2; graff: ambiguous
     bool result = ts_wasm_store_call_scanner_scan(
 src/parser.c:453 ts_wasm_store_has_error (call free) -> src/wasm_store.c ts_wasm_store_has_error#2; graff: ambiguous
     if (ts_wasm_store_has_error(self->wasm_store)) {
-src/parser.c:472 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state,
-src/parser.c:476 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol leaf_symbol = ts_subtree_leaf_symbol(tree);
-src/parser.c:477 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId leaf_state = ts_subtree_leaf_parse_state(tree);
-src/parser.c:508 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId parse_state
-src/parser.c:570 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol = self->language->external_scanner.symbol_map[self->lexer.data.result_symbol];
-src/parser.c:571 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId next_parse_state = ts_language_next_state(self->language, parse_state, symbol);
-src/parser.c:646 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol = self->lexer.data.result_symbol;
-src/parser.c:705 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state,
-src/parser.c:756 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId *state,
-src/parser.c:818 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol leaf_symbol = ts_subtree_leaf_symbol(result);
-src/parser.c:917 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state,
-src/parser.c:940 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol,
-src/parser.c:1018 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state = ts_stack_state(self->stack, slice_version);
-src/parser.c:1019 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId next_state = ts_language_next_state(self->language, state, symbol);
 src/parser.c:1059 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
     ts_assert(ts_subtree_is_eof(lookahead));
 src/parser.c:1070 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
     ts_assert(!tree.data.is_inline);
 src/parser.c:1088 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
     ts_assert(root.ptr);
-src/parser.c:1139 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol lookahead_symbol
-src/parser.c:1158 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state = ts_stack_state(self->stack, version);
-src/parser.c:1226 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId goal_state
 src/parser.c:1249 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
     ts_assert(error_trees.size == 1);
-src/parser.c:1496 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state = ts_stack_state(self->stack, v);
-src/parser.c:1498 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol missing_symbol = 1;
-src/parser.c:1502 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state_after_missing_symbol = ts_language_next_state(
 src/parser.c:1556 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
     ts_assert(did_merge);
-src/parser.c:1600 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state = ts_stack_state(self->stack, version);
-src/parser.c:1664 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId next_state;
 src/parser.c:2018 ts_wasm_store_delete (call free) -> src/wasm_store.c ts_wasm_store_delete#2; graff: ambiguous
     ts_wasm_store_delete(self->wasm_store);
-src/parser.c:2029 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *ts_parser_language(const TSParser *self) {
-src/parser.c:2033 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    bool ts_parser_set_language(TSParser *self, const TSLanguage *language) {
 src/parser.c:2046 ts_language_is_wasm (call free) -> src/wasm_store.c ts_language_is_wasm#2; graff: ambiguous
     if (ts_language_is_wasm(language)) {
 src/parser.c:2049 ts_wasm_store_start (call free) -> src/wasm_store.c ts_wasm_store_start#2; graff: ambiguous
@@ -581,16 +177,10 @@ src/parser.c:2229 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: a
     ts_assert(self->finished_tree.ptr);
 src/parser.c:2291 ts_language_is_wasm (call free) -> src/wasm_store.c ts_language_is_wasm#2; graff: ambiguous
     if (self->language && ts_language_is_wasm(self->language)) {
-src/parser.c:2293 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *copy = ts_language_copy(self->language);
 src/parser.c:2298 ts_wasm_store_delete (call free) -> src/wasm_store.c ts_wasm_store_delete#2; graff: ambiguous
     ts_wasm_store_delete(self->wasm_store);
 src/parser.c:2303 ts_language_is_wasm (call free) -> src/wasm_store.c ts_language_is_wasm#2; graff: ambiguous
     if (self->language && ts_language_is_wasm(self->language)) {
-src/parser.h:16 TREE_SITTER_API_H_ (reference value) -> include/tree_sitter/api.h (file); graff: external
-    #ifndef TREE_SITTER_API_H_
-src/parser.h:185 UNUSED (reference value) -> src/parser.h UNUSED#2; graff: ambiguous
-    UNUSED                        \
 src/parser.h:186 eof (reference value) -> src/parser.h TSLexer#2; graff: external
     bool eof = false;             \
 src/parser.h:187 lookahead (reference value) -> src/parser.h set_contains; graff: external
@@ -625,132 +215,10 @@ src/parser.h:221 lexer (reference value) -> src/parser.c TSParser; graff: extern
     lexer->result_symbol = symbol_value; \
 src/parser.h:222 lexer (reference value) -> src/parser.c TSParser; graff: external
     lexer->mark_end(lexer);
-src/query.c:105 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol;
-src/query.c:106 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol supertype_symbol;
-src/query.c:107 TSFieldId (reference type) -> include/tree_sitter/api.h TSFieldId; graff: ambiguous
-    TSFieldId field;
-src/query.c:249 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId parse_state;
-src/query.c:250 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol parent_symbol;
-src/query.c:252 TSFieldId (reference type) -> include/tree_sitter/api.h TSFieldId; graff: ambiguous
-    TSFieldId field_id: 15;
-src/query.c:260 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol root_symbol;
-src/query.c:271 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    Array(TSSymbol) finished_parent_symbols;
-src/query.c:282 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state;
-src/query.c:289 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol;
-src/query.c:290 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    Array(TSStateId) start_states;
-src/query.c:302 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId *contents;
-src/query.c:319 TSFieldId (reference type) -> include/tree_sitter/api.h TSFieldId; graff: ambiguous
-    Array(TSFieldId) negated_fields;
-src/query.c:321 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    Array(TSSymbol) repeat_symbols_with_rootless_patterns;
-src/query.c:322 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *language;
-src/query.c:358 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    static const TSSymbol WILDCARD_SYMBOL = 0;
 src/query.c:473 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
     ts_assert(id < self->list.size);
-src/query.c:968 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol,
-src/query.c:1013 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *language
-src/query.c:1018 TSStateId (reference value) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    sizeof(TSStateId)
-src/query.c:1029 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state,
-src/query.c:1030 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId predecessor
-src/query.c:1033 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId *count = &self->contents[index];
-src/query.c:1043 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    static inline const TSStateId *state_predecessor_map_get(
-src/query.c:1045 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state,
-src/query.c:1060 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol = self->stack[i].parent_symbol;
-src/query.c:1101 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    static inline bool analysis_state__has_supertype(AnalysisState *self, TSSymbol symbol) {
-src/query.c:1240 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol needle,
-src/query.c:1252 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol mid_symbol = array_get(&self->steps,
-src/query.c:1259 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol = array_get(&self->steps,
-src/query.c:1280 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol,
-src/query.c:1404 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    const TSStateId parse_state = analysis_state__top(state)->parse_state;
-src/query.c:1405 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    const TSSymbol parent_symbol = analysis_state__top(state)->parent_symbol;
-src/query.c:1406 TSFieldId (reference type) -> include/tree_sitter/api.h TSFieldId; graff: ambiguous
-    const TSFieldId parent_field_id = analysis_state__top(state)->field_id;
-src/query.c:1419 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol sym = lookahead_iterator.symbol;
-src/query.c:1455 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol alias = ts_language_alias_at(self->language, node->production_id, child_index);
-src/query.c:1456 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol visible_symbol = alias
-src/query.c:1461 TSFieldId (reference type) -> include/tree_sitter/api.h TSFieldId; graff: ambiguous
-    TSFieldId field_id = parent_field_id;
-src/query.c:1703 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    const TSSymbol *subtypes = ts_language_subtypes(
-src/query.c:1750 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol parent_symbol = array_get(&self->steps, parent_step_index)->symbol;
-src/query.c:1754 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    for (TSSymbol sym = (uint16_t)self->language->token_count; sym < (uint16_t)self->language->symbol_count; sym++
-src/query.c:1768 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    for (TSStateId state = 1; state < (uint16_t)self->language->state_count; state++) {
-src/query.c:1776 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    const TSSymbol *aliases, *aliases_end;
-src/query.c:1783 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    for (const TSSymbol *symbol = aliases; symbol < aliases_end; symbol++) {
-src/query.c:1804 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId next_state = action->shift.state;
-src/query.c:1813 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    const TSSymbol *aliases, *aliases_end;
-src/query.c:1820 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    for (const TSSymbol *symbol = aliases; symbol < aliases_end; symbol++) {
-src/query.c:1858 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    const TSStateId *predecessors = state_predecessor_map_get(
-src/query.c:1912 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol parent_symbol = array_get(&self->steps, parent_step_index)->symbol;
 src/query.c:1923 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
     ts_assert(child_exists);
-src/query.c:1935 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId parse_state = *array_get(&subgraph->start_states, j);
-src/query.c:2109 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId parse_state = *array_get(&subgraph->start_states, k);
-src/query.c:2142 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol = *array_get(&analysis.finished_parent_symbols, k);
-src/query.c:2152 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol = *array_get(&self->repeat_symbols_with_rootless_patterns, i);
-src/query.c:2180 TSFieldId (reference type) -> include/tree_sitter/api.h TSFieldId; graff: ambiguous
-    TSFieldId *field_ids,
-src/query.c:2191 TSFieldId (reference type) -> include/tree_sitter/api.h TSFieldId; graff: ambiguous
-    TSFieldId existing_field_id = *array_get(&self->negated_fields, i);
-src/query.c:2542 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol;
-src/query.c:2673 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    const TSSymbol *subtypes = ts_language_subtypes(
-src/query.c:2701 TSFieldId (reference type) -> include/tree_sitter/api.h TSFieldId; graff: ambiguous
-    TSFieldId negated_field_ids[MAX_NEGATED_FIELD_COUNT];
-src/query.c:2717 TSFieldId (reference type) -> include/tree_sitter/api.h TSFieldId; graff: ambiguous
-    TSFieldId field_id = ts_language_field_id_for_name(
-src/query.c:2827 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol = ts_language_symbol_for_name(
-src/query.c:2872 TSFieldId (reference type) -> include/tree_sitter/api.h TSFieldId; graff: ambiguous
-    TSFieldId field_id = ts_language_field_id_for_name(
-src/query.c:3021 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *language,
 src/query.c:3376 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
     ts_assert((uint32_t)step_index + i < self->steps.size);
 src/query.c:3484 LOG (call free) -> src/query.c LOG#2; graff: ambiguous
@@ -789,18 +257,8 @@ src/query.c:4099 LOG (call free) -> src/query.c LOG#2; graff: ambiguous
     LOG(
 src/query.c:4138 LOG (call free) -> src/query.c LOG#2; graff: ambiguous
     LOG("halt at root\n");
-src/query.c:4171 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol = ts_node_symbol(node);
-src/query.c:4177 TSFieldId (reference type) -> include/tree_sitter/api.h TSFieldId; graff: ambiguous
-    TSFieldId field_id = 0;
-src/query.c:4178 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol supertypes[8] = {0};
 src/query.c:4189 LOG (call free) -> src/query.c LOG#2; graff: ambiguous
     LOG(
-src/query.c:4306 TSFieldId (reference type) -> include/tree_sitter/api.h TSFieldId; graff: ambiguous
-    TSFieldId *negated_field_ids = array_get(&self->query->negated_fields, step->negated_field_list_id);
-src/query.c:4308 TSFieldId (reference type) -> include/tree_sitter/api.h TSFieldId; graff: ambiguous
-    TSFieldId negated_field_id = *negated_field_ids;
 src/query.c:4324 LOG (call free) -> src/query.c LOG#2; graff: ambiguous
     LOG(
 src/query.c:4349 LOG (call free) -> src/query.c LOG#2; graff: ambiguous
@@ -825,34 +283,14 @@ src/query.c:4621 LOG (call free) -> src/query.c LOG#2; graff: ambiguous
     LOG("  finish pattern %u\n", state->pattern_index);
 src/query.c:4851 LOG (call free) -> src/query.c LOG#2; graff: ambiguous
     LOG(
-src/stack.c:30 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state;
 src/stack.c:85 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
     ts_assert(self->ref_count > 0);
 src/stack.c:87 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
     ts_assert(self->ref_count != 0);
 src/stack.c:96 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
     ts_assert(self->ref_count != 0);
-src/stack.c:142 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state,
-src/stack.c:474 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId ts_stack_state(const Stack *self, StackVersion version) {
-src/stack.c:517 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state
-src/stack.c:525 forceinline (reference type) -> src/stack.c forceinline#2; graff: ambiguous
-    forceinline StackAction pop_count_callback(void *payload, const StackIterator *iterator) {
-src/stack.c:539 forceinline (reference type) -> src/stack.c forceinline#2; graff: ambiguous
-    forceinline StackAction pop_pending_callback(void *payload, const StackIterator *iterator) {
-src/stack.c:561 forceinline (reference type) -> src/stack.c forceinline#2; graff: ambiguous
-    forceinline StackAction pop_error_callback(void *payload, const StackIterator *iterator) {
 src/stack.c:582 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
     ts_assert(pop.size == 1);
-src/stack.c:592 forceinline (reference type) -> src/stack.c forceinline#2; graff: ambiguous
-    forceinline StackAction pop_all_callback(void *payload, const StackIterator *iterator) {
-src/stack.c:606 forceinline (reference type) -> src/stack.c forceinline#2; graff: ambiguous
-    forceinline StackAction summarize_stack_callback(void *payload, const StackIterator *iterator) {
-src/stack.c:608 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state = iterator->node->state;
 src/stack.c:678 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
     ts_assert(v2 < v1);
 src/stack.c:679 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
@@ -861,122 +299,42 @@ src/stack.c:698 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: amb
     ts_assert(version < self->heads.size);
 src/stack.c:759 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
     ts_assert(head->status == StackStatusPaused);
-src/stack.c:780 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    bool ts_stack_print_dot_graph(Stack *self, const TSLanguage *language, FILE *f) {
-src/stack.h:26 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state;
-src/stack.h:44 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId ts_stack_state(const Stack *self, StackVersion version);
-src/stack.h:60 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    void ts_stack_push(Stack *self, StackVersion version, Subtree subtree, bool pending, TSStateId state);
-src/stack.h:127 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    bool ts_stack_print_dot_graph(Stack *self, const TSLanguage *language, FILE *f);
 src/subtree.c:137 SubtreeHeapData (reference type) -> src/subtree.h Subtree; graff: external
     static SubtreeHeapData *ts_subtree_pool_allocate(SubtreePool *self) {
 src/subtree.c:141 SubtreeHeapData (reference value) -> src/subtree.h Subtree; graff: external
     return ts_malloc(sizeof(SubtreeHeapData));
 src/subtree.c:145 SubtreeHeapData (reference type) -> src/subtree.h Subtree; graff: external
     static void ts_subtree_pool_free(SubtreePool *self, SubtreeHeapData *tree) {
-src/subtree.c:167 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    SubtreePool *pool, TSSymbol symbol, Length padding, Length size,
-src/subtree.c:168 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    uint32_t lookahead_bytes, TSStateId parse_state,
-src/subtree.c:170 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    bool is_keyword, const TSLanguage *language
 src/subtree.c:199 SubtreeHeapData (reference type) -> src/subtree.h Subtree; graff: external
     SubtreeHeapData *data = ts_subtree_pool_allocate(pool);
 src/subtree.c:200 SubtreeHeapData (reference type) -> src/subtree.h Subtree; graff: external
     *data = (SubtreeHeapData) {
-src/subtree.c:228 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol,
-src/subtree.c:229 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *language
 src/subtree.c:233 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
     ts_assert(symbol < UINT8_MAX);
-src/subtree.c:246 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    uint32_t bytes_scanned, TSStateId parse_state, const TSLanguage *language
-src/subtree.c:246 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    uint32_t bytes_scanned, TSStateId parse_state, const TSLanguage *language
 src/subtree.c:252 SubtreeHeapData (reference type) -> src/subtree.h Subtree; graff: external
     SubtreeHeapData *data = (SubtreeHeapData *)result.ptr;
 src/subtree.c:265 SubtreeHeapData (reference type) -> src/subtree.h Subtree; graff: external
     SubtreeHeapData *result = (SubtreeHeapData *)&new_children[self.ptr->child_count];
-src/subtree.c:295 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *language,
-src/subtree.c:301 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol = tree.ptr->symbol;
-src/subtree.c:350 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *language
 src/subtree.c:352 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
     ts_assert(!self.data.is_inline);
-src/subtree.c:365 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    const TSSymbol *alias_sequence = ts_language_alias_sequence(language, self.ptr->production_id);
 src/subtree.c:403 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
     ts_assert(ts_subtree_error_cost(child) >= extent_cost);
-src/subtree.c:492 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol,
-src/subtree.c:495 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *language
 src/subtree.c:506 SubtreeHeapData (reference type) -> src/subtree.h Subtree; graff: external
     SubtreeHeapData *data = (SubtreeHeapData *)&children->contents[children->size];
 src/subtree.c:508 SubtreeHeapData (reference type) -> src/subtree.h Subtree; graff: external
     *data = (SubtreeHeapData) {
-src/subtree.c:537 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *language
-src/subtree.c:552 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol,
-src/subtree.c:553 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state,
-src/subtree.c:556 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *language
 src/subtree.c:565 SubtreeHeapData (reference type) -> src/subtree.h Subtree; graff: external
     ((SubtreeHeapData *)result.ptr)->is_missing = true;
 src/subtree.c:572 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
     ts_assert(self.ptr->ref_count > 0);
-src/subtree.c:573 atomic_inc (call free) -> src/atomic.h atomic_inc#3; graff: ambiguous
-    atomic_inc((volatile uint32_t *)&self.ptr->ref_count);
 src/subtree.c:574 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
     ts_assert(self.ptr->ref_count != 0);
 src/subtree.c:581 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
     ts_assert(self.ptr->ref_count > 0);
-src/subtree.c:582 atomic_dec (call free) -> src/atomic.h atomic_dec#3; graff: ambiguous
-    if (atomic_dec((volatile uint32_t *)&self.ptr->ref_count) == 0) {
 src/subtree.c:593 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
     ts_assert(child.ptr->ref_count > 0);
-src/subtree.c:594 atomic_dec (call free) -> src/atomic.h atomic_dec#3; graff: ambiguous
-    if (atomic_dec((volatile uint32_t *)&child.ptr->ref_count) == 0) {
 src/subtree.c:709 SubtreeHeapData (reference type) -> src/subtree.h Subtree; graff: external
     SubtreeHeapData *data = ts_subtree_pool_allocate(pool);
-src/subtree.c:835 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol alias_symbol;
-src/subtree.c:844 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    const TSSymbol *alias_sequence;
-src/subtree.c:851 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *language, bool include_all,
-src/subtree.c:852 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol root_alias_symbol, bool root_alias_is_named, const char *root_field_name
-src/subtree.c:904 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol = frame->alias_symbol ? frame->alias_symbol : ts_subtree_symbol(node);
-src/subtree.c:918 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol = frame->alias_symbol ? frame->alias_symbol : ts_subtree_symbol(node);
-src/subtree.c:953 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol subtree_alias_symbol = frame->alias_sequence
-src/subtree.c:990 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol alias_symbol,
-src/subtree.c:992 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *language,
-src/subtree.c:1011 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *language, TSSymbol alias_symbol,
-src/subtree.c:1011 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    const TSLanguage *language, TSSymbol alias_symbol,
-src/subtree.c:1013 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol subtree_symbol = ts_subtree_symbol(*self);
-src/subtree.c:1014 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol = alias_symbol ? alias_symbol : subtree_symbol;
-src/subtree.c:1055 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol subtree_alias_symbol = 0;
-src/subtree.c:1066 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    void ts_subtree_print_dot_graph(Subtree self, const TSLanguage *language, FILE *f) {
 src/subtree.h:53 visible (reference value) -> src/subtree.h Subtree; graff: external
     bool visible : 1;     \
 src/subtree.h:54 named (reference value) -> src/parser.h TSSymbolMetadata, src/subtree.h SUBTREE_BITS, src/subtree.h Subtree; graff: external
@@ -999,62 +357,14 @@ src/subtree.h:64 padding_bytes (reference value) -> src/subtree.h SUBTREE_SIZE; 
     uint8_t padding_bytes;       \
 src/subtree.h:65 size_bytes (reference value) -> src/subtree.h SUBTREE_SIZE; graff: external
     uint8_t size_bytes;
-src/subtree.h:68 TS_PTR_SIZE (reference value) -> src/host.h TS_PTR_SIZE#2; graff: ambiguous
-    #if TS_PTR_SIZE == 32
 src/subtree.h:111 typedef (reference type) -> src/subtree.h Subtree; graff: external
     typedef struct {
-src/subtree.h:118 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol;
-src/subtree.h:119 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId parse_state;
-src/subtree.h:143 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol;
-src/subtree.h:144 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId parse_state;
 src/subtree.h:157 typedef (reference type) -> src/subtree.h Subtree; graff: external
     typedef union {
 src/subtree.h:159 SubtreeHeapData (reference type) -> src/subtree.h Subtree; graff: external
     const SubtreeHeapData *ptr;
 src/subtree.h:165 SubtreeHeapData (reference type) -> src/subtree.h Subtree; graff: external
     SubtreeHeapData *ptr;
-src/subtree.h:191 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    SubtreePool *pool, TSSymbol symbol, Length padding, Length size,
-src/subtree.h:192 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    uint32_t lookahead_bytes, TSStateId parse_state,
-src/subtree.h:194 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    bool is_keyword, const TSLanguage *language
-src/subtree.h:198 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    uint32_t bytes_scanned, TSStateId parse_state, const TSLanguage *language
-src/subtree.h:198 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    uint32_t bytes_scanned, TSStateId parse_state, const TSLanguage *language
-src/subtree.h:201 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol,
-src/subtree.h:204 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *language
-src/subtree.h:209 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage * language
-src/subtree.h:213 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol symbol,
-src/subtree.h:214 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    TSStateId state,
-src/subtree.h:217 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *language
-src/subtree.h:223 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    void ts_subtree_set_symbol(MutableSubtree *self, TSSymbol symbol, const TSLanguage *language);
-src/subtree.h:223 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    void ts_subtree_set_symbol(MutableSubtree *self, TSSymbol symbol, const TSLanguage *language);
-src/subtree.h:224 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    void ts_subtree_compress(MutableSubtree self, unsigned count, const TSLanguage *language, MutableSubtreeArray 
-src/subtree.h:225 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    void ts_subtree_summarize_children(MutableSubtree self, const TSLanguage *language);
-src/subtree.h:227 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    char *ts_subtree_string(Subtree self, TSSymbol alias_symbol, bool alias_is_named, const TSLanguage *language, 
-src/subtree.h:227 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    char *ts_subtree_string(Subtree self, TSSymbol alias_symbol, bool alias_is_named, const TSLanguage *language, 
-src/subtree.h:228 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    void ts_subtree_print_dot_graph(Subtree self, const TSLanguage *language, FILE *f);
-src/subtree.h:235 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    static inline TSSymbol ts_subtree_symbol(Subtree self) { return SUBTREE_GET(self, symbol); }
 src/subtree.h:235 symbol (reference value) -> src/subtree.h Subtree; graff: external
     static inline TSSymbol ts_subtree_symbol(Subtree self) { return SUBTREE_GET(self, symbol); }
 src/subtree.h:236 visible (reference value) -> src/subtree.h Subtree; graff: external
@@ -1069,66 +379,12 @@ src/subtree.h:240 is_missing (reference value) -> src/subtree.h Subtree; graff: 
     static inline bool ts_subtree_missing(Subtree self) { return SUBTREE_GET(self, is_missing); }
 src/subtree.h:241 is_keyword (reference value) -> src/subtree.h Subtree; graff: external
     static inline bool ts_subtree_is_keyword(Subtree self) { return SUBTREE_GET(self, is_keyword); }
-src/subtree.h:242 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    static inline TSStateId ts_subtree_parse_state(Subtree self) { return SUBTREE_GET(self, parse_state); }
 src/subtree.h:242 parse_state (reference value) -> src/subtree.h Subtree; graff: external
     static inline TSStateId ts_subtree_parse_state(Subtree self) { return SUBTREE_GET(self, parse_state); }
 src/subtree.h:243 lookahead_bytes (reference value) -> src/subtree.h Subtree; graff: external
     static inline uint32_t ts_subtree_lookahead_bytes(Subtree self) { return SUBTREE_GET(self, lookahead_bytes); }
 src/subtree.h:250 SubtreeHeapData (reference value) -> src/subtree.h Subtree; graff: external
     return child_count * sizeof(Subtree) + sizeof(SubtreeHeapData);
-src/subtree.h:266 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    static inline TSSymbol ts_subtree_leaf_symbol(Subtree self) {
-src/subtree.h:272 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    static inline TSStateId ts_subtree_leaf_parse_state(Subtree self) {
-src/tree.c:11 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    Subtree root, const TSLanguage *language,
-src/tree.c:68 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *ts_tree_language(const TSTree *self) {
-src/tree.c:72 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *result = __atomic_load_n(
-src/tree.c:77 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *candidate = ts_language_copy_without_callbacks(self->language);
-src/tree.c:156 _ts_dup (call free) -> src/tree.c _ts_dup#2; graff: ambiguous
-    FILE *file = _fdopen(_ts_dup((HANDLE)_get_osfhandle(fd)), "a");
-src/tree.c:170 _ts_dup (call free) -> src/tree.c _ts_dup#2; graff: ambiguous
-    FILE *file = fdopen(_ts_dup(file_descriptor), "a");
-src/tree.h:14 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol alias_symbol;
-src/tree.h:19 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *language;
-src/tree.h:24 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *volatile unparseable_language;
-src/tree.h:30 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    TSTree *ts_tree_new(Subtree root, const TSLanguage *language, const TSRange *included_ranges, unsigned include
-src/tree.h:31 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSNode ts_node_new(const TSTree *tree, const Subtree *subtree, Length position, TSSymbol alias);
-src/tree_cursor.c:18 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    const TSSymbol *alias_sequence;
-src/tree_cursor.c:44 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    const TSSymbol *alias_sequence = ts_language_alias_sequence(
-src/tree_cursor.c:487 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol alias_symbol = is_extra ? 0 : self->root_alias_symbol;
-src/tree_cursor.c:508 TSFieldId (reference type) -> include/tree_sitter/api.h TSFieldId; graff: ambiguous
-    TSFieldId *field_id,
-src/tree_cursor.c:512 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol *supertypes,
-src/tree_cursor.c:529 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    const TSSymbol *alias_sequence = ts_language_alias_sequence(
-src/tree_cursor.c:544 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol entry_symbol = subtree_symbol(
-src/tree_cursor.c:642 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol alias_symbol = 0;
-src/tree_cursor.c:664 TSFieldId (reference type) -> include/tree_sitter/api.h TSFieldId; graff: ambiguous
-    TSFieldId ts_tree_cursor_current_field_id(const TSTreeCursor *_self) {
-src/tree_cursor.c:696 TSFieldId (reference type) -> include/tree_sitter/api.h TSFieldId; graff: ambiguous
-    TSFieldId id = ts_tree_cursor_current_field_id(_self);
-src/tree_cursor.h:17 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol root_alias_symbol;
-src/tree_cursor.h:29 TSFieldId (reference type) -> include/tree_sitter/api.h TSFieldId; graff: ambiguous
-    TSFieldId *field_id,
-src/tree_cursor.h:33 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol; graff: ambiguous
-    TSSymbol *supertypes,
 src/unicode/umachine.h:88 U_ATTRIBUTE_DEPRECATED (reference value) -> src/unicode/umachine.h U_ATTRIBUTE_DEPRECATED#3; graff: ambiguous
     #ifndef U_ATTRIBUTE_DEPRECATED
 src/unicode/umachine.h:115 U_ATTRIBUTE_DEPRECATED (reference value) -> src/unicode/umachine.h U_ATTRIBUTE_DEPRECATED#3; graff: ambiguous
@@ -1141,8 +397,6 @@ src/unicode/umachine.h:206 int32_t (reference value) -> src/unicode/utf8.h int32
     #   define INT32_MAX       ((int32_t)(2147483647))
 src/unicode/umachine.h:215 uint16_t (reference value) -> src/unicode/umachine.h UChar#4; graff: external
     #   define UINT16_MAX      ((uint16_t)(65535U))
-src/unicode/umachine.h:365 uint16_t (reference value) -> src/unicode/umachine.h UChar#4; graff: external
-    #   define UCHAR_TYPE uint16_t
 src/unicode/utf16.h:112 UChar32 (reference value) -> src/unicode/umachine.h UChar32, src/unicode/utf8.h UChar32; graff: ambiguous
     (((UChar32)(lead)<<10UL)+(UChar32)(trail)-U16_SURROGATE_OFFSET)
 src/unicode/utf16.h:122 UChar (reference value) -> src/unicode/umachine.h UChar#4; graff: ambiguous
@@ -1315,127 +569,3 @@ src/wasm-stdlib/libc/string/strchrnul.c:75 __strchrnul (reference value) -> src/
     weak_alias(__strchrnul, strchrnul);
 src/wasm-stdlib/libc/string/strchrnul.c:75 strchrnul (reference value) -> src/wasm-stdlib/libc/string/strchrnul.c (file); graff: external
     weak_alias(__strchrnul, strchrnul);
-src/wasm_store.c:57 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage, src/parser.h TSLanguage, src/parser.h TSLanguage#2; graff: ambiguous
-    TSLanguage language;
-src/wasm_store.c:67 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage, src/parser.h TSLanguage, src/parser.h TSLanguage#2; graff: ambiguous
-    static inline TSWasmLanguage *ts_language__wasm_language(const TSLanguage *self) {
-src/wasm_store.c:150 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol, src/parser.h TSSymbol; graff: ambiguous
-    TSSymbol keyword_capture_token;
-src/wasm_store.c:168 TSLanguageMetadata (reference type) -> include/tree_sitter/api.h TSLanguageMetadata, src/parser.h TSLanguageMetadata, src/parser.h TSLanguageMetadata; graff: ambiguous
-    TSLanguageMetadata metadata;
-src/wasm_store.c:175 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol, src/parser.h TSSymbol; graff: ambiguous
-    TSSymbol result_symbol;
-src/wasm_store.c:311 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
-    ts_assert(args_and_results_len == 2);
-src/wasm_store.c:335 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
-    ts_assert(args_and_results_len == 2);
-src/wasm_store.c:546 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage, src/parser.h TSLanguage, src/parser.h TSLanguage#2; graff: ambiguous
-    TSLanguage *language = &result->language;
-src/wasm_store.c:606 atomic_inc (call free) -> src/atomic.h atomic_inc#3; graff: ambiguous
-    atomic_inc(&self->ref_count);
-src/wasm_store.c:611 atomic_dec (call free) -> src/atomic.h atomic_dec#3; graff: ambiguous
-    if (atomic_dec(&self->ref_count) == 0) {
-src/wasm_store.c:638 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
-    ts_assert(!error);
-src/wasm_store.c:644 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
-    ts_assert(!error);
-src/wasm_store.c:692 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
-    ts_assert(!error);
-src/wasm_store.c:891 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
-    ts_assert(!error);
-src/wasm_store.c:963 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
-    ts_assert(exists);
-src/wasm_store.c:1042 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
-    ts_assert(!error);
-src/wasm_store.c:1117 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
-    ts_assert(succeeded);
-src/wasm_store.c:1118 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
-    ts_assert(value.kind == WASMTIME_FUNCREF);
-src/wasm_store.c:1243 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
-    ts_assert(exists);
-src/wasm_store.c:1279 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
-    ts_assert(!error);
-src/wasm_store.c:1315 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId, src/parser.h TSStateId; graff: ambiguous
-    static bool ts_wasm_store__sentinel_lex_fn(TSLexer *_lexer, TSStateId state) {
-src/wasm_store.c:1319 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *ts_wasm_store_load_language(
-src/wasm_store.c:1330 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    TSLanguage *language = NULL;
-src/wasm_store.c:1443 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    *language = (TSLanguage) {
-src/wasm_store.c:1486 TSSymbol (reference value) -> include/tree_sitter/api.h TSSymbol, src/parser.h TSSymbol; graff: ambiguous
-    (wasm_language.symbol_count + wasm_language.alias_count) * sizeof(TSSymbol),
-src/wasm_store.c:1538 TSSymbol (reference value) -> include/tree_sitter/api.h TSSymbol, src/parser.h TSSymbol; graff: ambiguous
-    wasm_language.supertype_count * sizeof(TSSymbol),
-src/wasm_store.c:1547 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol, src/parser.h TSSymbol; graff: ambiguous
-    TSSymbol supertype = language->supertype_symbols[i];
-src/wasm_store.c:1567 TSSymbol (reference value) -> include/tree_sitter/api.h TSSymbol, src/parser.h TSSymbol; graff: ambiguous
-    supertype_map_entry_count * sizeof(TSSymbol),
-src/wasm_store.c:1577 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol, src/parser.h TSSymbol; graff: ambiguous
-    TSSymbol symbol;
-src/wasm_store.c:1581 TSSymbol (reference value) -> include/tree_sitter/api.h TSSymbol, src/parser.h TSSymbol; graff: ambiguous
-    alias_map_size += sizeof(TSSymbol);
-src/wasm_store.c:1588 TSSymbol (reference value) -> include/tree_sitter/api.h TSSymbol, src/parser.h TSSymbol; graff: ambiguous
-    alias_map_size += value_count * sizeof(TSSymbol);
-src/wasm_store.c:1599 TSSymbol (reference value) -> include/tree_sitter/api.h TSSymbol, src/parser.h TSSymbol; graff: ambiguous
-    wasm_language.production_id_count * wasm_language.max_alias_sequence_length * sizeof(TSSymbol),
-src/wasm_store.c:1627 TSStateId (reference value) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    wasm_language.state_count * sizeof(TSStateId),
-src/wasm_store.c:1652 TSSymbol (reference value) -> include/tree_sitter/api.h TSSymbol, src/parser.h TSSymbol; graff: ambiguous
-    reserved_word_count * sizeof(TSSymbol),
-src/wasm_store.c:1663 TSSymbol (reference value) -> include/tree_sitter/api.h TSSymbol, src/parser.h TSSymbol; graff: ambiguous
-    wasm_language.external_token_count * sizeof(TSSymbol),
-src/wasm_store.c:1729 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *language,
-src/wasm_store.c:1809 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
-    ts_assert(!error);
-src/wasm_store.c:1810 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
-    ts_assert(!trap);
-src/wasm_store.c:1813 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    bool ts_wasm_store_start(TSWasmStore *self, TSLexer *lexer, const TSLanguage *language) {
-src/wasm_store.c:1868 TSSymbol (reference type) -> include/tree_sitter/api.h TSSymbol, src/parser.h TSSymbol; graff: ambiguous
-    TSSymbol result_symbol;
-src/wasm_store.c:1871 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    static bool ts_wasm_store__call_lex_function(TSWasmStore *self, wasmtime_func_t *func, TSStateId state) {
-src/wasm_store.c:1896 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    bool ts_wasm_store_call_lex_main(TSWasmStore *self, TSStateId state) {
-src/wasm_store.c:1904 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    bool ts_wasm_store_call_lex_keyword(TSWasmStore *self, TSStateId state) {
-src/wasm_store.c:2021 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    bool ts_language_is_wasm(const TSLanguage *self) {
-src/wasm_store.c:2025 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    void ts_wasm_language_retain(const TSLanguage *self) {
-src/wasm_store.c:2027 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
-    ts_assert(language->ref_count > 0);
-src/wasm_store.c:2028 atomic_inc (call free) -> src/atomic.h atomic_inc#3; graff: ambiguous
-    atomic_inc(&language->ref_count);
-src/wasm_store.c:2031 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    void ts_wasm_language_release(const TSLanguage *self) {
-src/wasm_store.c:2033 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
-    ts_assert(language->ref_count > 0);
-src/wasm_store.c:2034 atomic_dec (call free) -> src/atomic.h atomic_dec#3; graff: ambiguous
-    if (atomic_dec(&language->ref_count) == 0) {
-src/wasm_store.c:2037 atomic_inc (call free) -> src/atomic.h atomic_inc#3; graff: ambiguous
-    atomic_inc(&language->language_id->is_language_deleted);
-src/wasm_store.c:2087 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    const TSLanguage *language
-src/wasm_store.c:2099 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    bool ts_wasm_store_call_lex_main(TSWasmStore *self, TSStateId state) {
-src/wasm_store.c:2105 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    bool ts_wasm_store_call_lex_keyword(TSWasmStore *self, TSStateId state) {
-src/wasm_store.c:2163 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    bool ts_language_is_wasm(const TSLanguage *self) {
-src/wasm_store.c:2168 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    void ts_wasm_language_retain(const TSLanguage *self) {
-src/wasm_store.c:2172 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    void ts_wasm_language_release(const TSLanguage *self) {
-src/wasm_store.h:11 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    bool ts_wasm_store_start(TSWasmStore *self, TSLexer *lexer, const TSLanguage *language);
-src/wasm_store.h:15 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    bool ts_wasm_store_call_lex_main(TSWasmStore *self, TSStateId state);
-src/wasm_store.h:16 TSStateId (reference type) -> include/tree_sitter/api.h TSStateId; graff: ambiguous
-    bool ts_wasm_store_call_lex_keyword(TSWasmStore *self, TSStateId state);
-src/wasm_store.h:24 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    void ts_wasm_language_retain(const TSLanguage *self);
-src/wasm_store.h:25 TSLanguage (reference type) -> include/tree_sitter/api.h TSLanguage; graff: ambiguous
-    void ts_wasm_language_release(const TSLanguage *self);

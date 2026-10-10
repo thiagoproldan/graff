@@ -3,8 +3,11 @@ the definition it reaches -- against clangd's answers to
 textDocument/definition at each of them, with the corpus built as its build
 says: CMake's compile_commands.json, or one written from the flags given.
 
-clangd reads each file as the compiler does, past the preprocessor, so a
-name in a branch the build leaves out has no answer and is not judged.
+clangd reads each file as the compiler does, past the preprocessor. In a
+branch the build leaves out it still answers, by looking the word up in its
+index of the definitions the build reads (its textual fallback), which says
+nothing of what a build that takes the branch reads: a name in a region
+clangd says is inactive (its `inactiveRegions` extension) is not judged.
 Every file is opened, and asked only once clangd has built it, so that its
 index knows the definitions of the files the corpus has; where it still
 answers with a prototype, that prototype is its answer, and where it answers
@@ -77,18 +80,34 @@ def declared_elsewhere(places, calls):
 
 
 class Clangd(Server):
-    """clangd over its stdin and stdout, which says when it has built a file."""
+    """clangd over its stdin and stdout, which says when it has built a file,
+    and which regions of it the build leaves out."""
+
+    CAPABILITIES = {**Server.CAPABILITIES,
+                    "textDocument": {"inactiveRegionsCapabilities": {"inactiveRegions": True}}}
 
     def __init__(self, root):
         self.built = set()
+        # Each file's inactive regions, by its URI: ((line, character) of
+        # the start, of the end), lines from 0.
+        self.inactive = {}
         Server.__init__(self, root)
+
+    def note(self, message):
+        """What clangd says of a file it has built."""
+        method, params = message.get("method"), message.get("params") or {}
+        if method == "textDocument/publishDiagnostics":
+            self.built.add(params["uri"])
+        elif method == "textDocument/inactiveRegions":
+            self.inactive[params["textDocument"]["uri"]] = [
+                ((r["start"]["line"], r["start"]["character"]), (r["end"]["line"], r["end"]["character"]))
+                for r in params["regions"]]
 
     def answer(self, asked):
         while True:
             message = self.receive()
             if "method" in message:
-                if message["method"] == "textDocument/publishDiagnostics":
-                    self.built.add(message["params"]["uri"])
+                self.note(message)
                 if "id" in message:
                     self.send({"jsonrpc": "2.0", "id": message["id"], "result": None})
                 continue
@@ -99,10 +118,14 @@ class Clangd(Server):
         """Until clangd has built each file: it says so with its diagnostics."""
         while not set(uris) <= self.built:
             message = self.receive()
-            if message.get("method") == "textDocument/publishDiagnostics":
-                self.built.add(message["params"]["uri"])
-            elif "method" in message and "id" in message:
+            self.note(message)
+            if "method" in message and "id" in message:
                 self.send({"jsonrpc": "2.0", "id": message["id"], "result": None})
+
+    def left_out(self, uri, line, character):
+        """Whether a place, its line from 0, is in a region the build leaves
+        out."""
+        return any(start <= (line, character) <= end for start, end in self.inactive.get(uri, []))
 
     def open(self, uri, text):
         self.notify("textDocument/didOpen",
@@ -111,7 +134,9 @@ class Clangd(Server):
 
 def ask(root, files, edges, server_command):
     """clangd's places at each of graff's names, by the question each edge
-    asks, as pyright.py's ask gives them. Each edge holds its column."""
+    asks, as pyright.py's ask gives them, none for a name in a region the
+    build leaves out; how many names had no column, and how many such
+    regions and names there were. Each edge holds its column."""
     texts = {}
     for path in files:
         with open(os.path.join(root, path), encoding="utf-8", errors="replace", newline="") as file:
@@ -126,7 +151,7 @@ def ask(root, files, edges, server_command):
     for edge in edges:
         if edge["use"].startswith("call") and edge["column"] is not None:
             calls[edge["name"]].add((uris[edge["path"]], edge["line"] - 1, edge["column"]))
-    asked, unplaced, seen = {}, 0, set()
+    asked, unplaced, seen, where = {}, 0, set(), {}
     prefix = f"file://{root}/"
     for edge in edges:
         key = site(edge)
@@ -137,12 +162,20 @@ def ask(root, files, edges, server_command):
         if character is None:
             unplaced += 1
             continue
-        places = declared_elsewhere(server.definition(uris[edge["path"]], edge["line"] - 1, character),
-                                    calls[edge["name"]])
+        where[key] = (uris[edge["path"]], edge["line"] - 1, character)
+        places = declared_elsewhere(server.definition(*where[key]), calls[edge["name"]])
         asked[key] = [(target[len(prefix):] if target.startswith(prefix) else None, line + 1, column_, module)
                       for target, line, column_, module in places]
+    # Every file built, headers too, so that each has said its regions.
+    server.wait(list(uris.values()))
+    inactive = 0
+    for key, place in where.items():
+        if server.left_out(*place):
+            asked[key] = []
+            inactive += 1
+    regions = sum(len(found) for found in server.inactive.values())
     server.close()
-    return asked, unplaced
+    return asked, unplaced, (regions, sum(1 for found in server.inactive.values() if found), inactive)
 
 
 def graphify_calls(graph, files):
@@ -269,7 +302,7 @@ def main():
         extractions = {item["path"]: item["extraction"] for item in map(json.loads, extracted)}
         edges = edges_of(False)
         server = [clangd, f"--compile-commands-dir={commands_dir}", "--background-index=false", "--log=error"]
-        asked, unplaced = ask(root, files, edges, server)
+        asked, unplaced, (regions, regioned, inactive) = ask(root, files, edges, server)
         broken = summary(*score(edges_of(True), asked, extractions, texts)[:2])
         judged, found, wrong, missed, others = score(edges, asked, extractions, texts)
         real = summary(judged, found)
@@ -288,7 +321,8 @@ def main():
         graff_version(),
         f"corpus {name}: {described}, {len(files)} C files, {translation_units} translation units",
         f"truth: {version} (nixpkgs), {built_by}, --background-index=false, every file opened and built first",
-        f"  {len(asked)} names asked, {answered} answered; {unplaced} names not found on their line",
+        f"  {len(asked)} names asked, {answered} answered; {unplaced} names not found on their line; "
+        f"{inactive} in the {regions} regions of {regioned} files clangd says the build leaves out, not judged",
         "",
         f"broken resolver: precision {broken['precision']:.3f}, recall {broken['recall']:.3f}",
         f"graff: precision {real['precision']:.3f} ({real['correct']} of {real['correct'] + real['wrong']} judged; "

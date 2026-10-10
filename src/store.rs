@@ -20,12 +20,14 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use rusqlite::functions::FunctionFlags;
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
-use crate::extract::{self, Call, CallKind, Extraction, Import, Kind, RefKind, Reference, Symbol};
+use crate::extract::{
+    self, Branch, Call, CallKind, Extraction, Import, Kind, RefKind, Reference, Symbol,
+};
 use crate::lang::Language;
 
 /// Bumped whenever the tables change: an index of another version is dropped
 /// and built again, as a cache may be.
-const SCHEMA: i64 = 6;
+const SCHEMA: i64 = 7;
 
 /// A file written this close before graff saw it may be written again within
 /// the same tick of the file system's clock and keep its stat, so it is hashed
@@ -44,6 +46,7 @@ const TABLES: &str = "
         extractor INTEGER NOT NULL,
         syntax_error INTEGER NOT NULL,
         too_deep INTEGER NOT NULL,
+        guard TEXT,
         -- When a worktree last let go of it, in nanoseconds since 1970.
         released INTEGER NOT NULL,
         UNIQUE (blob, language, extractor)
@@ -98,6 +101,13 @@ const TABLES: &str = "
         via TEXT
     );
     CREATE INDEX imports_by_content ON imports (content);
+    CREATE TABLE branches (
+        content INTEGER NOT NULL REFERENCES contents (id) ON DELETE CASCADE,
+        start INTEGER NOT NULL,
+        end INTEGER NOT NULL,
+        condition TEXT NOT NULL
+    );
+    CREATE INDEX branches_by_content ON branches (content);
     CREATE TABLE worktrees (
         id INTEGER PRIMARY KEY,
         root TEXT NOT NULL UNIQUE
@@ -606,27 +616,39 @@ impl Store {
             )
             .optional()?
             .unwrap_or(-1);
-        let files: Vec<(String, i64, String, String)> = self
+        let files: Vec<(String, i64, String, String, Option<String>)> = self
             .connection
             .prepare(
-                "SELECT f.path, f.content, c.language, c.blob FROM files f JOIN contents c ON c.id = f.content
+                "SELECT f.path, f.content, c.language, c.blob, c.guard FROM files f JOIN contents c ON c.id = f.content
                  WHERE f.worktree = ?1 ORDER BY f.path",
             )?
             .query_map([id], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
             })?
             .collect::<Result<_, _>>()?;
         let mut worktree = Worktree {
             files: files
                 .iter()
-                .map(|(path, _, _, _)| (path.clone(), Extraction::default()))
+                .map(|(path, _, _, _, guard)| {
+                    let extraction = Extraction {
+                        guard: guard.clone(),
+                        ..Extraction::default()
+                    };
+                    (path.clone(), extraction)
+                })
                 .collect(),
             languages: files
                 .iter()
-                .map(|(_, _, language, _)| known(Language::from_name, language))
+                .map(|(_, _, language, _, _)| known(Language::from_name, language))
                 .collect::<Result<_, _>>()?,
-            contents: files.iter().map(|(_, content, _, _)| *content).collect(),
-            blobs: files.into_iter().map(|(_, _, _, blob)| blob).collect(),
+            contents: files.iter().map(|(_, content, _, _, _)| *content).collect(),
+            blobs: files.into_iter().map(|(_, _, _, blob, _)| blob).collect(),
             id,
         };
         let holders = worktree.holders();
@@ -668,6 +690,21 @@ impl Store {
             };
             for &f in holders.get(&row.get(0)?).into_iter().flatten() {
                 worktree.files[f].1.imports.push(import.clone());
+            }
+        }
+        let mut query = self.connection.prepare(
+            "SELECT content, start, end, condition FROM branches
+             WHERE content IN (SELECT content FROM files WHERE worktree = ?1) ORDER BY rowid",
+        )?;
+        let mut rows = query.query([id])?;
+        while let Some(row) = rows.next()? {
+            let branch = Branch {
+                start: row.get(1)?,
+                end: row.get(2)?,
+                condition: row.get(3)?,
+            };
+            for &f in holders.get(&row.get(0)?).into_iter().flatten() {
+                worktree.files[f].1.branches.push(branch.clone());
             }
         }
         Ok(worktree)
@@ -912,13 +949,14 @@ struct Inserts<'t> {
     call: rusqlite::Statement<'t>,
     reference: rusqlite::Statement<'t>,
     import: rusqlite::Statement<'t>,
+    branch: rusqlite::Statement<'t>,
 }
 
 impl<'t> Inserts<'t> {
     fn prepare(transaction: &'t Transaction) -> Result<Inserts<'t>, Error> {
         Ok(Inserts {
             content: transaction.prepare(
-                "INSERT INTO contents (blob, language, extractor, syntax_error, too_deep, released) VALUES (?1, ?2, ?3, ?4, ?5, 0)",
+                "INSERT INTO contents (blob, language, extractor, syntax_error, too_deep, guard, released) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0)",
             )?,
             symbol: transaction
                 .prepare("INSERT INTO symbols VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)")?,
@@ -928,6 +966,7 @@ impl<'t> Inserts<'t> {
                 .prepare("INSERT INTO refs VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)")?,
             import: transaction
                 .prepare("INSERT INTO imports VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)")?,
+            branch: transaction.prepare("INSERT INTO branches VALUES (?1, ?2, ?3, ?4)")?,
         })
     }
 
@@ -943,7 +982,8 @@ impl<'t> Inserts<'t> {
             language.name(),
             extract::VERSION,
             extraction.syntax_error,
-            extraction.too_deep
+            extraction.too_deep,
+            extraction.guard
         ])?;
         let id = transaction.last_insert_rowid();
         for s in &extraction.symbols {
@@ -989,6 +1029,10 @@ impl<'t> Inserts<'t> {
             self.import.execute(params![
                 id, i.path, i.alias, i.glob, i.public, i.line, i.from, i.via
             ])?;
+        }
+        for b in &extraction.branches {
+            self.branch
+                .execute(params![id, b.start, b.end, b.condition])?;
         }
         Ok(id)
     }
@@ -1287,7 +1331,8 @@ mod tests {
             "calls" => ("calls", &[("from", "caller")]),
             "references" => ("refs", &[("from", "user")]),
             "imports" => ("imports", &[("from", "importer")]),
-            "syntax_error" | "too_deep" => ("contents", &[]),
+            "branches" => ("branches", &[]),
+            "syntax_error" | "too_deep" | "guard" => ("contents", &[]),
             other => panic!("the store keeps no {other}"),
         }
     }
@@ -1306,7 +1351,7 @@ mod tests {
 
     /// Every part of an extraction, and every field of its records, as serde
     /// lists them, in each language: a field the store does not keep fails
-    /// here.
+    /// here, and so does a part no language's source here gives.
     #[test]
     fn everything_an_extraction_holds_is_kept() {
         let rust =
@@ -1315,18 +1360,27 @@ mod tests {
         // and only C's, `internal`.
         let nix = "{ myLib, ... }:\n# Doc.\nlet cfg = myLib.x; in { imports = [ ./a.nix ]; b = myLib.mkSys { n = cfg.y; }; c = builtins.toJSON { d = 1; }; }\n";
         let python = "from .m import Shards as S\n\n\nclass C(Base):\n    \"\"\"Doc.\"\"\"\n\n    def m(self):\n        s = S(1)\n        s.get()\n        return self.n\n";
-        let c = "#include \"a.h\"\n/* Doc. */\nstatic int f(int x) { return g(x) + MAX; }\n";
+        // Only C's gives branches and a guard.
+        let c = "#ifndef A_H\n#define A_H\n#include \"a.h\"\n#include <stdint.h>\n/* Doc. */\nstatic int f(int x) { return g(x) + MAX; }\n#ifdef _WIN32\nint w;\n#endif\n#endif\n";
+        let mut given = HashSet::new();
         for (path, language, source) in [
             ("src/a.rs", Language::Rust, rust),
             ("a/b.nix", Language::Nix, nix),
             ("tools/a.py", Language::Python, python),
-            ("src/a.c", Language::C, c),
+            ("src/a.h", Language::C, c),
         ] {
-            kept(path, language, source);
+            given.extend(kept(path, language, source));
+        }
+        let parts = serde_json::to_value(Extraction::default()).unwrap();
+        for part in parts.as_object().unwrap().keys() {
+            assert!(given.contains(part), "no source here gives {part}");
         }
     }
 
-    fn kept(path: &str, language: Language, source: &str) {
+    /// Checks that the store keeps all that an extraction of the source
+    /// holds, and returns the parts it gave: a list with records, a flag set
+    /// or a value.
+    fn kept(path: &str, language: Language, source: &str) -> HashSet<String> {
         let folder = Folder::new();
         let root = repository(folder.0.join("repo"));
         write(&root, path, source, OLD);
@@ -1339,7 +1393,18 @@ mod tests {
             })
             .unwrap();
         let read = serde_json::to_value(extract::extract(language, source.as_bytes())).unwrap();
+        let mut given = HashSet::new();
         for (part, value) in read.as_object().unwrap() {
+            // A value none is no check of a column that may hold none: what
+            // was never written reads so too.
+            let set = match value {
+                serde_json::Value::Null => false,
+                serde_json::Value::Array(records) => !records.is_empty(),
+                _ => true,
+            };
+            if set {
+                given.insert(part.clone());
+            }
             let (table, renamed) = kept_in(part);
             let column = |field: &str| {
                 renamed
@@ -1356,7 +1421,6 @@ mod tests {
                 assert_eq!(stored, as_stored(value), "{part}");
                 continue;
             };
-            assert!(!records.is_empty(), "the source gives {part}");
             let mut statement = connection
                 .prepare(&format!(
                     "SELECT * FROM {table} WHERE content = ?1 ORDER BY rowid"
@@ -1392,15 +1456,18 @@ mod tests {
                 }
             }
         }
+        given
     }
 
     #[test]
     fn a_worktree_reads_back_as_extracted_and_its_sites_as_asked() {
         let source = "use crate::x::{Y as Z, w::*};\n/// Doc.\nfn a(s: S) -> u32 { s.load(); b(); load::c(); MAX }\nfn d() { b() }\n";
+        let header = "#ifndef C_H\n#define C_H\n#include <stdint.h>\n#ifdef _WIN32\nint w(void);\n#endif\n#endif\n";
         let folder = Folder::new();
         let root = repository(folder.0.join("repo"));
         write(&root, "src/a.rs", source, OLD);
         write(&root, "src/copy.rs", source, OLD);
+        write(&root, "src/c.h", header, OLD);
         let mut store = Store::open(&folder.0.join("index.db")).unwrap();
         store.check(&root).unwrap();
         let read = extract::extract(Language::Rust, source.as_bytes());
@@ -1410,15 +1477,22 @@ mod tests {
             .iter()
             .map(|(path, _)| path.as_str())
             .collect();
-        assert_eq!(paths, ["src/a.rs", "src/b.rs", "src/copy.rs"]);
-        for f in [0, 2] {
-            let (_, held) = &worktree.files[f];
-            assert_eq!(
-                (&held.symbols, &held.imports),
-                (&read.symbols, &read.imports)
-            );
-            assert!(held.calls.is_empty() && held.references.is_empty());
+        assert_eq!(paths, ["src/a.rs", "src/b.rs", "src/c.h", "src/copy.rs"]);
+        // All of an extraction but its sites, which are read as asked, and
+        // its flags, which only `index` reads.
+        let opened = |read: &Extraction| Extraction {
+            calls: Vec::new(),
+            references: Vec::new(),
+            syntax_error: false,
+            too_deep: false,
+            ..read.clone()
+        };
+        for f in [0, 3] {
+            assert_eq!(worktree.files[f].1, opened(&read));
         }
+        let c = extract::extract(Language::C, header.as_bytes());
+        assert!(!c.branches.is_empty() && c.guard.is_some());
+        assert_eq!(worktree.files[2].1, opened(&c));
         // Every name the file uses: all its sites, in each file of its content.
         let names: Vec<&str> = read
             .calls
@@ -1431,7 +1505,7 @@ mod tests {
             )
             .collect();
         store.sites(&mut worktree, Sites::Named(&names)).unwrap();
-        for f in [0, 2] {
+        for f in [0, 3] {
             let (_, held) = &worktree.files[f];
             assert_eq!(
                 (&held.calls, &held.references),

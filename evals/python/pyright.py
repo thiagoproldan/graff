@@ -130,6 +130,8 @@ def site(edge):
 class Server:
     """pyright-langserver over its stdin and stdout."""
 
+    CAPABILITIES = {"workspace": {"configuration": True, "workspaceFolders": True}}
+
     def __init__(self, root):
         self.process = subprocess.Popen(SERVER, cwd=root, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                         stderr=subprocess.DEVNULL)
@@ -138,7 +140,7 @@ class Server:
         asked = self.request("initialize", {
             "processId": os.getpid(), "rootUri": uri,
             "workspaceFolders": [{"uri": uri, "name": os.path.basename(root)}],
-            "capabilities": {"workspace": {"configuration": True, "workspaceFolders": True}}})
+            "capabilities": self.CAPABILITIES})
         self.answer(asked)
         self.notify("initialized", {})
 

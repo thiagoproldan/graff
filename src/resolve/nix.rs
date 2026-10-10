@@ -80,6 +80,10 @@ pub(super) fn joined(file: &str, written: &str) -> Option<String> {
     Some(parts.join("/"))
 }
 
+/// An option the worktree declares, its path -- the names after the last
+/// `options` -- and how many of those are written out, not interpolated.
+type Declared<'a> = (Definition, Vec<&'a str>, usize);
+
 struct Index<'a> {
     files: &'a [File<'a>],
     /// Each Nix file, by its path.
@@ -89,10 +93,13 @@ struct Index<'a> {
     /// The definitions a path may name by its end: functions, `let`
     /// bindings and attributes, by name.
     named: HashMap<&'a str, Vec<Definition>>,
-    /// Each option the worktree declares, its path -- the names after the
-    /// last `options` -- and how many of those are written out, not
-    /// interpolated.
-    options: Vec<(Definition, Vec<&'a str>, usize)>,
+    /// Each option the worktree declares, by the last name of its path; one
+    /// whose path starts with a name interpolated, which no path may name,
+    /// left out.
+    options: HashMap<&'a str, Vec<Declared<'a>>>,
+    /// Those whose paths end in a name interpolated, which any path's last
+    /// name matches.
+    open: Vec<Declared<'a>>,
     /// Each flake's folder, and its inputs by name.
     flakes: Vec<(&'a str, HashMap<&'a str, Definition>)>,
 }
@@ -104,7 +111,8 @@ impl<'a> Index<'a> {
             paths: HashMap::new(),
             qualified: files.iter().map(|_| HashMap::new()).collect(),
             named: HashMap::new(),
-            options: Vec::new(),
+            options: HashMap::new(),
+            open: Vec::new(),
             flakes: Vec::new(),
         };
         for (f, file) in files.iter().enumerate() {
@@ -129,7 +137,18 @@ impl<'a> Index<'a> {
                             .map_or(0, |i| i + 1);
                         let names = names[at..].to_vec();
                         let written = names.iter().filter(|name| !wild(name)).count();
-                        index.options.push((d, names, written));
+                        let (Some(&first), Some(&last)) = (names.first(), names.last()) else {
+                            continue;
+                        };
+                        if wild(first) {
+                            continue;
+                        }
+                        let by = if wild(last) {
+                            &mut index.open
+                        } else {
+                            index.options.entry(last).or_default()
+                        };
+                        by.push((d, names, written));
                     }
                     Kind::Input => {
                         inputs.insert(symbol.name.as_str(), d);
@@ -179,11 +198,14 @@ impl<'a> Index<'a> {
     /// name interpolated, `options.${name}.enable`, would match every
     /// `.enable`: it matches none.
     fn option(&self, path: &[&str]) -> Resolution {
+        let Some(last) = path.last() else {
+            return Resolution::External;
+        };
         let mut found: Vec<Definition> = Vec::new();
         let mut best = (0, 0);
-        for (d, names, written) in &self.options {
-            let fits = names.first().is_some_and(|first| !wild(first))
-                && names.len() <= path.len()
+        let ending = self.options.get(last).into_iter().flatten();
+        for (d, names, written) in ending.chain(&self.open) {
+            let fits = names.len() <= path.len()
                 && names
                     .iter()
                     .rev()
@@ -198,6 +220,8 @@ impl<'a> Index<'a> {
             }
             found.push(*d);
         }
+        // In the order the files declare them, those ending interpolated among the rest.
+        found.sort_unstable();
         match found[..] {
             [] => Resolution::External,
             [d] => Resolution::Resolved(d, Rule::Option),
@@ -785,6 +809,41 @@ a
             ),
             ["modules/var.nix options.var.name (option)"]
         );
+    }
+
+    #[test]
+    fn options_a_path_matches_alike_come_in_the_order_their_files_declare_them() {
+        // `net.lan.dns` matches both, three names each, two written out: the
+        // first ends interpolated, the second does not.
+        let sources = [
+            (
+                "a.nix",
+                "{ lib, name, ... }:\n{\n  options.net.lan.${name} = lib.mkOption { };\n}\n",
+            ),
+            (
+                "b.nix",
+                "{ lib, name, ... }:\n{\n  options.net.${name}.dns = lib.mkOption { };\n}\n",
+            ),
+        ];
+        let extractions: Vec<Extraction> = sources
+            .iter()
+            .map(|(_, source)| extract::extract(Language::Nix, source.as_bytes()))
+            .collect();
+        let files: Vec<File> = sources
+            .iter()
+            .zip(&extractions)
+            .map(|((path, _), extraction)| File {
+                path,
+                language: Language::Nix,
+                extraction,
+            })
+            .collect();
+        let index = Index::new(&files);
+        let Resolution::Ambiguous(found) = index.option(&["net", "lan", "dns"]) else {
+            panic!("both options match, alike");
+        };
+        let declared: Vec<&str> = found.iter().map(|d| files[d.file].path).collect();
+        assert_eq!(declared, ["a.nix", "b.nix"]);
     }
 
     #[test]

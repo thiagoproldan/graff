@@ -31,6 +31,16 @@ c59305b: 44,874 files, 115.7 MB, in 14.8 s on one thread (one run), none
 with a syntax error tree-sitter-nix 0.3.0 reports, none cut for depth, the
 deepest tree 259 levels (lib/tests/modules/types.nix).
 
+Resolution alone, examples/resolve.rs on nixpkgs nixos/modules/ at
+c59305b (2,630 files, 246,592 edges), takes 562 to 576 ms, against 17.62
+to 17.66 s before task 89, which looks up an option by the last name of
+its path instead of walking every option for each path. Each query
+resolves again: `graff callers services/networking/ssh/sshd.nix:247`
+(`services.openssh.enable`, 25 callers) on a git snapshot of the folder
+takes 0.65 to 0.67 s, against 10.8 to 10.9 s, with the same answer. Three
+runs each, alternating, on 2026-10-09 under TLP's performance profile, on
+AC. The edges are byte-identical there, on nixpkgs lib/ and on the flake.
+
 The flake is the user's own: its reports here carry numbers only, and what
 names its files and options goes to `private/`, which git does not keep.
 nixpkgs is public: its reports list every edge judged wrong and every

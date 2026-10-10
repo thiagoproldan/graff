@@ -1578,6 +1578,34 @@ src/lib.rs:1 module store: 1 caller, 0 possible; links and mentions only, as Rus
 }
 
 #[test]
+fn a_section_headed_with_a_name_of_the_code_is_named_by_its_anchor_alone() {
+    let demo = Demo::of("md-code-name", DOCS_DEMO);
+    // The struct is what `Storage` stands for, not the readme's section.
+    assert_eq!(
+        demo.ask(&["def", "Storage"]),
+        demo.rooted(
+            "def Storage in ROOT
+src/store.rs:5-7 struct Storage, 2 impl blocks
+  /// Where values live.
+  pub struct Storage
+  src/store.rs:9-22 impl Storage
+  src/store.rs:24-28 impl std::fmt::Display for Storage
+"
+        )
+    );
+    assert_eq!(
+        demo.ask(&["def", "readme.md#storage"]),
+        demo.rooted(
+            "def readme.md#storage in ROOT
+readme.md:3-5 section Storage #storage
+  /// src/store.rs keeps values, which Storage::open opens.
+  ## Storage
+"
+        )
+    );
+}
+
+#[test]
 fn a_python_module_s_callers_hold_the_uses_of_the_name_an_import_binds() {
     let demo = Demo::of("py-module", DOCS_DEMO);
     assert_eq!(

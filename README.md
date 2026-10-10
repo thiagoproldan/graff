@@ -90,7 +90,8 @@ Markdown one by its path (`src/lib/ledger.sh`, `k3.h`), whose callers are
 what imports, sources, includes or links to it; a Rust file by its path
 too, whose callers are the links and mentions of its module; and a
 Markdown section by its heading, its anchor, or its file and anchor
-(`Stable ids`, `stable-ids`, `readme.md#stable-ids`). `def` gives a C
+(`Stable ids`, `stable-ids`, `readme.md#stable-ids`), by the first two only
+where no code definition has the name. `def` gives a C
 function's definition before its prototypes, which a budget cuts first.
 An answer is cut to `--budget` tokens, 2,000 unless told, counted as 4
 bytes each, least important lines first, and its last line says what it

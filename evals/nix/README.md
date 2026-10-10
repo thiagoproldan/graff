@@ -107,6 +107,15 @@ judged, in files the host does not import: 4 settings of the flake's
 options and 16 of options from outside at step 1, 5 and 13 at step 2, and
 16 imports at both.
 
+Rerun on 2026-10-09 (task 151), the flake at 40220be, nixpkgs e7439b6 and
+home-manager dfadbe5: every figure of step 2 is the same, the truth's
+counts and the details too. Between the two runs graff came to read
+Markdown (task 16), and `def` of each option also gave the section of the
+flake's generated docs/ref/options.md headed with its name: declarations
+scored 0.500 at the line and at the file (127 of 254, 132 of 264) at
+1e06e63 and 5b91f3c. A section now answers a name only where no code
+definition has it; `file.md#anchor` names it alone.
+
 - **What step 1 misses is the helpers, as expected.** At the file, 83 of
   the 102 options missed are declared by a helper (`mkSys`, `mkSpec`,
   `mkModule`): step 1 answers with the helper's line, which is right at the

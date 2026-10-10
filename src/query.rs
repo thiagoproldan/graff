@@ -1056,6 +1056,14 @@ impl<'s> Code<'s> {
                 }
             }
         }
+        // A section whose heading is a name of the code, as a page of docs
+        // has one for each option, is named so only where the code has none:
+        // the code is what the name stands for, and `file.md#anchor` names
+        // the section alone.
+        let markdown = |d: Definition| self.worktree.languages[d.file] == Language::Markdown;
+        if found.iter().any(|&d| !markdown(d)) {
+            found.retain(|&d| !markdown(d));
+        }
         // A Nix option's declaration first, then the bindings that set it,
         // which say nothing more once one is found; then those the name
         // names more of: `load` before `Storage::load`. A binding the name

@@ -888,6 +888,7 @@ impl<'s, 't> Reader<'s, 't> {
             doc: self.header(root),
             internal: false,
             typed: None,
+            consumed: false,
         });
         let mut taken: HashMap<String, usize> = HashMap::new();
         for p in pending {
@@ -921,6 +922,7 @@ impl<'s, 't> Reader<'s, 't> {
                 doc: p.doc,
                 internal: false,
                 typed: p.typed,
+                consumed: false,
             });
         }
         for (i, site) in self.scan.sites.iter().enumerate() {

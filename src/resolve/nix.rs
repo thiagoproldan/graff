@@ -9,11 +9,13 @@
 //!   out.
 //! - `inputs.nixpkgs` to the input of the flake nearest above the file.
 //! - An option's path -- `config.services.foo.enable`, and each binding of
-//!   an attrset, which may set one -- to the option a file of the worktree
-//!   declares there, `${name}` matching any name but the first, those with
-//!   the most names first, and of those the most written out; a path may go
-//!   on into the option's value, as `users.users.alice = { .. };` sets
-//!   `users.users`. One no file declares is nixpkgs' or a flake's: external.
+//!   an attrset, which may set one, but those of what a function of nixpkgs
+//!   makes a package, a file or a string of (`Symbol::consumed`) -- to the
+//!   option a file of the worktree declares there, `${name}` matching any
+//!   name but the first, those with the most names first, and of those the
+//!   most written out; a path may go on into the option's value, as
+//!   `users.users.alice = { .. };` sets `users.users`. One no file declares
+//!   is nixpkgs' or a flake's: external.
 //! - Any other path, from a module's argument as `myLib.mkSys`, to the one
 //!   definition of the worktree named as its end, when only one is; from
 //!   nixpkgs (`pkgs`, `lib`, `builtins`), external.
@@ -428,7 +430,8 @@ impl<'a> Index<'a> {
             return;
         }
         for symbol in self.symbols(file) {
-            if symbol.kind != Kind::Attribute {
+            // What a function that makes a package, a file or a string of it is given sets none.
+            if symbol.kind != Kind::Attribute || symbol.consumed {
                 continue;
             }
             let names: Vec<&str> = segments(&symbol.qualified).into_iter().map(bare).collect();
@@ -856,6 +859,48 @@ a
                 "services.foo.port".to_string(),
                 Resolution::Resolved(option, Rule::Option)
             )]
+        );
+    }
+
+    #[test]
+    fn a_binding_of_what_a_package_or_a_file_is_made_of_sets_no_option() {
+        // A submodule's option, `name`, which any path that ends in it matches.
+        let sources = [
+            (
+                "foo.nix",
+                "{ lib, ... }:\n{\n  options.services.foo.instances = lib.mkOption {\n    type = lib.types.attrsOf (lib.types.submodule { options.name = lib.mkOption { }; });\n  };\n}\n",
+            ),
+            (
+                "host.nix",
+                "{ lib, pkgs, ... }:\nlet\n  env = kbd: pkgs.buildEnv { name = \"console-env\"; };\nin\n{\n  services.foo.instances = lib.mapAttrs (n: v: { name = n; }) { };\n  environment.etc.x.text = builtins.toJSON { name = \"data\"; };\n}\n",
+            ),
+        ];
+        let extractions: Vec<Extraction> = sources
+            .iter()
+            .map(|(_, source)| extract::extract(Language::Nix, source.as_bytes()))
+            .collect();
+        let files: Vec<File> = sources
+            .iter()
+            .zip(&extractions)
+            .map(|((path, _), extraction)| File {
+                path,
+                language: Language::Nix,
+                extraction,
+            })
+            .collect();
+        let settings: Vec<(u32, String)> = resolve(&files)
+            .into_iter()
+            .filter(|edge| edge.used == Use::Setting && files[edge.file].path == "host.nix")
+            .map(|edge| (edge.line, edge.path.unwrap_or_default()))
+            .collect();
+        // buildEnv's and toJSON's `name` are what they make a package and a
+        // string of; mapAttrs' is a value of the option.
+        assert_eq!(
+            settings,
+            [
+                (6, "services.foo.instances".to_string()),
+                (6, "services.foo.instances.name".to_string()),
+            ]
         );
     }
 

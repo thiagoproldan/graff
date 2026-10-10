@@ -16,7 +16,7 @@ use crate::lang::Language;
 
 /// Bumped whenever what an extractor produces changes, so that results kept
 /// from an older extractor are read again rather than trusted.
-pub const VERSION: u32 = 9;
+pub const VERSION: u32 = 10;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Extraction {
@@ -64,6 +64,12 @@ pub struct Symbol {
     /// K3Config`; for a value a call returns, the callee, `tiny_config`.
     #[serde(default)]
     pub typed: Option<String>,
+    /// Nix: whether the binding is in what a function that makes a package,
+    /// a file or a string of it is given, `name = "x";` in `pkgs.writeText`'s
+    /// or `mkOption`'s attrset: data the function reads, which sets no
+    /// option of a module's. False in other languages.
+    #[serde(default)]
+    pub consumed: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]

@@ -381,6 +381,7 @@ impl Read {
             doc: self.first.clone(),
             internal: false,
             typed: None,
+            consumed: false,
         });
         // A section runs to the next heading of its level or a higher one.
         let mut sections: Vec<(u32, u32, String)> = Vec::new();
@@ -411,6 +412,7 @@ impl Read {
                 doc: heading.doc.clone(),
                 internal: false,
                 typed: None,
+                consumed: false,
             });
         }
         let mut seen: Vec<&str> = Vec::new();
@@ -428,6 +430,7 @@ impl Read {
                 doc: None,
                 internal: false,
                 typed: None,
+                consumed: false,
             });
         }
         // A use is in the innermost section around its line.

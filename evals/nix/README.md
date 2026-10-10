@@ -114,7 +114,8 @@ Markdown (task 16), and `def` of each option also gave the section of the
 flake's generated docs/ref/options.md headed with its name: declarations
 scored 0.500 at the line and at the file (127 of 254, 132 of 264) at
 1e06e63 and 5b91f3c. A section now answers a name only where no code
-definition has it; `file.md#anchor` names it alone.
+definition has it; `file.md#anchor` names it alone. Run again with task
+144, the reports are the same past their first two lines.
 
 - **What step 1 misses is the helpers, as expected.** At the file, 83 of
   the 102 options missed are declared by a helper (`mkSys`, `mkSpec`,
@@ -140,8 +141,37 @@ definition has it; `file.md#anchor` names it alone.
   settings, 132 of them tied to one option; of 25 of those read by hand, 7
   are right, against 13 of 25 of the other bindings' (examples/resolve at
   1e06e63, 2026-10-09). Most of the wrong ones build data under a `let`
-  binding, which no rule tells from a module yet (task 144), or meet a
-  submodule's option by its last names alone (task 152).
+  binding, which no rule told from a module then (task 144, below), or
+  meet a submodule's option by its last names alone (task 152).
+- **What a function of nixpkgs consumes sets no option** (task 144). A
+  binding in what a function that makes a package, a file or a string of
+  it is given -- the builders of pkgs/build-support, stdenv's
+  mkDerivation, callPackage and a package's overrides; `builtins.toJSON`,
+  lib.generators and `(pkgs.formats.x { }).generate`; the joins of
+  strings; mkOption and lib's option modules -- is data the function
+  reads: `name` in `consoleEnv = kbd: pkgs.buildEnv { name = ..; };` was a
+  setting of 89 options' `name` at once. On nixpkgs' nixos/modules at
+  c59305b, examples/resolve gives 1,297 settings fewer, 192 of them tied to
+  one option, and no other edge changes; 49 of the 192, read by hand, were
+  all wrong: data that meets an option by its last names alone
+  (`executable` in writeTextFile's argument, firejail's
+  `wrappedBinaries.<name>.executable`), or names the option it reads
+  (`squashfsCompression = config.isoImage.squashfsCompression;` in
+  callPackage's). On lib/, 95 fewer, 67 in mkOptionType's; on the flake,
+  none, as no binding of what it gives runCommand, writeText or toJSON
+  meets one of its options. `graff callees config/console.nix:34` now
+  names no possible callee, against 2; of the flake's 795 questions one
+  answer changed, an outline without the `inherit` in symlinkJoin's
+  `passthru`, which now passes the name along; of nixos/modules' 122, none.
+  Resolution there takes 580-638 ms, against 598-637 (five alternating
+  runs, TLP's performance profile, on AC). The rule names the functions
+  rather than taking every call but a module wrapper's for data: of the
+  4,436 settings in what such a call is given, many are options' values,
+  as the 8 read by hand of the 429 tied to one option under
+  `utils.pam.autoOrderRules [ { .. } ]`, all right, and those under
+  `mapAttrs'`, `listToAttrs` or `nameValuePair` that a `systemd.services`
+  takes. Data built under a `let` name and handed to such a function
+  elsewhere is still read as settings (task 157).
 - **What counts as wrong, read by hand**: 6 settings at each step. 3 at
   step 1 and 4 at step 2 sit under a `mkIf` the host's configuration makes
   false, which step 2 does not evaluate: it decides a condition on the
@@ -242,6 +272,11 @@ nixpkgs at c59305b (the host's), nil 2026-07-23.
 - **Step 2 changes none of it**: run again with the helpers followed, the
   three reports are the same past their first two lines, the lists of
   their details included.
+- **Nor do tasks 90 and 144**, but the broken resolver, which steps
+  through each file's definitions: an `inherit` under a binding became one
+  (task 90), and one in what a function of nixpkgs consumes stopped being
+  one (task 144), so its precision on lib/ went to 0.063, then 0.062, and
+  on nixos/modules/ to 0.018 (2026-10-09).
 - **nixpkgs lib/ is no longer held out**: its first run scored 0.998 and
   0.987, and its misses fixed three rules. A `let` inside an option's
   declaration binds names (graff had taken it for the option's fields); a

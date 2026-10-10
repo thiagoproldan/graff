@@ -902,6 +902,7 @@ impl<'s, 't> Reader<'s, 't> {
             doc: self.header(),
             internal: false,
             typed: None,
+            consumed: false,
         });
         let mut taken: HashMap<String, usize> = HashMap::new();
         for p in pending {
@@ -933,6 +934,7 @@ impl<'s, 't> Reader<'s, 't> {
                 doc: p.doc,
                 internal: false,
                 typed: None,
+                consumed: false,
             });
         }
     }

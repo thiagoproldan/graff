@@ -338,6 +338,7 @@ impl<'s> Reader<'s> {
             doc,
             internal: false,
             typed: None,
+            consumed: false,
         });
         qualified
     }

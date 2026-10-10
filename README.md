@@ -21,7 +21,9 @@ declared with mkOption one too, and a file one, which a path imports: a name
 is tied to the `let` or `rec` binding it is bound to, a path to its file (a
 folder a `builtins.readDir` function lists to what it lists), `inputs.x` to
 the flake's input, and a binding to the option of the worktree it sets
-(`src/resolve/nix.rs`). A helper of the worktree a module calls,
+(`src/resolve/nix.rs`), but one in what a function of nixpkgs makes a
+package, a file or a string of, `pkgs.writeText`'s or `builtins.toJSON`'s,
+which sets none. A helper of the worktree a module calls,
 `myLib.mkSys { name = "x"; .. }`, is followed into and evaluated as far as a
 module's shape goes, so what it declares and sets stands in the calling
 file, as the module system files it (`src/resolve/nix/instance.rs`); the

@@ -845,6 +845,43 @@ m.nix: 8 lines, 7 symbols
 }
 
 #[test]
+fn nix_callees_leave_out_what_a_package_is_made_of() {
+    let demo = Demo::of(
+        "nix-consumed",
+        &[
+            (
+                "foo.nix",
+                "{ lib, ... }:\n{\n  options.services.foo.instances = lib.mkOption {\n    type = lib.types.attrsOf (lib.types.submodule { options.name = lib.mkOption { }; });\n  };\n}\n",
+            ),
+            (
+                "host.nix",
+                "{ lib, pkgs, ... }:\nlet\n  env = kbd: pkgs.buildEnv {\n    name = \"console-env\";\n  };\n  named = kbd: lib.mapAttrs (n: v: {\n    name = n;\n  }) { };\nin\n{ }\n",
+            ),
+        ],
+    );
+    // buildEnv's `name` is the package's; one mapAttrs makes may be an option's.
+    assert_eq!(
+        demo.ask(&["callees", "host.nix:3"]),
+        demo.rooted(
+            "callees host.nix:3 in ROOT
+host.nix:3-5 function env: 0 callees, 0 possible, 1 outside the worktree
+  outside the worktree: pkgs.buildEnv
+"
+        )
+    );
+    assert_eq!(
+        demo.ask(&["callees", "host.nix:6"]),
+        demo.rooted(
+            "callees host.nix:6 in ROOT
+host.nix:6-8 function named: 1 callee, 0 possible, 1 outside the worktree
+  foo.nix:4 option options.services.foo.instances.type.options.name: set 7
+  outside the worktree: lib.mapAttrs
+"
+        )
+    );
+}
+
+#[test]
 fn nix_instances_are_made_again_when_a_file_they_come_from_changes() {
     let demo = Demo::of("nix-kept", NIX_DEMO);
     let audio = "def sys.audio.enable in ROOT

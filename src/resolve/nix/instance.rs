@@ -266,6 +266,7 @@ pub fn instantiate(files: &[File], read: &dyn Fn(&str) -> Option<Vec<u8>>) -> In
                 doc: symbol.doc.clone(),
                 internal: false,
                 typed: None,
+                consumed: symbol.consumed,
             };
             instances.made.push((f, made, None));
         }
@@ -289,6 +290,7 @@ pub fn instantiate(files: &[File], read: &dyn Fn(&str) -> Option<Vec<u8>>) -> In
                 doc: walk.doc(placed.origin),
                 internal: false,
                 typed: None,
+                consumed: false,
             };
             instances.made.push((f, symbol, written));
         }
@@ -1744,6 +1746,20 @@ myLib.mkSys {
 }
 "#,
         ),
+        (
+            "modules/etc.nix",
+            r#"{ config, myLib, ... }:
+myLib.mkSys {
+  inherit config;
+  name = "etc";
+  body = {
+    environment.etc.x.text = builtins.toJSON {
+      a = 1;
+    };
+  };
+}
+"#,
+        ),
     ];
 
     /// What instantiating the worktree makes, and the extractions it was made
@@ -1824,6 +1840,29 @@ myLib.mkSys {
         assert!(
             of(&arguments, "modules/keys.nix")
                 .contains(&"modules/keys.nix body.services.openssh.keys")
+        );
+    }
+
+    #[test]
+    fn what_a_function_consumes_in_a_helpers_argument_stays_consumed_where_it_goes() {
+        let (_, instances) = instantiated();
+        let at = WORKTREE
+            .iter()
+            .position(|(path, _)| *path == "modules/etc.nix")
+            .expect("the module");
+        let consumed: Vec<(&str, bool)> = instances
+            .made
+            .iter()
+            .filter(|(f, symbol, _)| *f == at && symbol.qualified.contains(".etc.x."))
+            .map(|(_, symbol, _)| (symbol.qualified.as_str(), symbol.consumed))
+            .collect();
+        // toJSON's `a` goes where the binding it is in went, still data.
+        assert_eq!(
+            consumed,
+            [
+                ("config.environment.etc.x.text.a", true),
+                ("config.environment.etc.x.text", false),
+            ]
         );
     }
 

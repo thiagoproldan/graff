@@ -139,6 +139,7 @@ pub fn extract(source: &[u8]) -> Extraction {
         doc: reader.header(),
         internal: false,
         typed: None,
+        consumed: false,
     });
     for child in named_children(root) {
         reader.item(child, 1);
@@ -462,6 +463,7 @@ impl<'s, 't> Reader<'s, 't> {
             doc,
             internal,
             typed: None,
+            consumed: false,
         });
         qualified
     }

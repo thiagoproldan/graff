@@ -3,7 +3,10 @@
 //! bindings it is in: `config.services.openssh.enable`, `cfg` for a `let` at
 //! the top. A binding whose value calls mkOption, mkEnableOption or
 //! mkPackageOption declares an option; a flake's `inputs` are its inputs; and
-//! the file as a whole is a definition too, which a path imports.
+//! the file as a whole is a definition too, which a path imports. A binding
+//! in what a function that makes a package, a file or a string of it is
+//! given -- `pkgs.writeText`'s, `builtins.toJSON`'s, `mkOption`'s -- is
+//! consumed: data the function reads, which sets no option of a module's.
 //!
 //! A name is tied to the binding in the file it is bound to, as Nix binds it:
 //! by a `let`, a `rec` attrset or a function, the innermost first, then by
@@ -49,6 +52,88 @@ const OPTION_MAKERS: &[&str] = &[
     "mkEnableOption",
     "mkPackageOption",
     "mkPackageOptionMD",
+];
+
+/// What makes a package, a file or a string of what it is given, or declares
+/// an option with it, by the end of its path, besides OPTION_MAKERS: the
+/// builders of pkgs/build-support (the trivial ones, buildEnv, replaceVars,
+/// the desktop items), stdenv's mkDerivation and builtins.derivation,
+/// callPackage and a package's overrides; the serializers of builtins,
+/// lib.generators, lib.cli and pkgs.formats; the joins of lib.strings and
+/// builtins, and toString; lib/types.nix's mkOptionType and the option
+/// modules of lib/modules.nix, `mkRenamedOptionModule` and the like.
+const CONSUMERS: &[&str] = &[
+    // Packages and files.
+    "applyPatches",
+    "buildEnv",
+    "callPackage",
+    "concatScript",
+    "concatText",
+    "concatTextFile",
+    "derivation",
+    "linkFarm",
+    "linkFarmFromDrvs",
+    "makeAutostartItem",
+    "makeDesktopItem",
+    "makeSetupHook",
+    "mkDerivation",
+    "override",
+    "overrideAttrs",
+    "overrideDerivation",
+    "replaceVars",
+    "replaceVarsWith",
+    "runCommand",
+    "runCommandCC",
+    "runCommandLocal",
+    "runCommandWith",
+    "substituteAll",
+    "symlinkJoin",
+    "writeCBin",
+    "writeScript",
+    "writeScriptBin",
+    "writeShellApplication",
+    "writeShellScript",
+    "writeShellScriptBin",
+    "writeText",
+    "writeTextDir",
+    "writeTextFile",
+    // Serializers.
+    "generate",
+    "toCommandLine",
+    "toCommandLineGNU",
+    "toCommandLineShell",
+    "toCommandLineShellGNU",
+    "toDconfINI",
+    "toDhall",
+    "toFile",
+    "toGNUCommandLine",
+    "toGNUCommandLineShell",
+    "toGitINI",
+    "toINI",
+    "toINIWithGlobalSection",
+    "toJSON",
+    "toKeyValue",
+    "toLua",
+    "toPlist",
+    "toPretty",
+    "toXML",
+    "toYAML",
+    // Strings.
+    "concatImapStrings",
+    "concatImapStringsSep",
+    "concatMapStrings",
+    "concatMapStringsSep",
+    "concatStringsSep",
+    "optionalString",
+    "toString",
+    // Options.
+    "mkAliasOptionModule",
+    "mkChangedOptionModule",
+    "mkMergedOptionModule",
+    "mkOptionType",
+    "mkRemovedOptionModule",
+    "mkRenamedOptionModule",
+    "mkRenamedOptionModuleWith",
 ];
 
 /// The names Nix binds in every file, outside them all, with the others
@@ -107,6 +192,7 @@ pub fn extract(source: &[u8]) -> Extraction {
         flake: false,
         outputs: None,
         quiet: false,
+        consumed: false,
     };
     reader.file(root);
     reader.out
@@ -213,6 +299,9 @@ struct Reader<'s> {
     /// Whether the walk is in an option's declaration, whose bindings are
     /// the option's, not definitions of their own.
     quiet: bool,
+    /// Whether the walk is in what a function of CONSUMERS or OPTION_MAKERS
+    /// is given, whose bindings it consumes.
+    consumed: bool,
 }
 
 pub(crate) fn named_children(node: Node) -> Vec<Node> {
@@ -373,6 +462,7 @@ impl<'s> Reader<'s> {
             doc: expression.and_then(|expression| self.doc(expression)),
             internal: false,
             typed: None,
+            consumed: false,
         });
         let Some(expression) = expression else {
             return;
@@ -433,6 +523,7 @@ impl<'s> Reader<'s> {
                     doc,
                     internal: false,
                     typed: None,
+                    consumed: false,
                 });
             }
         }
@@ -459,6 +550,7 @@ impl<'s> Reader<'s> {
             doc,
             internal: false,
             typed: None,
+            consumed: self.consumed,
         });
         qualified
     }
@@ -601,11 +693,14 @@ impl<'s> Reader<'s> {
     fn set(&mut self, set: Option<Node>, of: Set, body: Option<Node>) {
         let bindings = set.map(named_children).unwrap_or_default();
         // A plain attrset's `inherit` passes names along in a call's argument,
-        // `f { inherit config; }`, and exports them at a file's top, `{ inherit
-        // mkModule; }`, where the binding inherited stands for the name; under
-        // a binding, `services.x = { inherit (cfg) port; };`, it sets them.
+        // `f { inherit config; }`, and anywhere in what a function consumes,
+        // `toJSON { x = { inherit y; }; }`; it exports them at a file's top,
+        // `{ inherit mkModule; }`, where the binding inherited stands for the
+        // name; under a binding, `services.x = { inherit (cfg) port; };`, it
+        // sets them.
         let passes = of == Set::Attrs
             && (self.quiet
+                || self.consumed
                 || self.prefix.is_empty()
                 || set
                     .and_then(|set| set.parent())
@@ -1164,6 +1259,11 @@ impl<'s> Reader<'s> {
                 None
             }
         };
+        // What it makes a package, a file or a string of, all of it, it consumes.
+        let consumes = function_name(self.source, function)
+            .is_some_and(|name| CONSUMERS.contains(&name) || OPTION_MAKERS.contains(&name));
+        let consumed = self.consumed;
+        self.consumed = consumed || consumes;
         for argument in arguments {
             let argument = unwrapped(argument);
             if argument.kind() == "path_expression" {
@@ -1172,6 +1272,7 @@ impl<'s> Reader<'s> {
                 self.visit(argument);
             }
         }
+        self.consumed = consumed;
     }
 
     /// How an import names the function its path is passed to: the
@@ -1444,6 +1545,66 @@ in
             Some("services.openssh.hostKeys"),
             Some("cfg")
         )));
+    }
+
+    #[test]
+    fn what_a_function_makes_a_package_a_file_or_a_string_of_is_consumed() {
+        // Each function of the class, through a path and bare: the bindings
+        // it is given, nested ones too, are consumed; the binding the call is
+        // the value of is not.
+        for name in CONSUMERS.iter().chain(OPTION_MAKERS) {
+            let source = format!(
+                "{{ pkgs, ... }}:\n{{\n  x = a: pkgs.{name} {{ y = 1; z.w = [ {{ v = 2; }} ]; }};\n  u = a: with pkgs; {name} \"n\" {{ t = 3; }};\n}}\n"
+            );
+            let out = extract(source.as_bytes());
+            for (qualified, consumed) in [
+                ("x", false),
+                ("x.y", true),
+                ("x.z.w", true),
+                ("x.z.w.v", true),
+                ("u", false),
+                ("u.t", true),
+            ] {
+                assert_eq!(
+                    symbol(&out, qualified).consumed,
+                    consumed,
+                    "{name}: {qualified}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn what_a_module_wrapper_a_helper_or_a_list_function_is_given_is_not_consumed() {
+        let out = extract(
+            br#"{ lib, pkgs, utils, myLib, ... }:
+{
+  a = lib.mkIf true { b = 1; };
+  c = lib.mapAttrs (n: v: { d = n; }) { };
+  e = utils.pam.autoOrderRules [ { f = 1; } ];
+  g = myLib.mkThing { h = 1; };
+  i = (pkgs.formats.json { j = 1; }).generate "x" { k = 1; };
+  l = pkgs.writeText "x" (builtins.toJSON { m = { inherit (lib) n; }; });
+  o = { inherit (lib) n; };
+  p = 2;
+}
+"#,
+        );
+        for (qualified, consumed) in [
+            ("a.b", false),
+            ("c.d", false),
+            ("e.f", false),
+            ("g.h", false),
+            ("i.j", false),
+            ("i.k", true),
+            ("l.m", true),
+            ("o.n", false),
+            ("p", false),
+        ] {
+            assert_eq!(symbol(&out, qualified).consumed, consumed, "{qualified}");
+        }
+        // What a consumed attrset inherits it passes along.
+        assert!(!out.symbols.iter().any(|s| s.qualified == "l.m.n"));
     }
 
     #[test]

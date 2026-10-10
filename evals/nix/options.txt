@@ -1,5 +1,5 @@
 run 2026-10-10
-graff 0f72b32 with uncommitted changes
+graff c6ab1e2 with uncommitted changes
 corpus a NixOS flake at 40220be (git archive), 158 .nix files; one host, evaluated by nix (Nix) 2.34.8 against nixpkgs e7439b6, home-manager dfadbe5
 truth 132 options declared in the worktree, 127 with a line; 376 options with a definition in the worktree on the host, 112 of them its own; 70 options whose definitions nix could not read (56 throw, 14 stop the walk); module graph 125 files of the worktree, 121 imports between them
 

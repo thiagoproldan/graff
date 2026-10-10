@@ -62,3 +62,26 @@ evals/verdict/test_draw.py, `draw.WORK, draw.REVIEW = ..`, which full
 resolution ties to the module: the question loaded the sites named as the
 file's symbol, whose name is empty. A Python file is now looked for by its
 module's name, `draw`, or its package's for an `__init__.py`.
+
+## Result, 2026-10-10 (tasks 162 and 132)
+
+Whether a path goes through a name is now told in one pass over the
+sites, by a function of graff's SQLite calls, the name as written right
+before a `::` or a `.`; SQL's LIKE took a pattern for each name, matched
+case aside and with `_` for any one letter. A question also reads apart
+the Nix uses that place options, so that a let-bound submodule's options
+are where full resolution puts them whatever sites it reads (task 162).
+
+|                   | ekko v0.40.0-1-ga4c9c8d     | graff c6ab1e2-dirty     | the flake, task 13's     |
+| ----------------- | --------------------------- | ----------------------- | ------------------------ |
+| files graff reads | 280, 217 of them Markdown   | 89, 20 of them Markdown | 201, 28 of them Markdown |
+| control           | 15 of 3,228 the same        | 13 of 1,660 the same    | 17 of 568 the same       |
+| same edges        | 3,228 of 3,228 definitions  | 1,660 of 1,660          | 566 of 568               |
+| edges             | 21,094, 2,402 from Markdown | 9,576, 82 from Markdown | 1,152, 69 from Markdown  |
+
+ekko's report is the same as on 2026-10-09 past its first line; graff's
+tree has grown since. The flake's report, which names its files, is not
+kept; its 2 different are options a helper declares under `${name}`,
+whose `callers` miss the helper's own read (task 163). Run against a
+graff whose function answers no for every path, 177 of ekko's 3,228
+definitions come out different.

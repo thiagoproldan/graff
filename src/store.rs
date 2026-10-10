@@ -17,6 +17,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use rusqlite::functions::FunctionFlags;
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
 use crate::extract::{self, Call, CallKind, Extraction, Import, Kind, RefKind, Reference, Symbol};
@@ -374,6 +375,38 @@ pub enum Sites<'a> {
     Bound,
 }
 
+/// Some names, which a path goes through when it holds one right before a
+/// `::`, as a Rust path does, or a `.`, as a Nix or a Python one does.
+struct Names {
+    names: HashSet<String>,
+    /// How long they are, each length once.
+    lengths: Vec<usize>,
+}
+
+impl Names {
+    fn new(names: &[&str]) -> Names {
+        let mut lengths: Vec<usize> = names.iter().map(|name| name.len()).collect();
+        lengths.sort_unstable();
+        lengths.dedup();
+        Names {
+            names: names.iter().map(|name| name.to_string()).collect(),
+            lengths,
+        }
+    }
+
+    fn through(&self, path: &str) -> bool {
+        path.char_indices()
+            .filter(|&(at, c)| c == '.' || path[at..].starts_with("::"))
+            .any(|(at, _)| {
+                self.lengths.iter().any(|&length| {
+                    length <= at
+                        && path.is_char_boundary(at - length)
+                        && self.names.contains(&path[at - length..at])
+                })
+            })
+    }
+}
+
 impl Store {
     /// Opens the index at `path`, making it if there is none. One of another
     /// schema is dropped and made again.
@@ -649,39 +682,33 @@ impl Store {
         }
         let (filter, values): (String, Vec<rusqlite::types::Value>) = match which {
             Sites::Named(names) => {
+                // Whether a path goes through a name is told by `through`, in
+                // one pass over the sites: SQL's LIKE, a pattern for each
+                // name, took one for each.
+                let through = Names::new(names);
+                self.connection.create_scalar_function(
+                    "through",
+                    1,
+                    FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                    move |context| {
+                        // A null path, which is no text, goes through none.
+                        let path = context.get_raw(0).as_str();
+                        Ok(path.is_ok_and(|path| through.through(path)))
+                    },
+                )?;
                 let mut values: Vec<rusqlite::types::Value> = vec![worktree.id.into()];
-                let named = (0..names.len())
+                let listed = (0..names.len())
                     .map(|i| format!("?{}", i + 2))
                     .collect::<Vec<_>>()
                     .join(", ");
-                // A Rust path goes through a name before `::`, a Nix one before `.`.
-                let through = (0..2 * names.len())
-                    .map(|i| format!("path LIKE ?{}", names.len() + i + 2))
-                    .collect::<Vec<_>>()
-                    .join(" OR ");
                 values.extend(
                     names
                         .iter()
                         .map(|name| rusqlite::types::Value::from(name.to_string())),
                 );
-                values.extend(
-                    names
-                        .iter()
-                        .map(|name| rusqlite::types::Value::from(format!("%{name}::%"))),
-                );
-                values.extend(
-                    names
-                        .iter()
-                        .map(|name| rusqlite::types::Value::from(format!("%{name}.%"))),
-                );
-                let through = if through.is_empty() {
-                    "0".to_string()
-                } else {
-                    through
-                };
                 (
                     format!(
-                        "content IN (SELECT content FROM files WHERE worktree = ?1) AND (name IN ({named}) OR {through})"
+                        "content IN (SELECT content FROM files WHERE worktree = ?1) AND (name IN ({listed}) OR through(path))"
                     ),
                     values,
                 )
@@ -1455,6 +1482,21 @@ mod tests {
                 .files
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn a_path_goes_through_a_name_it_holds_as_written_before_a_separator() {
+        let names = Names::new(&["load", "get_x"]);
+        // The name right before a `::` or a `.`, at any depth, ending a
+        // longer one too.
+        for path in ["load::c", "a.load.c", "x::get_x::y", "reload::c"] {
+            assert!(names.through(path), "{path}");
+        }
+        // Last, in another case, or with `_` standing for any one letter, as
+        // SQL's LIKE took it.
+        for path in ["c::load", "load", "LOAD::c", "a.Load.c", "getXx::y"] {
+            assert!(!names.through(path), "{path}");
+        }
     }
 
     #[test]

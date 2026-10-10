@@ -103,15 +103,14 @@ left out and the budget that would hold it all; `--json` gives the same
 answer as one object. Uses graff cannot tie to one definition, mostly
 method calls on what it cannot tell the type of, are listed apart as
 possible. On ekko's 280 files graff reads at a4c9c8d, 217 of them
-Markdown, each question took 54 to 92 ms here, the freshness check
-included, and `impact` to depth 3, over 332 callers, 1,128 to 1,155 ms;
-without Markdown, which graff did not read before task 16, 41 to 72 ms
-and, over 326 callers, 1,076 to 1,118 ms (seven runs each, 2026-10-09, on
-battery with TLP's balanced power profile, the CPU's boost off; with its
-performance profile, half an hour before, each took about half as long).
-Task 12 measured `impact` at 104 to 108 ms on ekko's 34 files then; why
-it is slower now is task 132. `graff index` runs the freshness check
-alone.
+Markdown, each question took 18 to 36 ms here, the freshness check
+included, and `impact` to depth 3, over 332 callers, 83 to 86 ms (seven
+runs each, 2026-10-10, on AC with TLP's performance power profile, the
+CPU's boost on; its balanced profile on battery, the boost off, doubled
+such times on 2026-10-09). `impact` took 521 to 535 ms before task 132:
+each level asked SQL's LIKE for each name it reached, where one pass over
+the sites now tells which paths go through any of them. `graff index`
+runs the freshness check alone.
 
 What counts as graff working was fixed before its first line of code, in
 `evals/`:

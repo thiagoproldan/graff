@@ -818,6 +818,33 @@ depth 3: 1 caller
     );
 }
 
+#[test]
+fn nix_instances_are_made_again_when_a_file_they_come_from_changes() {
+    let demo = Demo::of("nix-kept", NIX_DEMO);
+    let audio = "def sys.audio.enable in ROOT
+modules/audio.nix:2-7 option options.sys.audio.enable, written at lib/mkSys.nix:5
+  /// Turns the module on.
+  myLib.mkSys
+";
+    // Made by the first question, kept for the second.
+    assert_eq!(demo.ask(&["def", "sys.audio.enable"]), demo.rooted(audio));
+    assert_eq!(demo.ask(&["def", "sys.audio.enable"]), demo.rooted(audio));
+    // The helper, not the file that calls it, changes what the call declares.
+    let helper = demo.repo.join("lib/mkSys.nix");
+    let text = fs::read_to_string(&helper).unwrap();
+    fs::write(&helper, text.replace(".enable", ".on")).unwrap();
+    assert_eq!(
+        demo.ask(&["def", "sys.audio.on"]),
+        demo.rooted(
+            "def sys.audio.on in ROOT
+modules/audio.nix:2-7 option options.sys.audio.on, written at lib/mkSys.nix:5
+  /// Turns the module on.
+  myLib.mkSys
+"
+        )
+    );
+}
+
 /// Scripts as ctx writes them: hooks and bins with no extension, told by
 /// their shebang, a library they source, and a test that runs a hook.
 const BASH_DEMO: &[(&str, &str)] = &[

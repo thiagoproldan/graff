@@ -29,6 +29,7 @@ use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
+use serde::{Deserialize, Serialize};
 use tree_sitter::{Node, Tree};
 
 use super::{Index, joined};
@@ -68,7 +69,7 @@ pub struct Written {
 }
 
 /// What instantiating the worktree's helpers makes.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq)]
 pub struct Instances {
     /// Each binding a call makes, in the calling file, and where the
     /// helper writes it, when it is not the call's own.
@@ -114,7 +115,72 @@ impl Instances {
         }
         written
     }
+
+    /// These as the index keeps them, each file named by its path: `paths`
+    /// are the files' paths, in the order instantiation was given them.
+    pub fn kept(&self, paths: &[&str]) -> String {
+        let kept = Kept {
+            made: self
+                .made
+                .iter()
+                .map(|(f, symbol, at)| {
+                    let at = at.map(|at| (paths[at.file].to_string(), at.start, at.end));
+                    (paths[*f].to_string(), symbol.clone(), at)
+                })
+                .collect(),
+            arguments: self
+                .arguments
+                .iter()
+                .map(|d| (paths[d.file].to_string(), d.symbol))
+                .collect(),
+        };
+        serde_json::to_string(&kept).expect("instances serialize")
+    }
+
+    /// The instances the index kept, for files of these paths; none when
+    /// what it kept names a file not among them, or does not read back.
+    pub fn from_kept(kept: &str, paths: &[&str]) -> Option<Instances> {
+        let kept: Kept = serde_json::from_str(kept).ok()?;
+        let at: HashMap<&str, usize> = paths.iter().enumerate().map(|(f, &p)| (p, f)).collect();
+        let file = |path: &str| at.get(path).copied();
+        let made = kept
+            .made
+            .into_iter()
+            .map(|(path, symbol, written)| {
+                let written = match written {
+                    Some((path, start, end)) => Some(Written {
+                        file: file(&path)?,
+                        start,
+                        end,
+                    }),
+                    None => None,
+                };
+                Some((file(&path)?, symbol, written))
+            })
+            .collect::<Option<_>>()?;
+        let arguments = kept
+            .arguments
+            .into_iter()
+            .map(|(path, symbol)| {
+                Some(Definition {
+                    file: file(&path)?,
+                    symbol,
+                })
+            })
+            .collect::<Option<_>>()?;
+        Some(Instances { made, arguments })
+    }
 }
+
+/// What instantiation made, as the index keeps it: each file by its path.
+#[derive(Serialize, Deserialize)]
+struct Kept {
+    made: Vec<(String, Symbol, Option<Lines>)>,
+    arguments: Vec<(String, usize)>,
+}
+
+/// Where a helper writes a binding: its file's path, and the lines.
+type Lines = (String, u32, u32);
 
 /// Instantiates each call of a helper that stands where a module goes:
 /// `files` are all of the worktree's, `read` gives a file's source by its
@@ -1670,9 +1736,9 @@ myLib.mkSys given
         ),
     ];
 
-    /// What instantiation makes: each binding, `path:lines kind qualified`
-    /// and where the helper writes it; and each argument, `path qualified`.
-    fn made() -> (Vec<String>, Vec<String>) {
+    /// What instantiating the worktree makes, and the extractions it was made
+    /// from.
+    fn instantiated() -> (Vec<Extraction>, Instances) {
         let extractions: Vec<Extraction> = WORKTREE
             .iter()
             .map(|(path, source)| {
@@ -1696,6 +1762,13 @@ myLib.mkSys given
                 .map(|(_, source)| source.as_bytes().to_vec())
         };
         let instances = instantiate(&files, &read);
+        (extractions, instances)
+    }
+
+    /// What instantiation makes: each binding, `path:lines kind qualified`
+    /// and where the helper writes it; and each argument, `path qualified`.
+    fn made() -> (Vec<String>, Vec<String>) {
+        let (extractions, instances) = instantiated();
         let made = instances
             .made
             .iter()
@@ -1722,6 +1795,45 @@ myLib.mkSys given
             })
             .collect();
         (made, arguments)
+    }
+
+    #[test]
+    fn what_the_index_keeps_reads_back_as_made_whatever_the_files_order() {
+        let (_, instances) = instantiated();
+        // Each file by its path: where each binding is, where the helper
+        // writes it, and each argument.
+        let named = |instances: &Instances, paths: &[&str]| -> Vec<String> {
+            let made = instances.made.iter().map(|(f, symbol, written)| {
+                let at = written.map_or(String::new(), |at| {
+                    format!(" < {}:{}-{}", paths[at.file], at.start, at.end)
+                });
+                format!("{} {:?}{at}", paths[*f], symbol)
+            });
+            let arguments = instances
+                .arguments
+                .iter()
+                .map(|d| format!("{} #{}", paths[d.file], d.symbol));
+            made.chain(arguments).collect()
+        };
+        let paths: Vec<&str> = WORKTREE.iter().map(|(path, _)| *path).collect();
+        let kept = instances.kept(&paths);
+        assert!(!instances.made.is_empty() && !instances.arguments.is_empty());
+        assert_eq!(
+            Instances::from_kept(&kept, &paths).as_ref(),
+            Some(&instances)
+        );
+        let reversed: Vec<&str> = paths.iter().rev().copied().collect();
+        let back = Instances::from_kept(&kept, &reversed).expect("every file is there");
+        assert_ne!(back, instances);
+        assert_eq!(named(&back, &reversed), named(&instances, &paths));
+        // A file gone, or what is not instances, reads back as nothing.
+        let without: Vec<&str> = paths
+            .iter()
+            .copied()
+            .filter(|&path| path != "modules/vpn.nix")
+            .collect();
+        assert_eq!(Instances::from_kept(&kept, &without), None);
+        assert_eq!(Instances::from_kept("made", &paths), None);
     }
 
     fn of<'a>(made: &'a [String], path: &str) -> Vec<&'a str> {

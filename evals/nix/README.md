@@ -164,12 +164,27 @@ options and 16 of options from outside at step 1, 5 and 13 at step 2, and
     a helper's only when the walk makes something of it.
 - **What step 2 costs**: on the flake it makes 1,197 bindings in 85 files,
   and 1,185 bindings of the calls' attrsets become arguments
-  (examples/resolve.rs). On one of the flake's options and one of its
-  modules, `graff def`, `callers` and `outline` take 34-35, 39 and 33-34 ms
-  at step 2, against 11, 14 and 10-11 ms at step 1 (five runs each, in two
-  alternating rounds): each query parses again the files whose calls reach
-  a helper, and walks them (task 91). On nixpkgs it makes nothing, in lib/
-  or in nixos/modules/.
+  (examples/resolve.rs). The walk parses again the files whose calls reach
+  a helper, and walks them; at first it did so on every query, and on one
+  of the flake's options and one of its modules `graff def`, `callers` and
+  `outline` took 34-35, 39 and 33-34 ms, against 11, 14 and 10-11 ms at
+  step 1 (five runs each, in two alternating rounds). Since task 91 the
+  index keeps what the walk made, under a key of the worktree's Nix files,
+  their paths and blob ids, and of graff's build, its executable's path,
+  size and modification time, as ccache tells compilers apart; it walks
+  again only when one of those changes. On the flake at 40220be the three
+  questions take 15.6-18.1, 17.5-20.5 and 13.6-16.1 ms, against 33.3-42.7,
+  35.3-40.7 and 32.3-34.5 ms walking on every query (fd56ef7), 15 runs
+  each; the first question after an edit to a Nix file, which walks and
+  keeps, takes 43.8-50.1 ms, against 41.9-47.7 (seven rounds). On nixpkgs
+  it makes nothing, in lib/ or in nixos/modules/, but telling which calls
+  may reach a helper cost every query: `def` on nixos/modules takes 184 to
+  210 ms, against 314-338 ms. All in one run on 2026-10-09 under TLP's
+  performance profile, on AC. The two builds give byte-identical answers
+  to 795 questions on the flake (def, callers and impact of every option
+  of its own a binding or a path reaches, def of every path a binding
+  sets, outline and callees of every .nix file) and to 122 on
+  nixos/modules.
 
 ## nil.py
 

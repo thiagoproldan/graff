@@ -4,7 +4,8 @@
 //! bytes, its language and the extractor's version -- so a file the same in
 //! two worktrees, branches or commits is read once. Each worktree keeps what
 //! it last saw of each of its files, so that a check tells by their stat
-//! which changed, and reads only those again.
+//! which changed, and reads only those again, and what instantiating its Nix
+//! helpers made, under a key that says what that was made from.
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -23,7 +24,7 @@ use crate::lang::Language;
 
 /// Bumped whenever the tables change: an index of another version is dropped
 /// and built again, as a cache may be.
-const SCHEMA: i64 = 4;
+const SCHEMA: i64 = 5;
 
 /// A file written this close before graff saw it may be written again within
 /// the same tick of the file system's clock and keep its stat, so it is hashed
@@ -113,6 +114,13 @@ const TABLES: &str = "
         PRIMARY KEY (worktree, path)
     ) WITHOUT ROWID;
     CREATE INDEX files_by_content ON files (content);
+    -- What instantiating a worktree's Nix helpers made, kept under a key
+    -- that says what it was made from.
+    CREATE TABLE instances (
+        worktree INTEGER PRIMARY KEY REFERENCES worktrees (id) ON DELETE CASCADE,
+        key TEXT NOT NULL,
+        made TEXT NOT NULL
+    );
 ";
 
 #[derive(Debug)]
@@ -342,6 +350,8 @@ pub struct Worktree {
     pub languages: Vec<Language>,
     /// Each file's content, by the files' order.
     contents: Vec<i64>,
+    /// Each file's blob id, by the files' order.
+    blobs: Vec<String>,
     id: i64,
 }
 
@@ -558,24 +568,27 @@ impl Store {
             )
             .optional()?
             .unwrap_or(-1);
-        let files: Vec<(String, i64, String)> = self
+        let files: Vec<(String, i64, String, String)> = self
             .connection
             .prepare(
-                "SELECT f.path, f.content, c.language FROM files f JOIN contents c ON c.id = f.content
+                "SELECT f.path, f.content, c.language, c.blob FROM files f JOIN contents c ON c.id = f.content
                  WHERE f.worktree = ?1 ORDER BY f.path",
             )?
-            .query_map([id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+            .query_map([id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })?
             .collect::<Result<_, _>>()?;
         let mut worktree = Worktree {
             files: files
                 .iter()
-                .map(|(path, _, _)| (path.clone(), Extraction::default()))
+                .map(|(path, _, _, _)| (path.clone(), Extraction::default()))
                 .collect(),
             languages: files
                 .iter()
-                .map(|(_, _, language)| known(Language::from_name, language))
+                .map(|(_, _, language, _)| known(Language::from_name, language))
                 .collect::<Result<_, _>>()?,
-            contents: files.iter().map(|(_, content, _)| *content).collect(),
+            contents: files.iter().map(|(_, content, _, _)| *content).collect(),
+            blobs: files.into_iter().map(|(_, _, _, blob)| blob).collect(),
             id,
         };
         let holders = worktree.holders();
@@ -736,6 +749,34 @@ impl Store {
         Ok(())
     }
 
+    /// What instantiating the worktree's Nix helpers made, as
+    /// `keep_instances` kept it, when it was kept under this key.
+    pub fn instances(&self, worktree: &Worktree, key: &str) -> Result<Option<String>, Error> {
+        Ok(self
+            .connection
+            .query_row(
+                "SELECT made FROM instances WHERE worktree = ?1 AND key = ?2",
+                params![worktree.id, key],
+                |row| row.get(0),
+            )
+            .optional()?)
+    }
+
+    /// Keeps what instantiating the worktree's Nix helpers made, under a key
+    /// that says what it was made from, in place of what was kept before.
+    pub fn keep_instances(&self, worktree: &Worktree, key: &str, made: &str) -> Result<(), Error> {
+        // A worktree no check has recorded holds no file graff reads.
+        if worktree.id < 0 {
+            return Ok(());
+        }
+        self.connection.execute(
+            "INSERT INTO instances (worktree, key, made) VALUES (?1, ?2, ?3)
+             ON CONFLICT (worktree) DO UPDATE SET key = excluded.key, made = excluded.made",
+            params![worktree.id, key, made],
+        )?;
+        Ok(())
+    }
+
     /// What the worktree at `root` last saw of each file, by path.
     fn records(&self, root: &str) -> Result<HashMap<String, Record>, Error> {
         let mut query = self.connection.prepare(
@@ -777,6 +818,20 @@ impl Store {
 }
 
 impl Worktree {
+    /// One id for the worktree's files in a language, their paths and their
+    /// contents: the SHA-1 of each one's path and blob id.
+    pub fn digest(&self, language: Language) -> String {
+        let mut sha = sha1_smol::Sha1::new();
+        let files = self.files.iter().zip(&self.languages).zip(&self.blobs);
+        for (((path, _), _), blob) in files.filter(|((_, l), _)| **l == language) {
+            sha.update(path.as_bytes());
+            sha.update(b"\0");
+            sha.update(blob.as_bytes());
+            sha.update(b"\n");
+        }
+        sha.digest().to_string()
+    }
+
     /// The files holding each content: two files with the same bytes share it.
     fn holders(&self) -> HashMap<i64, Vec<usize>> {
         let mut holders: HashMap<i64, Vec<usize>> = HashMap::new();
@@ -1081,6 +1136,59 @@ mod tests {
         write(&first, "src/a.rs", "fn a2() {}\n", OLD);
         store.check(&first).unwrap();
         assert_eq!(count(&store, "SELECT count(*) FROM worktrees"), 1);
+    }
+
+    #[test]
+    fn a_digest_of_a_language_changes_with_its_files_alone() {
+        let folder = Folder::new();
+        let root = repository(folder.0.join("repo"));
+        write(&root, "a.nix", "{ a = 1; }\n", OLD);
+        let mut store = Store::open(&folder.0.join("index.db")).unwrap();
+        let mut digest = || {
+            store.check(&root).unwrap();
+            store.read(&root).unwrap().digest(Language::Nix)
+        };
+        let first = digest();
+        write(&root, "src/a.rs", "fn a2() {}\n", OLD);
+        assert_eq!(digest(), first);
+        write(&root, "a.nix", "{ a = 2; }\n", OLD);
+        let second = digest();
+        assert_ne!(second, first);
+        write(&root, "b.nix", "{ a = 2; }\n", OLD);
+        assert_ne!(digest(), second);
+    }
+
+    #[test]
+    fn instances_are_kept_under_one_key_and_go_with_their_worktree() {
+        let folder = Folder::new();
+        let first = repository(folder.0.join("first"));
+        let second = repository(folder.0.join("second"));
+        let mut store = Store::open(&folder.0.join("index.db")).unwrap();
+        store.check(&first).unwrap();
+        let worktree = store.read(&first).unwrap();
+        assert_eq!(store.instances(&worktree, "one").unwrap(), None);
+        store.keep_instances(&worktree, "one", "made").unwrap();
+        assert_eq!(
+            store.instances(&worktree, "one").unwrap().as_deref(),
+            Some("made")
+        );
+        assert_eq!(store.instances(&worktree, "two").unwrap(), None);
+        store
+            .keep_instances(&worktree, "two", "made again")
+            .unwrap();
+        assert_eq!(store.instances(&worktree, "one").unwrap(), None);
+        assert_eq!(
+            store.instances(&worktree, "two").unwrap().as_deref(),
+            Some("made again")
+        );
+        // A worktree no check has recorded keeps nothing.
+        let unknown = store.read(&second).unwrap();
+        store.keep_instances(&unknown, "one", "made").unwrap();
+        assert_eq!(store.instances(&unknown, "one").unwrap(), None);
+        // One whose folder is gone goes, and what was kept for it.
+        fs::remove_dir_all(&first).unwrap();
+        store.check(&second).unwrap();
+        assert_eq!(count(&store, "SELECT count(*) FROM instances"), 0);
     }
 
     #[test]

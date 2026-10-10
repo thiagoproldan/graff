@@ -14,11 +14,13 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fs;
 use std::path::Path;
+use std::time::UNIX_EPOCH;
 
 use serde_json::{Value, json};
 
 use crate::extract::{CallKind, Kind, RefKind, Symbol};
 use crate::lang::Language;
+use crate::resolve::nix::Instances;
 use crate::resolve::{self, Definition, Edge, File, Library, Resolution, Use};
 use crate::store::{self, Sites, Store, Worktree};
 
@@ -524,6 +526,21 @@ struct Code<'s> {
     written: HashMap<Definition, resolve::nix::Written>,
 }
 
+/// The build of graff that runs, by its executable's path, size and time of
+/// modification, as ccache tells compilers apart by default: what one build
+/// kept, another makes again. None when the system does not say.
+fn build() -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    let meta = fs::metadata(&exe).ok()?;
+    let modified = meta.modified().ok()?.duration_since(UNIX_EPOCH).ok()?;
+    Some(format!(
+        "{} {} {}",
+        exe.display(),
+        meta.len(),
+        modified.as_nanos()
+    ))
+}
+
 /// What a use of a name is in: a definition, or the top of a file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum Caller {
@@ -585,20 +602,39 @@ impl<'s> Code<'s> {
         store.check(root)?;
         let store: &Store = store;
         let mut worktree = store.read(root)?;
-        // A Nix helper a module's file calls makes the module there.
-        store.sites(&mut worktree, Sites::Top)?;
-        let instances = {
-            let files: Vec<File> = worktree
-                .files
-                .iter()
-                .zip(&worktree.languages)
-                .map(|((path, extraction), &language)| File {
-                    path,
-                    language,
-                    extraction,
-                })
-                .collect();
-            resolve::nix::instantiate(&files, &|path| fs::read(root.join(path)).ok())
+        // A Nix helper a module's file calls makes the module there. What the
+        // walk made is kept, for the Nix files and the build that made it.
+        let key = build().map(|build| format!("{build}\n{}", worktree.digest(Language::Nix)));
+        let kept = match &key {
+            Some(key) => store.instances(&worktree, key)?,
+            None => None,
+        };
+        let kept = kept.and_then(|made| {
+            let paths: Vec<&str> = worktree.files.iter().map(|(p, _)| p.as_str()).collect();
+            Instances::from_kept(&made, &paths)
+        });
+        let instances = match kept {
+            Some(instances) => instances,
+            None => {
+                store.sites(&mut worktree, Sites::Top)?;
+                let files: Vec<File> = worktree
+                    .files
+                    .iter()
+                    .zip(&worktree.languages)
+                    .map(|((path, extraction), &language)| File {
+                        path,
+                        language,
+                        extraction,
+                    })
+                    .collect();
+                let instances =
+                    resolve::nix::instantiate(&files, &|path| fs::read(root.join(path)).ok());
+                if let Some(key) = &key {
+                    let paths: Vec<&str> = files.iter().map(|file| file.path).collect();
+                    store.keep_instances(&worktree, key, &instances.kept(&paths))?;
+                }
+                instances
+            }
         };
         let written = instances.apply(
             &mut worktree

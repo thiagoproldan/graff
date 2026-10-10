@@ -15,7 +15,9 @@ references and use items, each with its lines (`src/extract/`), kept in an
 index in `~/.cache/graff` that each query will bring up to date by itself,
 reading again only what changed (`src/store.rs`). It ties each call and
 reference to the definition it reaches, by Rust's rules for names rather
-than by types, and says what stays ambiguous (`src/resolve.rs`). In Nix, by
+than by types, a file being the module of each `mod` item that loads it as
+rustc finds it, through a `path` attribute too, and says what stays
+ambiguous (`src/resolve.rs`). In Nix, by
 its syntax, each binding is a definition named by its path, a NixOS option
 declared with mkOption one too, and a file one, which a path imports: a name
 is tied to the `let` or `rec` binding it is bound to, a path to its file (a
@@ -77,8 +79,8 @@ written in a code span or in the prose (`src/store.rs:120`), and a name a
 code span writes as code names one (`Storage::load`, `k3_mmw()`,
 `CTX_MIN`, not a bare `kind`) are tied to the file, the section, the
 definition holding the line, or the one definition out of test code
-whose full name ends as written; a Rust file stands for the `mod` item
-that makes it a module (`src/resolve/markdown.rs`). It answers five
+whose full name ends as written; a Rust file stands for the `mod` items
+that load it (`src/resolve/markdown.rs`). It answers five
 questions (`src/query.rs`):
 
     graff def Storage::load        # its lines, doc, signature, a type's impl blocks

@@ -1,0 +1,84 @@
+run 2026-10-10: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ryu-1.0.23; builds f6aabd6 /tmp/graff-134/builds/f6aabd6-resolve, task134 /tmp/graff-134/builds/task134-resolve
+ryu-1.0.23: 28 files, 132 definitions and 5302 references in SCIP (rust-analyzer 2026-09-28); left out: 172 references to a symbol of the crate it places nowhere, those to 17 it places twice
+  f6aabd6: precision 0.851 (344 of 404, 28 unjudged), recall 0.466 (344 of 738)
+  task134: precision 0.918 (673 of 733, 28 unjudged), recall 0.912 (673 of 738)
+  wrong in task134, not in f6aabd6: 0
+run 2026-10-10: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/syn-2.0.119; builds f6aabd6 /tmp/graff-134/builds/f6aabd6-resolve, task134 /tmp/graff-134/builds/task134-resolve
+syn-2.0.119: 97 files, 821 definitions and 19417 references in SCIP (rust-analyzer 2026-09-28); left out: 1399 references to a symbol of the crate it places nowhere, those to 11 it places twice
+  f6aabd6: precision 0.957 (1191 of 1244, 21687 unjudged), recall 0.434 (1187 of 2734)
+  task134: precision 0.962 (1328 of 1381, 21791 unjudged), recall 0.484 (1324 of 2734)
+  wrong in task134, not in f6aabd6: 0
+run 2026-10-10: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/portable-atomic-1.15.0; builds f6aabd6 /tmp/graff-134/builds/f6aabd6-resolve, task134 /tmp/graff-134/builds/task134-resolve
+portable-atomic-1.15.0: 54 files, 271 definitions and 3099 references in SCIP (rust-analyzer 2026-09-28); left out: 350 references to a symbol of the crate it places nowhere, those to 1 it places twice
+  f6aabd6: precision 0.972 (210 of 216, 1196 unjudged), recall 0.488 (210 of 430)
+  task134: precision 0.978 (262 of 268, 1233 unjudged), recall 0.609 (262 of 430)
+  wrong in task134, not in f6aabd6: 0
+run 2026-10-10: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pulldown-cmark-0.13.4; builds f6aabd6 /tmp/graff-134/builds/f6aabd6-resolve, task134 /tmp/graff-134/builds/task134-resolve
+pulldown-cmark-0.13.4: 43 files, 674 definitions and 19332 references in SCIP (rust-analyzer 2026-09-28); left out: 337 references to a symbol of the crate it places nowhere, those to 2 it places twice
+  f6aabd6: precision 0.996 (3016 of 3027, 473 unjudged), recall 0.830 (3018 of 3638)
+  task134: precision 0.996 (3016 of 3027, 1639 unjudged), recall 0.830 (3018 of 3638)
+  wrong in task134, not in f6aabd6: 0
+run 2026-10-10: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_json-1.0.150; builds f6aabd6 /tmp/graff-134/builds/f6aabd6-resolve, task134 /tmp/graff-134/builds/task134-resolve
+serde_json-1.0.150: 69 files, 1531 definitions and 22889 references in SCIP (rust-analyzer 2026-09-28); left out: 831 references to a symbol of the crate it places nowhere, those to 27 it places twice
+  f6aabd6: precision 0.995 (4807 of 4831, 863 unjudged), recall 0.810 (4797 of 5919)
+  task134: precision 0.995 (5209 of 5233, 869 unjudged), recall 0.878 (5199 of 5919)
+  wrong in task134, not in f6aabd6: 0
+run 2026-10-10: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/glam-0.31.0; builds f6aabd6 /tmp/graff-134/builds/f6aabd6-resolve, task134 /tmp/graff-134/builds/task134-resolve
+glam-0.31.0: 220 files, 25324 definitions and 269020 references in SCIP (rust-analyzer 2026-09-28); left out: 25697 references to a symbol of the crate it places nowhere, those to 35 it places twice
+  f6aabd6: precision 0.872 (42404 of 48601, 11679 unjudged), recall 0.620 (42411 of 68402)
+  task134: precision 0.875 (43227 of 49424, 11679 unjudged), recall 0.632 (43234 of 68402)
+  wrong in task134, not in f6aabd6: 0
+run 2026-10-10: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustix-1.1.5; builds f6aabd6 /tmp/graff-134/builds/f6aabd6-resolve, task134 /tmp/graff-134/builds/task134-resolve
+rustix-1.1.5: 317 files, 183 definitions and 1865 references in SCIP (rust-analyzer 2026-09-28); left out: 204 references to a symbol of the crate it places nowhere, those to 1 it places twice
+  f6aabd6: precision 0.983 (281 of 286, 9384 unjudged), recall 0.898 (281 of 313)
+  task134: precision 0.983 (289 of 294, 15242 unjudged), recall 0.923 (289 of 313)
+  wrong in task134, not in f6aabd6: 0
+run 2026-10-10: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/getrandom-0.4.3; builds f6aabd6 /tmp/graff-134/builds/f6aabd6-resolve, task134 /tmp/graff-134/builds/task134-resolve
+getrandom-0.4.3: 39 files, 54 definitions and 765 references in SCIP (rust-analyzer 2026-09-28); left out: 52 references to a symbol of the crate it places nowhere, those to 2 it places twice
+  f6aabd6: precision 1.000 (95 of 95, 430 unjudged), recall 0.990 (95 of 96)
+  task134: precision 1.000 (95 of 95, 442 unjudged), recall 0.990 (95 of 96)
+  wrong in task134, not in f6aabd6: 0
+run 2026-10-10: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zerocopy-0.8.59; builds f6aabd6 /tmp/graff-134/builds/f6aabd6-resolve, task134 /tmp/graff-134/builds/task134-resolve
+zerocopy-0.8.59: 109 files, 1209 definitions and 20874 references in SCIP (rust-analyzer 2026-09-28); left out: 988 references to a symbol of the crate it places nowhere, those to 39 it places twice
+  f6aabd6: precision 0.974 (4645 of 4768, 1302 unjudged), recall 0.785 (4647 of 5921)
+  task134: precision 0.974 (4645 of 4768, 1326 unjudged), recall 0.785 (4647 of 5921)
+  wrong in task134, not in f6aabd6: 0
+run 2026-10-10: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mio-1.2.2; builds f6aabd6 /tmp/graff-134/builds/f6aabd6-resolve, task134 /tmp/graff-134/builds/task134-resolve
+mio-1.2.2: 64 files, 121 definitions and 1519 references in SCIP (rust-analyzer 2026-09-28); left out: 133 references to a symbol of the crate it places nowhere, those to 7 it places twice
+  f6aabd6: precision 0.870 (262 of 301, 1951 unjudged), recall 0.796 (262 of 329)
+  task134: precision 0.992 (262 of 264, 1921 unjudged), recall 0.796 (262 of 329)
+  wrong in task134, not in f6aabd6: 0
+run 2026-10-10: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regex-automata-0.4.18; builds f6aabd6 /tmp/graff-134/builds/f6aabd6-resolve, task134 /tmp/graff-134/builds/task134-resolve
+regex-automata-0.4.18: 100 files, 685 definitions and 9394 references in SCIP (rust-analyzer 2026-09-28); left out: 439 references to a symbol of the crate it places nowhere, those to 0 it places twice
+  f6aabd6: precision 0.999 (2119 of 2121, 10795 unjudged), recall 0.882 (2119 of 2402)
+  task134: precision 0.999 (2119 of 2121, 10841 unjudged), recall 0.882 (2119 of 2402)
+  wrong in task134, not in f6aabd6: 0
+run 2026-10-10: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/semver-1.0.28; builds f6aabd6 /tmp/graff-134/builds/f6aabd6-resolve, task134 /tmp/graff-134/builds/task134-resolve
+semver-1.0.28: 15 files, 192 definitions and 3927 references in SCIP (rust-analyzer 2026-09-28); left out: 120 references to a symbol of the crate it places nowhere, those to 3 it places twice
+  f6aabd6: precision 0.989 (659 of 666, 34 unjudged), recall 0.681 (659 of 967)
+  task134: precision 0.928 (875 of 943, 37 unjudged), recall 0.905 (875 of 967)
+  wrong in task134, not in f6aabd6: 61
+    tests/test_version_req.rs:39 req [call free] -> tests/node/mod.rs:41 req; SCIP: tests/util/mod.rs:17
+    tests/test_version_req.rs:47 VersionReq [qualifier] -> tests/node/mod.rs:8 VersionReq; SCIP: src/lib.rs:184
+    tests/test_version_req.rs:53 req [call free] -> tests/node/mod.rs:41 req; SCIP: tests/util/mod.rs:17
+    tests/test_version_req.rs:58 req [call free] -> tests/node/mod.rs:41 req; SCIP: tests/util/mod.rs:17
+    tests/test_version_req.rs:63 req [call free] -> tests/node/mod.rs:41 req; SCIP: tests/util/mod.rs:17
+    tests/test_version_req.rs:68 req [call free] -> tests/node/mod.rs:41 req; SCIP: tests/util/mod.rs:17
+    tests/test_version_req.rs:73 req [call free] -> tests/node/mod.rs:41 req; SCIP: tests/util/mod.rs:17
+    tests/test_version_req.rs:80 req [call free] -> tests/node/mod.rs:41 req; SCIP: tests/util/mod.rs:17
+    tests/test_version_req.rs:85 req [call free] -> tests/node/mod.rs:41 req; SCIP: tests/util/mod.rs:17
+    tests/test_version_req.rs:96 req [call free] -> tests/node/mod.rs:41 req; SCIP: tests/util/mod.rs:17
+    tests/test_version_req.rs:101 req [call free] -> tests/node/mod.rs:41 req; SCIP: tests/util/mod.rs:17
+    tests/test_version_req.rs:108 req [call free] -> tests/node/mod.rs:41 req; SCIP: tests/util/mod.rs:17
+run 2026-10-10: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.53.1; builds f6aabd6 /tmp/graff-134/builds/f6aabd6-resolve, task134 /tmp/graff-134/builds/task134-resolve
+tokio-1.53.1: 555 files, 501 definitions and 11918 references in SCIP (rust-analyzer 2026-09-28); left out: 3231 references to a symbol of the crate it places nowhere, those to 2 it places twice
+  f6aabd6: precision 0.934 (776 of 831, 23018 unjudged), recall 0.801 (776 of 969)
+  task134: precision 0.932 (776 of 833, 23192 unjudged), recall 0.801 (776 of 969)
+  wrong in task134, not in f6aabd6: 2
+    src/loom/std/atomic_u64.rs:19 AtomicU64 [import] -> src/loom/std/atomic_u64_as_mutex.rs:17 AtomicU64; SCIP: outside the crate
+    src/loom/std/mod.rs:74 AtomicU64 [import] -> src/loom/std/atomic_u64_as_mutex.rs:17 AtomicU64; SCIP: outside the crate
+run 2026-10-10: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-0.6.4; builds f6aabd6 /tmp/graff-134/builds/f6aabd6-resolve, task134 /tmp/graff-134/builds/task134-resolve
+objc2-0.6.4: 95 files, 1916 definitions and 19800 references in SCIP (rust-analyzer 2026-09-28); left out: 1586 references to a symbol of the crate it places nowhere, those to 11 it places twice
+  f6aabd6: precision 0.995 (5479 of 5509, 567 unjudged), recall 0.850 (5480 of 6449)
+  task134: precision 0.995 (5479 of 5509, 580 unjudged), recall 0.850 (5480 of 6449)
+  wrong in task134, not in f6aabd6: 0

@@ -10,7 +10,11 @@ it is (parse.py's github-slugger), else the element whose `id`, or the
 graff reaches for each, as decision 128 and the plan of task 16 have it:
 
 - a file of Markdown, Nix, Bash, Python or C: the file;
-- a Rust file: the `mod` item that makes it a module; a crate's root, none;
+- a Rust file: the `mod` item that loads it, read off the source as the
+  Rust Reference places its file -- `x.rs` or `x/mod.rs` in its module's
+  folder, else what a `path` attribute names, plain or in a `cfg_attr`
+  (task 134) --, several of them ambiguous; a crate's root, or a file no
+  `mod` item loads, none;
 - a heading's anchor: its section; a custom anchor: the innermost section
   holding its line, else the file; `L10`: the innermost definition holding
   line 10;
@@ -69,6 +73,92 @@ def rust_module(path):
     return name[:-3]
 
 
+MOD_ITEM = re.compile(r"^[ \t]*(?:#\[[^\n]*?\][ \t]*)*((?:pub(?:\s*\([^)]*\))?\s+)?mod\s+(?:r#)?(\w+)\s*;)", re.M)
+INLINE = re.compile(r"\bmod\s+(?:r#)?(\w+)\s*\{")
+PATH_VALUE = re.compile(r'\bpath\s*=\s*r?(#*)"(.*?)"\1')
+
+
+def attributes_above(text, at):
+    """The attributes right above what starts at `at`, the nearest first,
+    past whole lines of comment."""
+    found = []
+    end = at
+    while True:
+        before = text[:end].rstrip()
+        start = before.rfind("\n") + 1
+        if before[start:].lstrip().startswith("//"):
+            end = start
+            continue
+        if not before.endswith("]"):
+            return found
+        depth, i = 0, len(before) - 1
+        while i > 0:
+            if before[i] == "]":
+                depth += 1
+            elif before[i] == "[":
+                depth -= 1
+                if depth == 0:
+                    break
+            i -= 1
+        if i < 1 or before[i - 1] != "#":
+            return found
+        found.append(before[i - 1:])
+        end = i - 1
+
+
+def inline_modules(text):
+    """The inline modules of a file's text: (name, start, end) of each
+    `mod x { .. }`, its braces counted, those in strings and comments too."""
+    found = []
+    for opened in INLINE.finditer(text):
+        depth, i = 0, opened.end() - 1
+        while i < len(text):
+            depth += {"{": 1, "}": -1}.get(text[i], 0)
+            if depth == 0:
+                break
+            i += 1
+        found.append((opened[1], opened.start(), i))
+    return found
+
+
+def module_loads(worktree, files):
+    """For each Rust file a `mod x;` item loads, the (file, name) of each
+    such item: a root, mod.rs, or a file a `path` attribute loads finds `x`
+    beside itself, any other file in the folder its name makes, and inside
+    inline modules, in their folders under that; a `path` is written from
+    the file's folder, or inside inline modules, from theirs."""
+    items = {}
+    for path in sorted(p for p in files if p.endswith(".rs")):
+        text = worktree.read(path)
+        inline = inline_modules(text)
+        for found in MOD_ITEM.finditer(text):
+            within = [name for name, start, end in inline if start < found.start(1) < end]
+            plain, conditional = None, []
+            for attribute in reversed(attributes_above(text, found.start(1))):
+                if re.match(r"#\[\s*path\b", attribute):
+                    plain = PATH_VALUE.search(attribute)[2] if PATH_VALUE.search(attribute) else None
+                elif re.match(r"#\[\s*cfg_attr\b", attribute):
+                    conditional += [value for _, value in PATH_VALUE.findall(attribute)]
+            written = [plain if plain is not None else ""] + conditional
+            items.setdefault(path, []).append((found[2], within, written))
+    by_attribute = {joined(posixpath.dirname(f), w) for f, held in items.items()
+                    for _, within, ws in held for w in ws if w and not within}
+    loads = collections.defaultdict(set)
+    for path, held in items.items():
+        mod_rs = posixpath.basename(path) == "mod.rs" or rust_module(path) is None or path in by_attribute
+        for name, within, written in held:
+            folder = posixpath.join(posixpath.dirname(path) if mod_rs else path[:-3], *within)
+            for w in written:
+                if w:
+                    loaded = joined(folder if within else posixpath.dirname(path), w)
+                else:
+                    loaded = next((c for c in (joined(folder, name + ".rs"), joined(folder, name + "/mod.rs"))
+                                   if c in files), None)
+                if loaded in files:
+                    loads[loaded].add((path, name))
+    return loads
+
+
 def joined(folder, written):
     """A path written from a folder, normalized; None out of the worktree."""
     path = posixpath.normpath(posixpath.join(folder, written))
@@ -118,6 +208,7 @@ class Rules:
         done = run([binaries["extract"]], cwd=worktree.folder, stdin="\n".join(worktree.paths) + "\n", check=False)
         self.definitions = {item["path"]: item["extraction"]["symbols"] for item in map(json.loads, done.stdout.splitlines())}
         self.places = {}
+        self.loads = module_loads(worktree, self.files)
 
     def place(self, path):
         if path not in self.places:
@@ -126,10 +217,13 @@ class Rules:
 
     def whole(self, path):
         """What a file as a whole is to graff: ("file", path), ("module",
-        name, path) for a Rust file, or None for one graff does not read."""
+        name, path) for a Rust file, "ambiguous" for one several `mod` items
+        load, or None for one graff does not read."""
         if path.endswith(".rs") and path in self.definitions:
-            name = rust_module(path)
-            return ("module", name, path) if name else None
+            loads = sorted(self.loads.get(path, ()))
+            if len(loads) > 1:
+                return "ambiguous"
+            return ("module", loads[0][1], path) if loads else None
         if any(d["kind"] == "file" for d in self.definitions.get(path, [])):
             return ("file", path)
         return None
@@ -202,6 +296,8 @@ class Rules:
                     if d["kind"] not in ("file", "impl", "anchor") and segments[-len(wanted):] == wanted:
                         found.append(("definition", target, d["start"]))
         # Two files named alike make two modules of one name: ambiguous.
+        if "ambiguous" in found:
+            return "ambiguous"
         found = sorted(set(f for f in found if f))
         return plain(found[0]) if len(found) == 1 else ("ambiguous" if found else None)
 
@@ -222,9 +318,9 @@ def target(edge):
     if t["kind"] == "file":
         return ("file", t["path"])
     # A `mod x;` item stands for the file x.rs; a module written inline is a
-    # definition of its file's.
+    # definition of its file's. `#2` tells apart two items of one name.
     if t["kind"] == "module" and t["start"] == t["end"]:
-        return ("module", re.split(r"::", t["qualified"])[-1])
+        return ("module", re.sub(r"#\d+$", "", re.split(r"::", t["qualified"])[-1]))
     if t["kind"] == "section":
         return ("section", t["path"], t["start"])
     return ("definition", t["path"], t["start"])

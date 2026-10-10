@@ -1670,6 +1670,40 @@ src/lib.rs:1 module store: 1 caller, 0 possible; links and mentions only, as Rus
 }
 
 #[test]
+fn a_rust_file_a_path_attribute_loads_is_the_module_of_its_item() {
+    let demo = Demo::of(
+        "md-path-module",
+        &[
+            ("Cargo.toml", DEMO_MANIFEST),
+            (
+                "src/lib.rs",
+                "#[path = \"gen/made.rs\"]\npub mod made;\n\npub fn run() {\n    made::make();\n}\n",
+            ),
+            ("src/gen/made.rs", "pub fn make() {}\n"),
+            ("readme.md", "# Demo\n\n`src/gen/made.rs` makes things.\n"),
+        ],
+    );
+    assert_eq!(
+        demo.ask(&["callers", "src/gen/made.rs"]),
+        demo.rooted(
+            "callers src/gen/made.rs in ROOT
+src/lib.rs:2 module made: 1 caller, 0 possible; links and mentions only, as Rust's uses reach what they name in it
+  readme.md:1-3 section Demo #demo: mention 3
+"
+        )
+    );
+    assert_eq!(
+        demo.ask(&["callers", "made::make"]),
+        demo.rooted(
+            "callers made::make in ROOT
+src/gen/made.rs:1 function make: 1 caller, 0 possible
+  src/lib.rs:4-6 function run: call 5
+"
+        )
+    );
+}
+
+#[test]
 fn a_section_headed_with_a_name_of_the_code_is_named_by_its_anchor_alone() {
     let demo = Demo::of("md-code-name", DOCS_DEMO);
     // The struct is what `Storage` stands for, not the readme's section.

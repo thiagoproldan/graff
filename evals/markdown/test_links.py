@@ -49,6 +49,8 @@ def main():
                          "src/k3.c": [definition("file", "", 1, 9)], "a/util.h": [definition("file", "", 1, 2)],
                          "b/util.h": [definition("file", "", 1, 2)], "tools/run": [definition("file", "", 1, 4)],
                          "src/a/ipc.rs": [], "src/b/ipc.rs": []}
+    rules.loads = {"src/store.rs": {("src/lib.rs", "store")}, "src/a/ipc.rs": {("src/a/mod.rs", "ipc")},
+                   "src/b/ipc.rs": {("src/b/mod.rs", "ipc")}}
     rules.places = {
         "readme.md": place(True, {"usage": 5, "usage-1": 9}, [(1, 30), (5, 8), (9, 30)], {"x30": 12}),
         "docs/guide.md": place(True, {"guide": 1}, [(1, 9)], {"top": 1}),
@@ -89,9 +91,56 @@ def main():
     ]:
         check(f"path {written!r} from {source}", rules.path(source, written), want)
 
+    class Sources:
+        def __init__(self, texts):
+            self.texts = texts
+
+        def read(self, path):
+            return self.texts[path]
+
+    texts = {
+        "src/lib.rs": '#[path = "../shared/x.rs"]\nmod a;\npub(crate) mod b;\n'
+                      '#[cfg_attr(miri, path = "fake.rs")]\n// A comment.\n#[cfg(any(\n    unix,\n))]\nmod real;\n'
+                      '#[path = "no.rs"]\nfn f() {}\nmod e;\n'
+                      'pub(crate) mod net {\n    pub(crate) mod if_;\n}\n#[cfg(unix)] pub mod same;\n',
+        "src/b.rs": '#[path = "near.rs"]\nmod c;\nmod d;\n',
+        "src/b/d.rs": "", "src/near.rs": "", "shared/x.rs": "mod y;\n", "shared/y.rs": "",
+        "src/real.rs": "", "src/fake.rs": "", "src/e.rs": "", "src/no.rs": "",
+        "tests/a.rs": "mod common;\n", "tests/b.rs": "mod common;\n", "tests/common/mod.rs": "",
+        "src/net/if_.rs": "", "src/same.rs": "",
+    }
+    loads = links.module_loads(Sources(texts), set(texts))
+    for path, want in [
+        ("shared/x.rs", {("src/lib.rs", "a")}),
+        ("src/b.rs", {("src/lib.rs", "b")}),
+        # From the file's folder; a file not a mod.rs keeps the rest in its own.
+        ("src/near.rs", {("src/b.rs", "c")}),
+        ("src/b/d.rs", {("src/b.rs", "d")}),
+        # A file a path loads finds its modules beside it.
+        ("shared/y.rs", {("shared/x.rs", "y")}),
+        ("src/real.rs", {("src/lib.rs", "real")}),
+        ("src/fake.rs", {("src/lib.rs", "real")}),
+        # An attribute of another item is none of its.
+        ("src/e.rs", {("src/lib.rs", "e")}),
+        ("src/no.rs", set()),
+        ("tests/common/mod.rs", {("tests/a.rs", "common"), ("tests/b.rs", "common")}),
+        # Inside an inline module, in its folder; after an attribute on its line.
+        ("src/net/if_.rs", {("src/lib.rs", "if_")}),
+        ("src/same.rs", {("src/lib.rs", "same")}),
+    ]:
+        check(f"the `mod` items that load {path}", loads.get(path, set()), want)
+    rules.files, rules.loads = set(texts), loads
+    rules.definitions = {path: [] for path in texts}
+    check("a file two items load", rules.link("readme.md", "tests/common/mod.rs"), "ambiguous")
+    check("a file a cfg_attr loads", rules.link("readme.md", "src/fake.rs"), ("module", "real"))
+    check("a file no item loads", rules.link("readme.md", "src/no.rs"), None)
+
     edge = {"resolution": "resolved", "target": {"kind": "module", "qualified": "store", "path": "src/lib.rs",
                                                  "start": 1, "end": 1}}
     check("a `mod x;` item is its file's module", links.target(edge), ("module", "store"))
+    edge["target"].update({"qualified": "detect#2"})
+    check("a second `mod x;` item is x", links.target(edge), ("module", "detect"))
+    edge["target"].update({"qualified": "store"})
     edge["target"].update({"qualified": "tests", "path": "src/store.rs", "start": 11, "end": 20})
     check("an inline module is a definition", links.target(edge), ("definition", "src/store.rs", 11))
     check("ambiguous", links.target({"resolution": "ambiguous", "target": None}), "ambiguous")

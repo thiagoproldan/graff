@@ -509,7 +509,99 @@ impl<'s> Reader<'s> {
             self.scope.push((Self::segment(&qualified), Scope::Module));
             self.children(body);
             self.scope.pop();
+            return;
         }
+        // `mod x;`: the module is a file of its own.
+        for path in self.loaded_from(node) {
+            self.out.imports.push(Import {
+                path,
+                alias: None,
+                glob: false,
+                public: false,
+                line: line(node),
+                from: Some(qualified.clone()),
+                via: Some("mod".to_string()),
+            });
+        }
+    }
+
+    /// The files a `mod x;` item is loaded from, as its attributes write
+    /// them: `#[path = "a.rs"]`'s, else none written (""), for `x.rs` or
+    /// `x/mod.rs`; and besides, a `#[cfg_attr(.., path = "b.rs")]`'s, which
+    /// the builds its condition holds for load instead.
+    fn loaded_from(&self, item: Node) -> Vec<String> {
+        let mut attributes = Vec::new();
+        let mut previous = item.prev_sibling();
+        while let Some(node) = previous {
+            match node.kind() {
+                "attribute_item" => attributes.extend(named_children(node).into_iter().next()),
+                "line_comment" | "block_comment" => {}
+                _ => break,
+            }
+            previous = node.prev_sibling();
+        }
+        let mut plain = None;
+        let mut conditional = Vec::new();
+        for attribute in attributes.into_iter().rev() {
+            let name = named_children(attribute)
+                .first()
+                .map(|n| self.text(*n))
+                .unwrap_or_default();
+            match name {
+                "path" => {
+                    plain = attribute
+                        .child_by_field_name("value")
+                        .and_then(|value| self.literal(value));
+                }
+                "cfg_attr" => {
+                    if let Some(arguments) = attribute.child_by_field_name("arguments") {
+                        self.conditional_paths(arguments, &mut conditional);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut found = vec![plain.unwrap_or_default()];
+        for path in conditional {
+            if !found.contains(&path) {
+                found.push(path);
+            }
+        }
+        found
+    }
+
+    /// The paths a `cfg_attr`'s attributes name, past its condition, those
+    /// of a `cfg_attr` it holds included.
+    fn conditional_paths(&self, arguments: Node, found: &mut Vec<String>) {
+        let tokens: Vec<Node> = all_children(arguments)
+            .into_iter()
+            .filter(|t| !matches!(t.kind(), "(" | ")"))
+            .collect();
+        for attribute in tokens.split(|t| t.kind() == ",").skip(1) {
+            match attribute {
+                [name, equals, value] if self.text(*name) == "path" && equals.kind() == "=" => {
+                    found.extend(self.literal(*value));
+                }
+                [name, inner] if self.text(*name) == "cfg_attr" && inner.kind() == "token_tree" => {
+                    self.conditional_paths(*inner, found);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// The text a string literal holds, plain or raw.
+    fn literal(&self, node: Node) -> Option<String> {
+        if !matches!(node.kind(), "string_literal" | "raw_string_literal") {
+            return None;
+        }
+        Some(
+            named_children(node)
+                .into_iter()
+                .filter(|part| matches!(part.kind(), "string_content" | "escape_sequence"))
+                .map(|part| self.text(part))
+                .collect(),
+        )
     }
 
     fn trait_item(&mut self, node: Node) {
@@ -1615,6 +1707,7 @@ mod tests {
         let got: Vec<(String, Option<String>, bool, bool)> = out
             .imports
             .iter()
+            .filter(|i| i.via.is_none())
             .map(|i| (i.path.clone(), i.alias.clone(), i.glob, i.public))
             .collect();
         assert_eq!(
@@ -1632,6 +1725,48 @@ mod tests {
                 ("crate::ops::apply".into(), None, true, true),
                 ("super::item::Item".into(), None, false, false),
                 ("super".into(), None, true, false),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_mod_item_without_a_body_loads_the_file_its_path_attributes_name() {
+        let source = r#"mod plain;
+#[path = "gen/a.rs"]
+pub mod written;
+/// Doc.
+#[cfg_attr(any(miri, test), path = "fake.rs")]
+#[cfg_attr(unix, cfg_attr(target_os = "linux", path = r"linux.rs"))]
+mod either;
+#[cfg_attr(feature = "x", path = "x.rs")]
+#[path = "always.rs"]
+mod both;
+#[path = "dir"]
+mod inline {}
+"#;
+        let out = extract(source.as_bytes());
+        let got: Vec<(&str, &str, u32)> = out
+            .imports
+            .iter()
+            .map(|i| {
+                assert_eq!(i.via.as_deref(), Some("mod"));
+                (
+                    i.from.as_deref().unwrap_or_default(),
+                    i.path.as_str(),
+                    i.line,
+                )
+            })
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("plain", "", 1),
+                ("written", "gen/a.rs", 3),
+                ("either", "", 7),
+                ("either", "fake.rs", 7),
+                ("either", "linux.rs", 7),
+                ("both", "always.rs", 10),
+                ("both", "x.rs", 10),
             ]
         );
     }

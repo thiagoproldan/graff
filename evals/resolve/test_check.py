@@ -9,6 +9,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import check as resolve_check  # noqa: E402
+import registry  # noqa: E402
 
 CRATE = "rust-analyzer cargo demo 0.1.0 "
 
@@ -117,6 +118,24 @@ def main():
     judged, found, _, missed = resolve_check.score(unresolved, definitions, references)
     check("precision: an unresolved edge is not judged", dict(judged), {})
     check("recall: it misses", dict(found), {("function", "wrong or unresolved: external"): 1})
+
+    # registry.py: every file; a reference through a crate's module path SCIP
+    # places nowhere is left out, a definition at one spot twice is one.
+    twice_at_one_spot = {"relative_path": "src/gen.rs", "position_encoding": 1, "occurrences": [
+        occurrence(CRATE + "gen/make().", 1, 7, 11, resolve_check.DEFINITION),
+        occurrence(CRATE + "gen/make().", 1, 7, 11, resolve_check.DEFINITION),
+        occurrence(CRATE + "tests/gen/make().", 1, 0, 4),
+    ]}
+    index = {"documents": INDEX["documents"] + [twice_at_one_spot]}
+    sources = {**SOURCE, "tests/cli.rs": "load\n", "src/gen.rs": "pub fn make() {}\n"}
+    definitions, references, twice, nowhere = registry.places(index, "demo", lambda path: sources[path])
+    check("registry: a definition SCIP gives twice at one spot is one",
+          definitions.get(CRATE + "gen/make()."), ("src/gen.rs", 1))
+    check("registry: the files out of src/ too", ("tests/cli.rs", 1, "load", CRATE + "load().", True) in references,
+          True)
+    check("registry: a reference to a symbol of the crate placed nowhere is left out, counted",
+          (nowhere, [r for r in references if r[3] == CRATE + "tests/gen/make()."]), (1, []))
+    check("registry: one placed at two spots is left out", (twice, [r for r in references if "twice" in r[3]]), (1, []))
 
     print(f"{total - failed}/{total} ok")
     sys.exit(1 if failed else 0)

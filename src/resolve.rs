@@ -21,7 +21,7 @@ pub mod nix;
 pub mod python;
 
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::LazyLock;
 
 use crate::extract::{CallKind, Extraction, Kind, RefKind, Symbol};
@@ -425,18 +425,292 @@ fn libs<'p>(paths: impl Iterator<Item = &'p str>) -> HashSet<String> {
         .collect()
 }
 
-/// The crate each file belongs to and its module path there, as `place`
-/// reads them from Cargo's layout; a file in another language is its own,
-/// with no module.
-pub fn places(paths: &[&str]) -> Vec<(String, Vec<String>)> {
-    let libs = libs(paths.iter().copied());
-    paths
+/// Whether a Rust file is a crate's root by Cargo's layout: src/lib.rs,
+/// src/main.rs, a file of src/bin/, tests/, examples/ or benches/ or a
+/// folder's main.rs there. A file outside them, as build.rs, is a root
+/// only if no item loads it.
+fn root(path: &str) -> bool {
+    let parts: Vec<&str> = path.split('/').collect();
+    let Some(at) = parts
         .iter()
-        .map(|path| match Language::of(path, b"") {
-            Some(Language::Rust) => place(path, &libs),
-            _ => (path.to_string(), Vec::new()),
-        })
-        .collect()
+        .position(|part| matches!(*part, "src" | "tests" | "examples" | "benches"))
+    else {
+        return false;
+    };
+    match (parts[at], &parts[at + 1..]) {
+        ("src", ["lib.rs" | "main.rs"] | ["bin", _] | ["bin", _, "main.rs"]) => true,
+        ("src", _) => false,
+        (_, [_] | [_, "main.rs"]) => true,
+        _ => false,
+    }
+}
+
+/// A path written from a folder, its `.` and `..` taken: none for one
+/// that leaves the worktree, or starts at the file system's root.
+fn relative(folder: &str, written: &str) -> Option<String> {
+    if written.starts_with('/') {
+        return None;
+    }
+    let mut parts: Vec<&str> = folder.split('/').filter(|p| !p.is_empty()).collect();
+    for part in written.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop()?;
+            }
+            part => parts.push(part),
+        }
+    }
+    Some(parts.join("/"))
+}
+
+/// Where each file is a module, as rustc follows `mod` items from a
+/// crate's root: `mod x;` loads the file its `path` attribute names, plain
+/// or in a `cfg_attr` (each, as builds differ), else `x.rs` or `x/mod.rs` in
+/// its module's folder, and a file several items load is several modules.
+/// A file no item loads -- a crate's root, or one only a macro's tokens
+/// load, as libc's `cfg_if!` does -- is where Cargo's layout puts it
+/// (`place`). A file in another language is its own, with no module.
+pub struct Places {
+    /// Each file's crates and module paths, first the one its own code is
+    /// read from: Cargo's layout's, if an item loads it there.
+    scopes: Vec<Vec<Scope>>,
+    /// The `mod` items that load each file.
+    loaders: Vec<Vec<Definition>>,
+    /// The other files each file is a module with: those a `cfg` or a
+    /// `cfg_attr` loads in its stead, never built with it.
+    alternatives: Vec<Vec<usize>>,
+}
+
+/// A `mod x;` item that loads a file: the item, the inline modules it is
+/// in, its name, the file.
+type Load = (Definition, Vec<String>, String, usize);
+
+/// A `mod x;` item as its file has it: its symbol, the inline modules it is
+/// in, the paths its attributes write.
+type Declared<'a> = (usize, Vec<String>, Vec<&'a str>);
+
+impl Places {
+    pub fn new(files: &[File]) -> Places {
+        let libs = libs(files.iter().map(|f| f.path));
+        let layout: Vec<Scope> = files
+            .iter()
+            .map(|f| match f.language {
+                Language::Rust => place(f.path, &libs),
+                _ => (f.path.to_string(), Vec::new()),
+            })
+            .collect();
+        let rust: HashMap<&str, usize> = (0..files.len())
+            .filter(|&f| files[f].language == Language::Rust)
+            .map(|f| (files[f].path, f))
+            .collect();
+        let found = |path: Option<String>| path.and_then(|path| rust.get(path.as_str()).copied());
+        let folder = |f: usize| {
+            files[f]
+                .path
+                .rsplit_once('/')
+                .map_or("", |(folder, _)| folder)
+        };
+        // The `mod x;` items of each file, by qualified name, with the paths
+        // their attributes write.
+        let items: Vec<Vec<Declared>> = files
+            .iter()
+            .map(|file| {
+                let modules: HashMap<&str, usize> = (0..file.extraction.symbols.len())
+                    .map(|s| (&file.extraction.symbols[s], s))
+                    .filter(|(symbol, _)| symbol.kind == Kind::Module)
+                    .map(|(symbol, s)| (symbol.qualified.as_str(), s))
+                    .collect();
+                let module = |qualified: &str| modules.get(qualified).copied();
+                let mut items: Vec<Declared> = Vec::new();
+                for import in &file.extraction.imports {
+                    let (Some("mod"), Some(from)) = (import.via.as_deref(), &import.from) else {
+                        continue;
+                    };
+                    let Some(s) = module(from) else {
+                        continue;
+                    };
+                    if let Some(item) = items.iter_mut().find(|item| item.0 == s) {
+                        item.2.push(&import.path);
+                        continue;
+                    }
+                    // The inline modules it is in; none for an item in a
+                    // function, which no path reaches.
+                    let parts = segments(from);
+                    let inline: Option<Vec<String>> = (1..parts.len())
+                        .map(|n| {
+                            module(&parts[..n].join("::")).map(|_| {
+                                parts[n - 1]
+                                    .split('#')
+                                    .next()
+                                    .unwrap_or_default()
+                                    .to_string()
+                            })
+                        })
+                        .collect();
+                    if let Some(inline) = inline {
+                        items.push((s, inline, vec![&import.path]));
+                    }
+                }
+                items
+            })
+            .collect();
+        // A file a `path` attribute loads is read as a mod.rs, as a crate's
+        // root is: its own `mod y;` items load files beside it.
+        let mut by_attribute = HashSet::new();
+        for (f, items) in items.iter().enumerate() {
+            for (_, inline, paths) in items {
+                if inline.is_empty() {
+                    by_attribute.extend(
+                        paths
+                            .iter()
+                            .filter(|path| !path.is_empty())
+                            .filter_map(|path| found(relative(folder(f), path))),
+                    );
+                }
+            }
+        }
+        let mut loads: Vec<Vec<Load>> = vec![Vec::new(); files.len()];
+        for (f, items) in items.into_iter().enumerate() {
+            let name = files[f].path.rsplit('/').next().unwrap_or_default();
+            let mod_rs = root(files[f].path) || name == "mod.rs" || by_attribute.contains(&f);
+            for (s, inline, paths) in items {
+                let symbol = &files[f].extraction.symbols[s];
+                let module = symbol.name.trim_start_matches("r#").to_string();
+                // The folder of the module the item is in.
+                let mut within = folder(f).to_string();
+                if !mod_rs {
+                    within = format!("{within}/{}", name.trim_end_matches(".rs"));
+                }
+                for part in &inline {
+                    within = format!("{within}/{part}");
+                }
+                for path in paths {
+                    let loaded = if path.is_empty() {
+                        found(relative(&within, &format!("{module}.rs")))
+                            .or_else(|| found(relative(&within, &format!("{module}/mod.rs"))))
+                    } else if inline.is_empty() {
+                        found(relative(folder(f), path))
+                    } else {
+                        found(relative(&within, path))
+                    };
+                    // Declared again under another cfg, it is the same module.
+                    if let Some(loaded) = loaded
+                        && !loads[f]
+                            .iter()
+                            .any(|load| load.3 == loaded && load.1 == inline && load.2 == module)
+                    {
+                        let item = Definition { file: f, symbol: s };
+                        loads[f].push((item, inline.clone(), module.clone(), loaded));
+                    }
+                }
+            }
+        }
+        let mut loaders: Vec<Vec<Definition>> = vec![Vec::new(); files.len()];
+        for load in loads.iter().flatten() {
+            loaders[load.3].push(load.0);
+        }
+        // From every crate's root at once, then from each file no item
+        // loads, then from what is left, which a cycle loads.
+        let mut scopes: Vec<Vec<Scope>> = files.iter().map(|_| Vec::new()).collect();
+        let rust: Vec<usize> = (0..files.len())
+            .filter(|&f| files[f].language == Language::Rust)
+            .collect();
+        let roots: Vec<usize> = rust
+            .iter()
+            .copied()
+            .filter(|&f| root(files[f].path))
+            .collect();
+        Self::walk(&loads, &mut scopes, &layout, &roots);
+        let rest: Vec<usize> = rust
+            .iter()
+            .copied()
+            .filter(|&f| loaders[f].is_empty())
+            .chain(rust.iter().copied())
+            .collect();
+        for f in rest {
+            if scopes[f].is_empty() {
+                Self::walk(&loads, &mut scopes, &layout, &[f]);
+            }
+        }
+        for (f, scopes) in scopes.iter_mut().enumerate() {
+            // A file of src/ a test loads as well is read as its library's,
+            // where Cargo's layout puts it, though the test is nearer.
+            match scopes.iter().position(|scope| *scope == layout[f]) {
+                Some(at) => scopes[..=at].rotate_right(1),
+                None if scopes.is_empty() => scopes.push(layout[f].clone()),
+                None => {}
+            }
+        }
+        let mut modules: HashMap<&Scope, Vec<usize>> = HashMap::new();
+        for (f, scopes) in scopes.iter().enumerate() {
+            for scope in scopes {
+                modules.entry(scope).or_default().push(f);
+            }
+        }
+        let mut alternatives: Vec<Vec<usize>> = files.iter().map(|_| Vec::new()).collect();
+        for same in modules.values().filter(|same| same.len() > 1) {
+            for &f in same {
+                for &g in same {
+                    if g != f && !alternatives[f].contains(&g) {
+                        alternatives[f].push(g);
+                    }
+                }
+            }
+        }
+        Places {
+            scopes,
+            loaders,
+            alternatives,
+        }
+    }
+
+    /// Places the files the `starts` load, those they load in turn, and so
+    /// on, the starts where Cargo's layout puts them.
+    fn walk(loads: &[Vec<Load>], scopes: &mut [Vec<Scope>], layout: &[Scope], starts: &[usize]) {
+        let mut queue = VecDeque::new();
+        for &start in starts {
+            scopes[start].push(layout[start].clone());
+            queue.push_back((start, layout[start].clone()));
+        }
+        while let Some((f, (crate_name, module))) = queue.pop_front() {
+            for (_, inline, name, loaded) in &loads[f] {
+                let mut path = module.clone();
+                path.extend(inline.iter().cloned());
+                path.push(name.clone());
+                // Placed there already, or loaded again inside itself: a cycle.
+                if scopes[*loaded]
+                    .iter()
+                    .any(|(c, m)| *c == crate_name && path.starts_with(m))
+                {
+                    continue;
+                }
+                let scope = (crate_name.clone(), path);
+                scopes[*loaded].push(scope.clone());
+                queue.push_back((*loaded, scope));
+            }
+        }
+    }
+
+    /// The crate and module path a file's own code is read from.
+    pub fn of(&self, file: usize) -> &Scope {
+        &self.scopes[file][0]
+    }
+
+    /// Every crate and module path a file is.
+    pub fn all(&self, file: usize) -> &[Scope] {
+        &self.scopes[file]
+    }
+
+    /// The `mod` items that load a file: none for a crate's root.
+    pub fn loaders(&self, file: usize) -> &[Definition] {
+        &self.loaders[file]
+    }
+
+    /// The files a file is a module with, which a build never holds with it.
+    pub fn alternatives(&self, file: usize) -> &[usize] {
+        &self.alternatives[file]
+    }
 }
 
 /// A file's part of a module path: `store` for `store.rs`, none for `mod.rs`.
@@ -460,8 +734,8 @@ type ByName<'a> = HashMap<&'a str, Vec<Definition>>;
 
 struct Index<'a> {
     files: &'a [File<'a>],
-    /// Each file's crate and module.
-    places: Vec<Scope>,
+    /// Each file's crates and modules.
+    places: Places,
     /// Each file's inline modules, by qualified name.
     inline: Vec<HashMap<String, &'a Symbol>>,
     /// The packages that have a library: its crate is named by the package.
@@ -489,8 +763,13 @@ struct Index<'a> {
     /// What a module's use items and globs bring in of a name, at a depth
     /// of the walk, once looked up: libc's modules, joined by chains of
     /// `pub use self::x::*;`, were walked again for every name and path.
-    brought: RefCell<HashMap<(Scope, String, usize), Found>>,
+    brought: RefCell<HashMap<Brought, Found>>,
 }
+
+/// What a lookup of what use items and globs bring in is kept by: the
+/// module, the name, the depth, and for a file another file is a module
+/// with, that file, which sees none of the other's definitions.
+type Brought = (Scope, String, usize, Option<usize>);
 
 #[derive(Default)]
 struct Imports<'a> {
@@ -511,7 +790,7 @@ impl<'a> Index<'a> {
         let libs = libs(files.iter().map(|f| f.path));
         let mut index = Index {
             files,
-            places: files.iter().map(|f| place(f.path, &libs)).collect(),
+            places: Places::new(files),
             inline: Vec::new(),
             libraries: libraries
                 .iter()
@@ -544,17 +823,21 @@ impl<'a> Index<'a> {
                     waiting.push(Definition { file: f, symbol: s });
                 }
             }
-            for import in &file.extraction.imports {
-                let scope = index.scope_at(f, import.line);
-                let imports = index.imports.entry(scope).or_default();
-                if import.glob {
-                    imports.globs.push(&import.path);
-                } else {
-                    let local = import
-                        .alias
-                        .as_deref()
-                        .unwrap_or_else(|| last(&import.path));
-                    imports.named.entry(local).or_default().push(&import.path);
+            // Use items; what a `mod` item loads is a file, `Places`'.
+            for import in file.extraction.imports.iter().filter(|i| i.via.is_none()) {
+                // In each module the file is, as its definitions are.
+                for place in index.places.all(f).to_vec() {
+                    let scope = index.scope_in(f, place, import.line);
+                    let imports = index.imports.entry(scope).or_default();
+                    if import.glob {
+                        imports.globs.push(&import.path);
+                    } else {
+                        let local = import
+                            .alias
+                            .as_deref()
+                            .unwrap_or_else(|| last(&import.path));
+                        imports.named.entry(local).or_default().push(&import.path);
+                    }
                 }
             }
         }
@@ -566,7 +849,13 @@ impl<'a> Index<'a> {
             .collect();
         for (d, types, traits) in placed {
             let symbol = index.symbol(d);
-            let crate_name = index.places[d.file].0.clone();
+            // Each crate the file is in.
+            let mut crates: Vec<String> = Vec::new();
+            for (crate_name, _) in index.places.all(d.file) {
+                if !crates.contains(crate_name) {
+                    crates.push(crate_name.clone());
+                }
+            }
             if symbol.kind == Kind::Impl {
                 if let [ty] = types[..] {
                     index.implements.entry(ty).or_default().extend(traits);
@@ -588,20 +877,24 @@ impl<'a> Index<'a> {
                     .split('#')
                     .next()
                     .unwrap_or_default();
-                index
-                    .unplaced
-                    .entry((crate_name.clone(), ty))
-                    .or_default()
-                    .entry(name)
-                    .or_default()
-                    .push(d);
+                for crate_name in &crates {
+                    index
+                        .unplaced
+                        .entry((crate_name.clone(), ty))
+                        .or_default()
+                        .entry(name)
+                        .or_default()
+                        .push(d);
+                }
             }
             if symbol.kind == Kind::Method {
-                index
-                    .methods_named
-                    .entry((crate_name, name))
-                    .or_default()
-                    .push(d);
+                for crate_name in crates {
+                    index
+                        .methods_named
+                        .entry((crate_name, name))
+                        .or_default()
+                        .push(d);
+                }
             }
         }
         // What was brought in before the types held their impls' items may
@@ -620,19 +913,25 @@ impl<'a> Index<'a> {
         }
         let definition = Definition { file, symbol: s };
         let name = symbol.name.as_str();
-        let (crate_name, mut module) = self.places[file].clone();
         if rest.len() == 1 {
-            module.extend(inline);
-            self.items
-                .entry((crate_name.clone(), module))
-                .or_default()
-                .entry(name)
-                .or_default()
-                .push(definition);
-            self.items_named
-                .entry((crate_name, name))
-                .or_default()
-                .push(definition);
+            // Under each module the file is.
+            let mut crates: Vec<String> = Vec::new();
+            for (crate_name, mut module) in self.places.all(file).to_vec() {
+                module.extend(inline.iter().cloned());
+                self.items
+                    .entry((crate_name.clone(), module))
+                    .or_default()
+                    .entry(name)
+                    .or_default()
+                    .push(definition);
+                if !crates.contains(&crate_name) {
+                    crates.push(crate_name.clone());
+                    self.items_named
+                        .entry((crate_name, name))
+                        .or_default()
+                        .push(definition);
+                }
+            }
         } else {
             // Inside a function: visible from that function only.
             let owner = symbol
@@ -694,7 +993,12 @@ impl<'a> Index<'a> {
     /// The module a line of a file is in: the innermost inline module whose
     /// lines hold it, else the file's.
     fn scope_at(&self, file: usize, line: u32) -> Scope {
-        let (crate_name, mut module) = self.places[file].clone();
+        self.scope_in(file, self.places.of(file).clone(), line)
+    }
+
+    /// The module a line of a file is in, the file being the module `place`.
+    fn scope_in(&self, file: usize, place: Scope, line: u32) -> Scope {
+        let (crate_name, mut module) = place;
         let mut best: Option<&String> = None;
         for (qualified, symbol) in &self.inline[file] {
             if symbol.start < line
@@ -718,7 +1022,7 @@ impl<'a> Index<'a> {
     fn scope_of(&self, file: usize, from: Option<&str>, line: u32) -> Scope {
         match from {
             Some(from) => {
-                let (crate_name, mut module) = self.places[file].clone();
+                let (crate_name, mut module) = self.places.of(file).clone();
                 module.extend(self.split(file, from).0);
                 (crate_name, module)
             }
@@ -729,7 +1033,7 @@ impl<'a> Index<'a> {
     /// The module a `mod` item opens.
     fn module_scope(&self, d: Definition) -> Scope {
         let symbol = self.symbol(d);
-        let (crate_name, mut module) = self.places[d.file].clone();
+        let (crate_name, mut module) = self.places.of(d.file).clone();
         module.extend(self.split(d.file, &symbol.qualified).0);
         module.push(symbol.name.clone());
         (crate_name, module)
@@ -779,7 +1083,7 @@ impl<'a> Index<'a> {
         let parts = segments(text);
         let found = if parts.len() == 1 {
             self.visible(file, scope, from, text, depth)
-                .or_else(|| self.unique(&scope.0, text, |_| true))
+                .or_else(|| self.unique(file, &scope.0, text, |_| true))
         } else {
             self.path(file, scope, &parts, from, depth)
         };
@@ -853,7 +1157,13 @@ impl<'a> Index<'a> {
 
     /// The definitions of a crate's modules named so that `keep` keeps; none
     /// for a name of the prelude.
-    fn unique(&self, crate_name: &str, name: &str, keep: impl Fn(Definition) -> bool) -> Found {
+    fn unique(
+        &self,
+        file: usize,
+        crate_name: &str,
+        name: &str,
+        keep: impl Fn(Definition) -> bool,
+    ) -> Found {
         if PRELUDE.contains(&name) {
             return None;
         }
@@ -865,7 +1175,19 @@ impl<'a> Index<'a> {
             .copied()
             .filter(|d| keep(*d))
             .collect();
+        let found = self.own(file, &found);
         (!found.is_empty()).then_some((found, Rule::Unique))
+    }
+
+    /// What code in a file can reach of some definitions: none of a file
+    /// it is a module with, which a build holds in its stead.
+    fn own(&self, file: usize, found: &[Definition]) -> Vec<Definition> {
+        let other = self.places.alternatives(file);
+        found
+            .iter()
+            .copied()
+            .filter(|d| !other.contains(&d.file))
+            .collect()
     }
 
     /// A name as the code in `from` sees it: the items of the functions it
@@ -891,12 +1213,21 @@ impl<'a> Index<'a> {
     /// A name as a module sees it: its items, its use items, its globs.
     fn in_module(&self, file: usize, scope: &Scope, name: &str, depth: usize) -> Found {
         if let Some(found) = self.items.get(scope).and_then(|items| items.get(name)) {
-            return Some((found.clone(), Rule::Module));
+            let found = self.own(file, found);
+            if !found.is_empty() {
+                return Some((found, Rule::Module));
+            }
         }
         if depth > DEPTH {
             return None;
         }
-        let key = (scope.clone(), name.to_string(), depth);
+        let alone = self.places.alternatives(file).is_empty();
+        let key = (
+            scope.clone(),
+            name.to_string(),
+            depth,
+            (!alone).then_some(file),
+        );
         if let Some(found) = self.brought.borrow().get(&key) {
             return found.clone();
         }
@@ -907,7 +1238,8 @@ impl<'a> Index<'a> {
 
     /// A name a module's use items or globs bring in. What a lookup finds
     /// does not hang on the file it starts from, but for a function's own
-    /// items, which no lookup here reaches.
+    /// items, which no lookup here reaches, and the files it is a module
+    /// with, whose definitions it never sees.
     fn brought_in(&self, file: usize, scope: &Scope, name: &str, depth: usize) -> Found {
         let imports = self.imports.get(scope);
         if let Some(paths) = imports.and_then(|i| i.named.get(name)) {
@@ -1080,6 +1412,7 @@ impl<'a> Index<'a> {
             })
             .copied()
             .collect();
+        let found = self.own(file, &found);
         if std_method(name) && !found.is_empty() {
             return Resolution::Ambiguous(distinct(found));
         }
@@ -1091,14 +1424,14 @@ impl<'a> Index<'a> {
             Use::Call(CallKind::Method) => {
                 return self.method(file, scope, site.name, site.from, site.receiver);
             }
-            Use::Call(CallKind::Macro) => {
-                self.unique(&scope.0, site.name, |d| self.symbol(d).kind == Kind::Macro)
-            }
+            Use::Call(CallKind::Macro) => self.unique(file, &scope.0, site.name, |d| {
+                self.symbol(d).kind == Kind::Macro
+            }),
             _ => match site.path.map(segments) {
                 Some(parts) if parts.len() > 1 => self.path(file, scope, &parts, site.from, 0),
                 _ => self
                     .visible(file, scope, site.from, site.name, 0)
-                    .or_else(|| self.unique(&scope.0, site.name, |_| true)),
+                    .or_else(|| self.unique(file, &scope.0, site.name, |_| true)),
             },
         };
         found.map_or(Resolution::External, |(definitions, rule)| {
@@ -1240,7 +1573,7 @@ fn resolve_rust(files: &[File], libraries: &[Library]) -> Vec<Edge> {
             .extraction
             .imports
             .iter()
-            .filter(|i| !i.glob)
+            .filter(|i| !i.glob && i.via.is_none())
             .map(|i| Site {
                 line: i.line,
                 name: last(&i.path),
@@ -1253,7 +1586,7 @@ fn resolve_rust(files: &[File], libraries: &[Library]) -> Vec<Edge> {
             .extraction
             .imports
             .iter()
-            .filter(|i| i.glob)
+            .filter(|i| i.glob && i.via.is_none())
             .map(|i| (i.line, format!("{}::*", i.path)));
         for site in calls.chain(references).chain(imports) {
             let scope = index.scope_of(f, site.from, site.line);
@@ -1417,11 +1750,16 @@ fn render() {}
 
     /// Each edge of the package as (path, line, name, use, what it reaches).
     fn edges() -> Vec<(String, u32, String, String, String)> {
-        let extractions: Vec<Extraction> = PACKAGE
+        edges_of(PACKAGE)
+    }
+
+    /// Each edge of a package's files, as `edges` gives them.
+    fn edges_of(package: &[(&str, &str)]) -> Vec<(String, u32, String, String, String)> {
+        let extractions: Vec<Extraction> = package
             .iter()
             .map(|(_, source)| extract::extract(Language::Rust, source.as_bytes()))
             .collect();
-        let files: Vec<File> = PACKAGE
+        let files: Vec<File> = package
             .iter()
             .zip(&extractions)
             .map(|((path, _), extraction)| File {
@@ -1709,5 +2047,168 @@ fn render() {}
         assert_eq!(placed("examples/resolve.rs"), ":examples/resolve|");
         assert_eq!(placed("crates/core/src/a/b.rs"), "crates/core|a::b");
         assert_eq!(placed("crates/tool/src/main.rs"), "crates/tool|");
+    }
+
+    /// Where `Places` puts each file of a package: its crates and module
+    /// paths, then the `mod` items that load it.
+    fn placed(package: &[(&str, &str)]) -> Vec<String> {
+        let extractions: Vec<Extraction> = package
+            .iter()
+            .map(|(_, source)| extract::extract(Language::Rust, source.as_bytes()))
+            .collect();
+        let files: Vec<File> = package
+            .iter()
+            .zip(&extractions)
+            .map(|((path, _), extraction)| File {
+                path,
+                language: Language::Rust,
+                extraction,
+            })
+            .collect();
+        let places = Places::new(&files);
+        (0..files.len())
+            .map(|f| {
+                let scopes: Vec<String> = places
+                    .all(f)
+                    .iter()
+                    .map(|(crate_name, module)| format!("{crate_name}|{}", module.join("::")))
+                    .collect();
+                let loaders: Vec<String> = places
+                    .loaders(f)
+                    .iter()
+                    .map(|d| {
+                        let qualified = &files[d.file].extraction.symbols[d.symbol].qualified;
+                        format!("{}:{qualified}", files[d.file].path)
+                    })
+                    .collect();
+                format!(
+                    "{} {} by {}",
+                    files[f].path,
+                    scopes.join(" "),
+                    loaders.join(" ")
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_path_attribute_loads_its_file_from_the_folder_the_reference_says() {
+        let placed = placed(&[
+            (
+                "src/lib.rs",
+                "#[path = \"../shared/x.rs\"]\nmod a;\nmod b;\n",
+            ),
+            (
+                "src/b.rs",
+                "mod inline {\n    #[path = \"other.rs\"]\n    mod inner;\n}\n#[path = \"near.rs\"]\nmod c;\n",
+            ),
+            ("src/b/inline/other.rs", ""),
+            ("src/near.rs", ""),
+            ("shared/x.rs", "mod y;\n"),
+            ("shared/y.rs", ""),
+        ]);
+        assert_eq!(
+            placed,
+            [
+                "src/lib.rs | by ",
+                "src/b.rs |b by src/lib.rs:b",
+                // Inside an inline module of a file that is not a mod.rs,
+                // from the folder of the file's module, then the inline one's.
+                "src/b/inline/other.rs |b::inline::inner by src/b.rs:inline::inner",
+                // Outside one, from the file's own folder.
+                "src/near.rs |b::c by src/b.rs:c",
+                "shared/x.rs |a by src/lib.rs:a",
+                // A file a path attribute loads is read as a mod.rs: its `mod y;`
+                // loads the file beside it.
+                "shared/y.rs |a::y by shared/x.rs:y",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_file_several_items_load_is_each_of_their_modules() {
+        let placed = placed(&[
+            (
+                "src/lib.rs",
+                "#[cfg_attr(miri, path = \"fake.rs\")]\nmod real;\n#[cfg(unix)]\nmod real;\n",
+            ),
+            ("src/real.rs", ""),
+            ("src/fake.rs", ""),
+            ("tests/a.rs", "mod common;\n"),
+            ("tests/b.rs", "mod common;\n"),
+            ("tests/common/mod.rs", ""),
+            ("src/stray/mod.rs", ""),
+        ]);
+        assert_eq!(
+            placed,
+            [
+                "src/lib.rs | by ",
+                // Declared again under another cfg, it is the same module.
+                "src/real.rs |real by src/lib.rs:real",
+                "src/fake.rs |real by src/lib.rs:real",
+                "tests/a.rs :tests/a| by ",
+                "tests/b.rs :tests/b| by ",
+                "tests/common/mod.rs :tests/a|common :tests/b|common by tests/a.rs:common tests/b.rs:common",
+                // What no item loads stays where Cargo's layout puts it.
+                "src/stray/mod.rs |stray by ",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_file_of_src_a_test_loads_too_is_read_as_its_library_s() {
+        let placed = placed(&[
+            ("src/lib.rs", "mod rc;\n"),
+            ("src/rc/mod.rs", "mod helper;\n"),
+            ("src/rc/helper.rs", ""),
+            (
+                "tests/t.rs",
+                "#[path = \"../src/rc/helper.rs\"]\nmod helper;\n",
+            ),
+        ]);
+        assert_eq!(
+            placed[2],
+            "src/rc/helper.rs |rc::helper :tests/t|helper by src/rc/mod.rs:helper tests/t.rs:helper"
+        );
+    }
+
+    #[test]
+    fn a_file_sees_none_of_what_a_file_loaded_in_its_stead_defines() {
+        let edges = edges_of(&[
+            (
+                "src/lib.rs",
+                "#[cfg(unix)]\n#[path = \"unix.rs\"]\nmod imp;\n#[cfg(windows)]\n#[path = \"windows.rs\"]\nmod imp;\npub fn f() {\n    imp::open();\n}\n",
+            ),
+            (
+                "src/unix.rs",
+                "pub fn open() {\n    close();\n}\nfn close() {}\n",
+            ),
+            (
+                "src/windows.rs",
+                "pub fn open() {\n    close();\n}\nfn close() {}\n",
+            ),
+            (
+                "tests/a.rs",
+                "mod common;\nfn t() {\n    common::helper();\n}\n",
+            ),
+            ("tests/common/mod.rs", "pub fn helper() {}\n"),
+        ]);
+        // From outside, which file the module is hangs on the build.
+        assert_eq!(
+            reaches(&edges, "src/lib.rs:8", "open", "call path"),
+            "ambiguous, 2"
+        );
+        assert_eq!(
+            reaches(&edges, "src/unix.rs:2", "close", "call free"),
+            "src/unix.rs close (module)"
+        );
+        assert_eq!(
+            reaches(&edges, "src/windows.rs:2", "close", "call free"),
+            "src/windows.rs close (module)"
+        );
+        assert_eq!(
+            reaches(&edges, "tests/a.rs:3", "helper", "call path"),
+            "tests/common/mod.rs helper (path)"
+        );
     }
 }

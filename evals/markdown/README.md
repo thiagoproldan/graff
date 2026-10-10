@@ -8,7 +8,7 @@ an element's `id` or an `<a>`'s `name` is a custom anchor. Three kinds of
 use are tied (decision 128):
 
 - **a link** to a place of the worktree reaches the file (for a Rust file,
-  the `mod` item that makes it a module), a section by its anchor, the
+  the `mod` items that load it), a section by its anchor, the
   section a custom anchor is in, or in code, `#L10`, the innermost
   definition holding line 10;
 - **a path** written in a code span or in the prose, `src/store.rs`,
@@ -192,6 +192,37 @@ ctx's 8 are too few for the control to tell anything.
   a custom anchor, 1,121 with no answer, as marksman reads no HTML. On
   kimi, 40 and 63 the same.
 
+### Result, 2026-10-10 (task 134)
+
+graff reads `path` attributes now: a Rust file is the module of each `mod`
+item that loads it, and a link or a path to a file several items load is
+ambiguous. The rules read the same off the source, apart from graff
+(`module_loads`). ekko's, ctx's, kimi's and graff's reports are the same
+past their first line. The registry has 610 crates with a README now:
+
+| what the rules say a use reaches     | registry      |
+| ------------------------------------ | ------------- |
+| a link: a file                       | 96            |
+| a link: a Rust file's module         | 18            |
+| a link: ambiguous                    | 10            |
+| a link: a section, by an anchor      | 234           |
+| a link: nothing                      | 709           |
+| a path: a file                       | 88            |
+| a path: a Rust file's module         | 68            |
+| a path: ambiguous                    | 22            |
+| a path: nothing                      | 576           |
+| graff the same                       | 1,821 / 1,821 |
+| control, of those reaching something | 17 of 504     |
+
+The 6 above agree: four `mod` items load `intrinsics.rs` (`aarch64`,
+`powerpc64`, `s390x` and `x86_64`, through `#[cfg_attr(.., path =
+"intrinsics.rs")]`) and four `auxv.rs`, so links to them are ambiguous, and
+`powerpc64_aix.rs` is the module `detect`. The rules' first reading of the
+source disagreed with graff 6 times, where graff was right: it took no
+inline module, `pub(crate) mod net { pub(crate) mod if_; }` in libc's
+`src/new/nto/mod.rs`, and no item after an attribute on its line, termios's
+`#[cfg(target_os = "freebsd")] pub mod freebsd;`. It reads both now.
+
 ## mentions.py
 
 The sample is drawn with a seed among the code spans of a corpus's
@@ -284,3 +315,10 @@ picked, and of the judge's picks, how many graff tied:
   src/bytes/tests.rs, was no test code: `length_bytes!` in its changelog
   was tied to a test there. 30 mentions of the registry went to such
   files, in compact_str, litrs, nom and system-deps (`src/test.rs`).
+
+Task 134 (2026-10-10) changed no answer of these samples: with its build,
+each of the registry's 220 judged spans has the edges it had with
+f6aabd6's (167 of them a mention graff ties), resolved on the registry as
+it is now; ctx and kimi hold no Rust, and ekko's and graff's edges are the
+same byte for byte. The reports were not run again, as the registry has
+grown since (610 crates with a README, against 485).

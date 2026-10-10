@@ -1,4 +1,4 @@
-graff e33d74c with uncommitted changes; ekko: /projects/ekko at a69258f (git archive); 2026-10-09
+graff f6aabd6 with uncommitted changes; ekko: /projects/ekko at a69258f (git archive); 2026-10-10
 control, graff's resolver broken on purpose: of the 2426 the rules tie to something, 2 the same as the rules, against graff's 2426
 2676 of 2676 links and written paths reach what the rules say (100.0%)
     link to file: 858 the same, 0 otherwise

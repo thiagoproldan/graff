@@ -539,8 +539,9 @@ struct Code<'s> {
     libraries: Vec<(String, String)>,
     /// Each file's definitions, by qualified name.
     defined: Vec<HashMap<String, usize>>,
-    /// Each file's crate and module path.
-    places: Vec<(String, Vec<String>)>,
+    /// Each Rust file's crates and module paths, and the `mod` items that
+    /// load it.
+    places: resolve::Places,
     /// Where a Nix helper writes each binding it makes where a module
     /// calls it.
     written: HashMap<Definition, resolve::nix::Written>,
@@ -681,12 +682,7 @@ impl<'s> Code<'s> {
                     .collect()
             })
             .collect();
-        let paths: Vec<&str> = worktree
-            .files
-            .iter()
-            .map(|(path, _)| path.as_str())
-            .collect();
-        let places = resolve::places(&paths);
+        let places = resolve::Places::new(&files(&worktree));
         Ok(Code {
             store,
             root,
@@ -987,8 +983,15 @@ impl<'s> Code<'s> {
         let as_file = path_like.then(|| self.file(written));
         let path_alone = !written.contains([':', '#']);
         if let Some(Ok(f)) = as_file {
-            if let Some(whole) = self.whole(f).or_else(|| self.module_of(f)) {
+            if let Some(whole) = self.whole(f) {
                 return Ok(vec![whole]);
+            }
+            // A Rust file's `mod` items stand for it as the file of another
+            // language does: `src/store.rs` is the `store` module
+            // `src/lib.rs` declares. A crate's root has none.
+            let loaders = self.places.loaders(f);
+            if !loaders.is_empty() {
+                return Ok(loaders.to_vec());
             }
             if self.worktree.languages[f] == Language::Rust {
                 return Err(Error::Refused(format!(
@@ -1039,9 +1042,12 @@ impl<'s> Code<'s> {
         let mut found: Vec<Definition> = self
             .definitions(file)
             .filter(|&d| {
-                let in_crate = top
-                    .flatten()
-                    .is_none_or(|package| self.places[d.file].0 == package);
+                let in_crate = top.flatten().is_none_or(|package| {
+                    self.places
+                        .all(d.file)
+                        .iter()
+                        .any(|(krate, _)| krate == package)
+                });
                 // A Markdown section is named by its heading or its anchor.
                 if self.worktree.languages[d.file] == Language::Markdown {
                     return top.is_none() && names_section(self.symbol(d), named.name);
@@ -1174,22 +1180,6 @@ impl<'s> Code<'s> {
             .collect())
     }
 
-    /// A Rust file's `mod` item, which stands for it as the file of another
-    /// language does: `src/store.rs` is the `store` module `src/lib.rs`
-    /// declares. A crate's root has none.
-    fn module_of(&self, file: usize) -> Option<Definition> {
-        let (krate, module) = &self.places[file];
-        if self.worktree.languages[file] != Language::Rust || module.is_empty() {
-            return None;
-        }
-        let module: Vec<&str> = module.iter().map(String::as_str).collect();
-        self.definitions(None).find(|&d| {
-            self.symbol(d).kind == Kind::Module
-                && self.places[d.file].0 == *krate
-                && self.full_name(d) == module
-        })
-    }
-
     /// Whether a Nix binding's own path -- the names it writes, after those
     /// of the binding it is in -- passes through written names to more:
     /// `users.users.alice` passes through `users.users`, but `home` inside
@@ -1215,7 +1205,7 @@ impl<'s> Code<'s> {
     /// A definition's module path in its crate, then its qualified name, by
     /// segment: `store`, `Storage`, `load`.
     fn full_name(&self, d: Definition) -> Vec<&str> {
-        let module = self.places[d.file].1.iter().map(String::as_str);
+        let module = self.places.of(d.file).1.iter().map(String::as_str);
         module
             .chain(resolve::segments(&self.symbol(d).qualified))
             .collect()

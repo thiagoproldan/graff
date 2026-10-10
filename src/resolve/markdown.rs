@@ -25,7 +25,7 @@ use crate::extract::{Import, Kind, Reference};
 use crate::lang::Language;
 
 use super::nix::joined;
-use super::{Definition, Edge, File, Resolution, Rule, Use, places, segments};
+use super::{Definition, Edge, File, Places, Resolution, Rule, Use, segments};
 
 struct Index<'a> {
     files: &'a [File<'a>],
@@ -33,23 +33,22 @@ struct Index<'a> {
     paths: HashMap<&'a str, usize>,
     /// Each definition a name may mention, by its last segment.
     named: HashMap<&'a str, Vec<Definition>>,
-    /// Each Rust `mod` item, by its crate and module path: what a link to
-    /// the file it makes a module reaches.
-    modules: HashMap<(String, Vec<String>), Definition>,
-    /// Each Rust file's crate and module path.
-    places: Vec<(String, Vec<String>)>,
+    /// Each Rust file's crates and module paths, and the `mod` items that
+    /// load it: what a link to the file reaches.
+    places: Places,
 }
 
 impl<'a> Index<'a> {
     fn new(files: &'a [File<'a>]) -> Index<'a> {
-        let paths: Vec<&str> = files.iter().map(|f| f.path).collect();
-        let places = places(&paths);
         let mut index = Index {
             files,
-            paths: paths.iter().enumerate().map(|(f, &p)| (p, f)).collect(),
+            paths: files
+                .iter()
+                .enumerate()
+                .map(|(f, file)| (file.path, f))
+                .collect(),
             named: HashMap::new(),
-            modules: HashMap::new(),
-            places,
+            places: Places::new(files),
         };
         for (f, file) in files.iter().enumerate() {
             if file.language == Language::Markdown {
@@ -59,11 +58,6 @@ impl<'a> Index<'a> {
             for (s, symbol) in file.extraction.symbols.iter().enumerate() {
                 let d = Definition { file: f, symbol: s };
                 let qualified = segments(&symbol.qualified);
-                if file.language == Language::Rust && symbol.kind == Kind::Module {
-                    let mut full: Vec<String> = index.places[f].1.clone();
-                    full.extend(qualified.iter().map(|s| s.to_string()));
-                    index.modules.insert((index.places[f].0.clone(), full), d);
-                }
                 let mentioned = !matches!(
                     symbol.kind,
                     Kind::File | Kind::Section | Kind::Anchor | Kind::Argument | Kind::Impl
@@ -85,27 +79,23 @@ impl<'a> Index<'a> {
     /// A definition's full name: its file's module path, then its
     /// qualified name.
     fn full(&self, d: Definition) -> Vec<&str> {
-        let mut full = module_path(&self.files[d.file], &self.places[d.file].1);
+        let mut full = module_path(&self.files[d.file], &self.places.of(d.file).1);
         full.extend(segments(&self.symbols(d.file)[d.symbol].qualified));
         full
     }
 
-    /// A file as a definition of its own: its file's, or a Rust file's
-    /// `mod` item.
-    fn whole(&self, file: usize) -> Option<Definition> {
+    /// A file as a definition of its own: its file's, or for a Rust file,
+    /// the `mod` items that load it.
+    fn whole(&self, file: usize) -> Vec<Definition> {
         if let Some(s) = self.symbols(file).iter().position(|s| s.kind == Kind::File) {
-            return Some(Definition { file, symbol: s });
+            return vec![Definition { file, symbol: s }];
         }
-        let (krate, module) = &self.places[file];
-        if self.files[file].language != Language::Rust || module.is_empty() {
-            return None;
-        }
-        self.modules.get(&(krate.clone(), module.clone())).copied()
+        self.places.loaders(file).to_vec()
     }
 
     /// The innermost definition holding a line of a file, but its file and
     /// an impl block; the file's own past its definitions.
-    fn around(&self, file: usize, line: u32) -> Option<Definition> {
+    fn around(&self, file: usize, line: u32) -> Vec<Definition> {
         let symbols = self.symbols(file);
         (0..symbols.len())
             .filter(|&s| {
@@ -114,31 +104,38 @@ impl<'a> Index<'a> {
                     && !matches!(symbols[s].kind, Kind::File | Kind::Impl | Kind::Anchor)
             })
             .max_by_key(|&s| (symbols[s].start, std::cmp::Reverse(symbols[s].end)))
-            .map(|symbol| Definition { file, symbol })
-            .or_else(|| self.whole(file))
+            .map(|symbol| vec![Definition { file, symbol }])
+            .unwrap_or_else(|| self.whole(file))
     }
 
     /// What a fragment names in a file: a section by its anchor, the section
     /// a custom anchor is in, or in code, `L10` and `L10-L20` the definition
     /// around line 10.
-    fn fragment(&self, file: usize, fragment: &str) -> Option<Definition> {
+    fn fragment(&self, file: usize, fragment: &str) -> Vec<Definition> {
         let symbols = self.symbols(file);
         if self.files[file].language == Language::Markdown {
             if let Some(s) = symbols
                 .iter()
                 .position(|s| s.kind == Kind::Section && s.qualified == fragment)
             {
-                return Some(Definition { file, symbol: s });
+                return vec![Definition { file, symbol: s }];
             }
-            let anchor = symbols
+            return match symbols
                 .iter()
-                .find(|s| s.kind == Kind::Anchor && s.name == fragment)?;
-            return self.around(file, anchor.start);
+                .find(|s| s.kind == Kind::Anchor && s.name == fragment)
+            {
+                Some(anchor) => self.around(file, anchor.start),
+                None => Vec::new(),
+            };
         }
-        let lines = fragment.strip_prefix('L')?;
-        let first = lines.split('-').next()?;
-        let line: u32 = first.parse().ok()?;
-        self.around(file, line)
+        let line = fragment
+            .strip_prefix('L')
+            .and_then(|lines| lines.split('-').next())
+            .and_then(|first| first.parse::<u32>().ok());
+        match line {
+            Some(line) => self.around(file, line),
+            None => Vec::new(),
+        }
     }
 
     /// The files a path written in a document may name: from its folder,
@@ -186,15 +183,12 @@ impl<'a> Index<'a> {
         let Some(target) = target else {
             return Resolution::External;
         };
-        let found = match &fragment {
-            Some(fragment) if !fragment.is_empty() => self
-                .fragment(target, fragment)
-                .map(|d| Resolution::Resolved(d, Rule::Anchor)),
-            _ => self
-                .whole(target)
-                .map(|d| Resolution::Resolved(d, Rule::File)),
-        };
-        found.unwrap_or(Resolution::External)
+        match &fragment {
+            Some(fragment) if !fragment.is_empty() => {
+                one(self.fragment(target, fragment), Rule::Anchor)
+            }
+            _ => one(self.whole(target), Rule::File),
+        }
     }
 
     /// What a path a document writes reaches: the file, or with a `:line`
@@ -412,7 +406,7 @@ mod tests {
              ## Code\n\
              \n\
              [load](src/store.rs#L4), [run](tools/run.py#L2-L3), [store](src/store.rs), \
-             [main](src/main.rs).\n\
+             [main](src/main.rs), [made](src/gen/made.rs), [twice](src/gen/twice.rs).\n\
              \n\
              `src/store.rs:4` and `src/store.rs:Storage::load`, `run.py`, `util.h`, \
              `docs/`, and tools/run.py in prose.\n\
@@ -433,7 +427,14 @@ mod tests {
              Back to [the readme](../readme.md#stable-ids).\n",
         ),
         ("docs/my notes.md", "# Notes\n"),
-        ("src/main.rs", "mod store;\n\nfn main() {}\n"),
+        (
+            "src/main.rs",
+            "mod store;\n#[path = \"gen/made.rs\"]\nmod made;\n\
+             #[cfg(unix)]\n#[path = \"gen/twice.rs\"]\nmod one;\n\
+             #[cfg(windows)]\n#[path = \"gen/twice.rs\"]\nmod two;\n\nfn main() {}\n",
+        ),
+        ("src/gen/made.rs", "pub fn make() {}\n"),
+        ("src/gen/twice.rs", "pub fn twice() {}\n"),
         (
             "src/store.rs",
             "pub struct Storage;\n\nimpl Storage {\n    pub fn load() {}\n}\n\n\
@@ -554,6 +555,9 @@ mod tests {
                 "tools/run.py:run_all function (anchor)",
             ),
             ("src/store.rs", "src/main.rs:store module (file)"),
+            // Or those its `path` attribute makes it.
+            ("src/gen/made.rs", "src/main.rs:made module (file)"),
+            ("src/gen/twice.rs", "ambiguous, 2"),
             // Nothing graff reads, or nothing there at all.
             ("src/main.rs", "external"),
             ("docs/gone.md", "external"),

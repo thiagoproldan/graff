@@ -8,6 +8,7 @@ reaches.
 
     python3 evals/resolve/check.py ekko /projects/ekko 1b25853 src     # ekko.txt
     python3 evals/resolve/check.py graff /projects/graff 62e3c57 src   # graff.txt
+    python3 evals/resolve/registry.py CRATE OLD=RESOLVE NEW=RESOLVE    # registry.txt
     python3 evals/resolve/test_check.py
 
 check.py takes the commit through `git archive`, runs `rust-analyzer scip`
@@ -99,6 +100,16 @@ the next definition in its file, and stops unless that scores differently.
 - Besides the calls and references extracted, each use item is an edge
   (unless it brings in a module), and so is the type a path goes through:
   `Storage` in `Storage::open()`.
+- A file is the module of each `mod x;` item that loads it, followed from
+  the crates' roots as rustc follows them (task 134): `x.rs` or `x/mod.rs`
+  in the folder of the item's module, else the file its `path` attribute
+  names, plain or in a `cfg_attr`, from the item's file's folder (inside an
+  inline module, from that module's). A file several items load is each of
+  their modules, a test's `mod common;` in each test; a file loaded in
+  another's stead under another cfg, `unix.rs` and `windows.rs` for one
+  `mod imp;`, sees none of the other's definitions. A file no item loads, a
+  crate's root or one only a macro's tokens declare (libc's `cfg_if!`), is
+  where Cargo's layout puts it.
 
 ## What the first run found
 
@@ -146,3 +157,59 @@ both found; on the cargo registry, grown since to 17,213 files, 1,688,439
 both found, 101 only graff, no line of task 10's report lost, no panic.
 Extraction of ekko's src/, the committed build and this one interleaved,
 nine runs each: median 312.8 ms against 324.1 ms.
+
+## The modules `mod` items load (task 134)
+
+graff gave each file the module Cargo's layout gives it, so a file a
+`path` attribute loads (`#[path = "../src/common.rs"] mod common;` in a
+test), a test's `mod common;` (tests/common/mod.rs, a crate of its own by
+the layout) and what such a file declares in turn were modules no use
+reached. registry.py runs two builds of examples/resolve.rs on a crate of
+the cargo registry, every file of it, against rust-analyzer's SCIP index of
+a copy (registry.txt; rust-analyzer 2026-09-28, offline, the host's cfg).
+It scores as check.py does, but for one thing: a file two crates load, a
+test's or a build script's, is defined in SCIP under one crate's module
+path alone, and a reference through the other's names a symbol of the
+crate SCIP places nowhere, which tells nothing and is left out. f6aabd6's
+build against task 134's, on the crates where it changed the most edges
+and those of the earlier reports:
+
+| crate                  | files | precision, f6aabd6 | recall | precision, task 134 | recall | wrong only in task 134 |
+| ---------------------- | ----- | ------------------ | ------ | ------------------- | ------ | ---------------------- |
+| ryu 1.0.23             | 28    | 0.851              | 0.466  | 0.918               | 0.912  | 0                      |
+| syn 2.0.119            | 97    | 0.957              | 0.434  | 0.962               | 0.484  | 0                      |
+| portable-atomic 1.15.0 | 54    | 0.972              | 0.488  | 0.978               | 0.609  | 0                      |
+| serde_json 1.0.150     | 69    | 0.995              | 0.810  | 0.995               | 0.878  | 0                      |
+| glam 0.31.0            | 220   | 0.872              | 0.620  | 0.875               | 0.632  | 0                      |
+| rustix 1.1.5           | 317   | 0.983              | 0.898  | 0.983               | 0.923  | 0                      |
+| mio 1.2.2              | 64    | 0.870              | 0.796  | 0.992               | 0.796  | 0                      |
+| semver 1.0.28          | 15    | 0.989              | 0.681  | 0.928               | 0.905  | 61                     |
+| tokio 1.53.1           | 555   | 0.934              | 0.801  | 0.932               | 0.801  | 2                      |
+| pulldown-cmark 0.13.4  | 43    | 0.996              | 0.830  | 0.996               | 0.830  | 0                      |
+| regex-automata 0.4.18  | 100   | 0.999              | 0.882  | 0.999               | 0.882  | 0                      |
+| getrandom 0.4.3        | 39    | 1.000              | 0.990  | 1.000               | 0.990  | 0                      |
+| zerocopy 0.8.59        | 109   | 0.974              | 0.785  | 0.974               | 0.785  | 0                      |
+| objc2 0.6.4            | 95    | 0.995              | 0.850  | 0.995               | 0.850  | 0                      |
+
+- **mio's 37 wrong edges fewer** were all ties into its windows module,
+  from src/event/ (18), the shell module (13), src/poll.rs and src/waker.rs
+  (6); they reach no one definition now, and no right edge was lost.
+- **semver's 61** are `req(..)` and `VersionReq::` in a test that writes
+  `use crate::util::*;` and `#[cfg(test_node_semver)] use node::{req,
+  VersionReq};`: the named import wins over the glob, though the build
+  rust-analyzer reads leaves it out. Before, `node` was no module the test
+  reached and those edges were external. **tokio's 2** are `AtomicU64`,
+  which one of two files loaded for one module defines and the other
+  brings in from std. graff reads every cfg at once (task 170).
+- **Every crate of the registry**, 700, examples/resolve over each one's
+  .rs and .md files: 3,375,389 edges resolved before, 3,413,424 now;
+  519,571 ambiguous, 526,241; 4,656,540 external, 4,611,454. 48,150 sites
+  of 101 crates changed: 36,876 external to resolved, 7,524 external to
+  ambiguous, 1,571 ambiguous to resolved, 723 resolved to ambiguous, 157
+  resolved to another definition, 98 resolved to external. On ekko, graff
+  and libc the edges are the same byte for byte.
+- **A question** finds the modules each time it runs, on opening the
+  index and again in the resolver: on the 558 files of tokio graff reads,
+  `graff callers Runtime::block_on`, the two builds interleaved, ten runs
+  each on AC power and the performance profile, median 80.5 ms against
+  f6aabd6's 77 ms.

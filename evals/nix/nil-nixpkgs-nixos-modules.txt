@@ -1,9 +1,9 @@
-run 2026-10-05
-graff 7dc936a with uncommitted changes
+run 2026-10-09
+graff 1e06e63 with uncommitted changes
 corpus nixpkgs-nixos-modules: github:NixOS/nixpkgs/c59305bab2065cfecc4944690d9eedbb56f3a9fa (/nix/store/fd5qgysvbfx27wj651swlr899w6jnbwd-source), nixos/modules, 2489 .nix files
 truth nil 2026-07-23: 188544 names asked, 27485 with no definition nil finds; 65327 bound by let, 23442 bound by other, 72118 bound by parameter, 172 bound by rec
 
-broken resolver: precision 0.017, recall 0.018
+broken resolver: precision 0.018, recall 0.018
 graff: precision 1.000 (66438 of 66438 judged; 1204 unjudged), recall 1.000 (65499 of 65499 references to let and rec bindings)
 missed, by what graff did: 
 

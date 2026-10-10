@@ -812,6 +812,54 @@ a
     }
 
     #[test]
+    fn an_inherit_in_a_modules_attrset_sets_the_option_and_one_passed_along_does_not() {
+        let sources = [
+            (
+                "port.nix",
+                "{ lib, ... }:\n{\n  options.services.foo.port = lib.mkOption { };\n  options.services.bar.port = lib.mkOption { };\n}\n",
+            ),
+            (
+                "host.nix",
+                "{ config, pkgs, ... }:\nlet\n  port = 22;\nin\n{\n  services.foo = { inherit port; };\n  services.bar = pkgs.mkThing { inherit port; };\n}\n",
+            ),
+        ];
+        let extractions: Vec<Extraction> = sources
+            .iter()
+            .map(|(_, source)| extract::extract(Language::Nix, source.as_bytes()))
+            .collect();
+        let files: Vec<File> = sources
+            .iter()
+            .zip(&extractions)
+            .map(|((path, _), extraction)| File {
+                path,
+                language: Language::Nix,
+                extraction,
+            })
+            .collect();
+        let settings: Vec<(u32, String, Resolution)> = resolve(&files)
+            .into_iter()
+            .filter(|edge| edge.used == Use::Setting && files[edge.file].path == "host.nix")
+            .map(|edge| (edge.line, edge.path.unwrap_or_default(), edge.resolution))
+            .collect();
+        let option = Definition {
+            file: 0,
+            symbol: extractions[0]
+                .symbols
+                .iter()
+                .position(|s| s.qualified == "options.services.foo.port")
+                .expect("the option"),
+        };
+        assert_eq!(
+            settings,
+            [(
+                6,
+                "services.foo.port".to_string(),
+                Resolution::Resolved(option, Rule::Option)
+            )]
+        );
+    }
+
+    #[test]
     fn options_a_path_matches_alike_come_in_the_order_their_files_declare_them() {
         // `net.lan.dns` matches both, three names each, two written out: the
         // first ends interpolated, the second does not.

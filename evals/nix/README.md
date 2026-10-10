@@ -116,14 +116,23 @@ options and 16 of options from outside at step 1, 5 and 13 at step 2, and
   of the flake's options missed are of those 19; of the 23 settings of
   options from outside missed, 22 go through a helper's argument (13
   `packages = [ .. ]` of `mkPackages`, 9 of `mkUser`), and one is an
-  `inherit (cfg) x;`, which graff reads as no binding in a plain attrset.
+  `inherit (cfg) x;`, which graff then read as no binding in a plain
+  attrset.
 - **Step 2 finds them all.** A declaration a helper makes stands in the
   module that calls it, at the call's lines, written at the helper's line;
   one through the helper's `options` argument takes its whole path, at its
   own line. What an argument sets is set at the argument's line, and what
   the helper writes, at the call. The `inherit (cfg) x;` is in a helper's
-  body, where step 2 reads it as the binding it is; in a module that calls
-  no helper, graff still reads it as none (task 90).
+  body, where step 2 reads it as the binding it is. Since task 90 the
+  extractor reads it so too, in any plain attrset under a binding; in a
+  call's argument, `f { inherit config; }`, it passes the name along, and
+  at a file's top, `{ inherit mkModule; }`, it exports what the file binds,
+  which stands for the name. On nixpkgs' nixos/modules that adds 629
+  settings, 132 of them tied to one option; of 25 of those read by hand, 7
+  are right, against 13 of 25 of the other bindings' (examples/resolve at
+  1e06e63, 2026-10-09). Most of the wrong ones build data under a `let`
+  binding, which no rule tells from a module yet (task 144), or meet a
+  submodule's option by its last names alone (task 152).
 - **What counts as wrong, read by hand**: 6 settings at each step. 3 at
   step 1 and 4 at step 2 sit under a `mkIf` the host's configuration makes
   false, which step 2 does not evaluate: it decides a condition on the

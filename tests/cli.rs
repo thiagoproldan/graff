@@ -819,6 +819,32 @@ depth 3: 1 caller
 }
 
 #[test]
+fn nix_outline_gives_the_names_one_inherit_binds_side_by_side() {
+    let demo = Demo::of(
+        "nix-inherit",
+        &[(
+            "m.nix",
+            "{ lib, cfg, ... }:\nlet\n  inherit (lib) mkIf types;\nin\n{\n  services.x = { inherit (cfg) port user; };\n  services.y = { a = 1; };\n}\n",
+        )],
+    );
+    assert_eq!(
+        demo.ask(&["outline", "m.nix"]),
+        demo.rooted(
+            "outline m.nix in ROOT
+m.nix: 8 lines, 7 symbols
+  3 variable mkIf
+  3 variable types
+  6 attribute services.x
+    6 attribute port
+    6 attribute user
+  7 attribute services.y
+    7 attribute a
+"
+        )
+    );
+}
+
+#[test]
 fn nix_instances_are_made_again_when_a_file_they_come_from_changes() {
     let demo = Demo::of("nix-kept", NIX_DEMO);
     let audio = "def sys.audio.enable in ROOT

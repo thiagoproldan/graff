@@ -34,26 +34,11 @@ use tree_sitter::{Node, Tree};
 
 use super::{Index, joined};
 use crate::extract::nix::{
-    applied, binding_set, declares_option, function_name, named_children, parser, plain_name,
-    segments, unwrapped,
+    WRAPPERS, applied, binding_set, declares_option, function_name, named_children, parser,
+    plain_name, segments, unwrapped,
 };
 use crate::extract::{Extraction, Kind, Symbol, end_line, line};
 use crate::resolve::{Definition, File, Resolution, Rule};
-
-/// What wraps a module's value, the value its last argument: a condition,
-/// a priority, an order.
-const WRAPPERS: &[&str] = &[
-    "mkIf",
-    "mkDefault",
-    "mkForce",
-    "mkOverride",
-    "mkBefore",
-    "mkAfter",
-    "mkOrder",
-    "mkOptionDefault",
-    "mkVMOverride",
-    "optionalAttrs",
-];
 
 /// How many steps one call's walk may take, and how deep it may go: a
 /// helper that calls itself stops there.
@@ -239,8 +224,16 @@ pub fn instantiate(files: &[File], read: &dyn Fn(&str) -> Option<Vec<u8>>) -> In
         for placed in placed.iter().filter(|placed| placed.origin.file == f) {
             let (start, end) = (line(placed.origin.node), end_line(placed.origin.node));
             let name = walk.name_of(placed.origin);
+            // A name an `inherit` binds is placed by itself, and its binding
+            // spans the statement.
+            let inherited = placed.origin.node.kind() == "identifier";
             let found = arguments.iter().map(|&s| &symbols[s]).find(|symbol| {
-                symbol.start == start && symbol.end == end && Some(symbol.name.as_str()) == name
+                let lines = if inherited {
+                    symbol.start <= start && end <= symbol.end
+                } else {
+                    symbol.start == start && symbol.end == end
+                };
+                lines && Some(symbol.name.as_str()) == name
             });
             if let Some(symbol) = found {
                 moved
@@ -1526,8 +1519,12 @@ impl<'i, 't> Walk<'i, 't> {
         }
     }
 
-    /// The name a binding's path ends with, as the extractor writes it.
+    /// The name a binding's path ends with, as the extractor writes it; an
+    /// `inherit`'s name, itself.
     fn name_of(&self, binding: At<'t>) -> Option<&'t str> {
+        if binding.node.kind() == "identifier" {
+            return Some(self.text(binding));
+        }
         let attrpath = self.field(binding, "attrpath")?;
         let last = named_children(attrpath.node).into_iter().last()?;
         let written = self.text(At {
@@ -1734,6 +1731,19 @@ in
 myLib.mkSys given
 "#,
         ),
+        (
+            "modules/keys.nix",
+            r#"{ config, myLib, ... }:
+let
+  keys = [ "a" ];
+in
+myLib.mkSys {
+  inherit config;
+  name = "keys";
+  body = { services.openssh = { inherit keys; }; };
+}
+"#,
+        ),
     ];
 
     /// What instantiating the worktree makes, and the extractions it was made
@@ -1795,6 +1805,26 @@ myLib.mkSys given
             })
             .collect();
         (made, arguments)
+    }
+
+    #[test]
+    fn a_name_the_calls_attrset_inherits_is_placed_where_the_walk_puts_it_once() {
+        let (made, arguments) = made();
+        // The walk places `keys` itself: the argument the extractor reads at
+        // the `inherit` is the same binding, not one more under `config`.
+        assert_eq!(
+            of(&made, "modules/keys.nix"),
+            [
+                "modules/keys.nix:5-9 option options.sys.keys.enable < lib/sys.nix:5-5",
+                "modules/keys.nix:8-8 attribute config",
+                "modules/keys.nix:8-8 attribute config.services.openssh",
+                "modules/keys.nix:8-8 attribute config.services.openssh.keys",
+            ]
+        );
+        assert!(
+            of(&arguments, "modules/keys.nix")
+                .contains(&"modules/keys.nix body.services.openssh.keys")
+        );
     }
 
     #[test]

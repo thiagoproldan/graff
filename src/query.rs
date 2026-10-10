@@ -317,8 +317,14 @@ pub fn outline(
     });
     let defined = order.len();
     // A Python attribute a method sets, `self.state = None`, is its class's,
-    // as its name says, not the method's its line is in.
+    // as its name says, not the method's its line is in; the names one Nix
+    // `inherit` binds, `inherit (lib) mkIf types;`, are each other's
+    // siblings, as their names say, though their lines are the same.
     let python = code.worktree.languages[f] == Language::Python;
+    let nix = code.worktree.languages[f] == Language::Nix;
+    let same = |s: usize, top: usize| {
+        (symbols[s].start, symbols[s].end) == (symbols[top].start, symbols[top].end)
+    };
     let within = |s: usize, top: usize| {
         let (inner, outer) = (&symbols[s].qualified, &symbols[top].qualified);
         inner.len() > outer.len()
@@ -327,7 +333,8 @@ pub fn outline(
     };
     for s in order {
         while let Some(&top) = open.last()
-            && (symbols[s].end > symbols[top].end || (python && !within(s, top)))
+            && (symbols[s].end > symbols[top].end
+                || ((python || (nix && same(s, top))) && !within(s, top)))
         {
             open.pop();
         }
@@ -352,7 +359,6 @@ pub fn outline(
     let text = format!("{path}: {length} lines, {}", count(defined, "symbol"));
     let item = json!({"file": path, "lines": length, "symbols": defined});
     let mut lines = vec![Line::new(text, item, rank(5, 0), "headers")];
-    let nix = Language::of(path, b"") == Some(Language::Nix);
     for (s, depth, around) in shown {
         let symbol = &symbols[s];
         // An impl block's label says what it is: `impl Display for Storage`.

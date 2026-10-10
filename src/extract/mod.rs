@@ -16,7 +16,7 @@ use crate::lang::Language;
 
 /// Bumped whenever what an extractor produces changes, so that results kept
 /// from an older extractor are read again rather than trusted.
-pub const VERSION: u32 = 8;
+pub const VERSION: u32 = 9;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Extraction {

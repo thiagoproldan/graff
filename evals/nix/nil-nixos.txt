@@ -1,6 +1,6 @@
-run 2026-10-05
-graff 7dc936a with uncommitted changes
-corpus nixos: a git repository at f7eef58 (git archive), ., 158 .nix files
+run 2026-10-09
+graff 1e06e63 with uncommitted changes
+corpus nixos: a git repository at 40220be (git archive), ., 158 .nix files
 truth nil 2026-07-23: 1947 names asked, 544 with no definition nil finds; 262 bound by let, 149 bound by other, 973 bound by parameter, 19 bound by rec
 
 broken resolver: precision 0.074, recall 0.075

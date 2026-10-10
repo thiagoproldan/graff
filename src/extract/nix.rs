@@ -28,6 +28,21 @@ use super::{
     Call, CallKind, Extraction, Import, Kind, MAX_DEPTH, RefKind, Reference, Symbol, end_line, line,
 };
 
+/// What wraps a module's value, the value its last argument: a condition,
+/// a priority, an order.
+pub(crate) const WRAPPERS: &[&str] = &[
+    "mkIf",
+    "mkDefault",
+    "mkForce",
+    "mkOverride",
+    "mkBefore",
+    "mkAfter",
+    "mkOrder",
+    "mkOptionDefault",
+    "mkVMOverride",
+    "optionalAttrs",
+];
+
 /// What a binding calls to declare an option, by the end of its path.
 const OPTION_MAKERS: &[&str] = &[
     "mkOption",
@@ -585,6 +600,16 @@ impl<'s> Reader<'s> {
     /// values, and in a `let`'s `body`.
     fn set(&mut self, set: Option<Node>, of: Set, body: Option<Node>) {
         let bindings = set.map(named_children).unwrap_or_default();
+        // A plain attrset's `inherit` passes names along in a call's argument,
+        // `f { inherit config; }`, and exports them at a file's top, `{ inherit
+        // mkModule; }`, where the binding inherited stands for the name; under
+        // a binding, `services.x = { inherit (cfg) port; };`, it sets them.
+        let passes = of == Set::Attrs
+            && (self.quiet
+                || self.prefix.is_empty()
+                || set
+                    .and_then(|set| set.parent())
+                    .is_some_and(|attrs| self.passed(attrs)));
         let mut entries: Vec<Entry> = Vec::new();
         // What `inherit x;` brings in, bound outside the set, and what it stands for there.
         let mut inherited: Vec<(String, Vec<Path>)> = Vec::new();
@@ -633,10 +658,7 @@ impl<'s> Reader<'s> {
                         } else {
                             Kind::Attribute
                         };
-                        // In a plain attrset, `inherit config;` only passes a name
-                        // along; in a `let` or a `rec` set it binds one.
-                        let recorded = of != Set::Attrs;
-                        let qualified = recorded.then(|| self.symbol(*binding, &path, kind, None));
+                        let qualified = (!passes).then(|| self.symbol(*binding, &path, kind, None));
                         // `inherit x;` takes the `x` outside the set, even in a `let` or a `rec` set.
                         if binding.kind() == "inherit" {
                             let within = qualified.clone().or_else(|| self.from.clone());
@@ -772,6 +794,26 @@ impl<'s> Reader<'s> {
         if binds {
             self.frames.pop();
         }
+    }
+
+    /// Whether an attrset is a call's argument: a function's other than the
+    /// wrappers of a module's value and `recursiveUpdate`, which merges two.
+    fn passed(&self, attrs: Node) -> bool {
+        let mut node = attrs;
+        while let Some(parent) = node.parent()
+            && parent.kind() == "parenthesized_expression"
+        {
+            node = parent;
+        }
+        let Some(apply) = node.parent().filter(|p| p.kind() == "apply_expression") else {
+            return false;
+        };
+        if apply.child_by_field_name("argument").map(|a| a.id()) != Some(node.id()) {
+            return false;
+        }
+        let (function, _) = applied(apply);
+        !function_name(self.source, function)
+            .is_some_and(|name| WRAPPERS.contains(&name) || name == "recursiveUpdate")
     }
 
     /// Reads a binding's value, under the binding's path.
@@ -1345,6 +1387,62 @@ in
             20,
             Some("options.sys.audio.card"),
             None
+        )));
+    }
+
+    #[test]
+    fn an_inherit_under_a_binding_sets_and_one_passed_or_exported_does_not() {
+        let out = extract(
+            br#"{ config, lib, myLib, ... }:
+let
+  cfg = config.services.foo;
+  port = 22;
+in
+{
+  services.openssh = { inherit (cfg) hostKeys; inherit port; };
+  services.bar = lib.mkIf cfg.enable { inherit (cfg) package; };
+  services.baz = myLib.mkThing { inherit config; inherit (cfg) user; };
+  options.foo.x = lib.mkOption { inherit (cfg) default; };
+  inherit (cfg) top;
+}
+"#,
+        );
+        let qualified: Vec<&str> = out.symbols.iter().map(|s| s.qualified.as_str()).collect();
+        // Under a binding, as a wrapper's value too, each name is set.
+        for set in [
+            "services.openssh.hostKeys",
+            "services.openssh.port",
+            "services.bar.package",
+        ] {
+            assert!(qualified.contains(&set), "{set} in {qualified:?}");
+        }
+        assert_eq!(
+            symbol(&out, "services.openssh.hostKeys").kind,
+            Kind::Attribute
+        );
+        assert_eq!(
+            (
+                symbol(&out, "services.openssh.port").start,
+                symbol(&out, "services.openssh.port").end
+            ),
+            (7, 7)
+        );
+        // A call's argument passes them along, an option's declaration holds
+        // its own fields, and the file's top exports them.
+        for passed in [
+            "services.baz.config",
+            "services.baz.user",
+            "options.foo.x.default",
+            "top",
+        ] {
+            assert!(!qualified.contains(&passed), "{passed} in {qualified:?}");
+        }
+        // What an inherited name reads is read as its binding's.
+        assert!(references(&out).contains(&(
+            "cfg.hostKeys".to_string(),
+            7,
+            Some("services.openssh.hostKeys"),
+            Some("cfg")
         )));
     }
 

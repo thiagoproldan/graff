@@ -68,6 +68,16 @@ the next definition in its file, and stops unless that scores differently.
 - Resolution alone, on ekko, took 31 to 36 ms on one thread over five runs,
   for 44,170 edges, extraction aside (examples/resolve.rs says it on
   stderr).
+- On libc 0.2.183's 343 files (127,271 lines), whose modules join one
+  another by chains of `pub use self::x::*;`, resolution took 680 ms for
+  97,171 edges (one run, 2026-10-10; on AC, performance profile, boost on).
+  Before task 135 it had not ended after 1,500 s: each name was looked for
+  through every glob again at each step of the walk, and a name no glob
+  brings in walked them all. What a module's use items and globs bring in
+  of a name is now looked up once for each depth of the walk, which bounds
+  what it finds. On four parts of libc the earlier build could finish (14
+  to 81 files, 80,225 edges; 30 to 255 s against 22 to 100 ms, run four at
+  once), on ekko and on graff, the edges are the same byte for byte.
 
 ## The rules
 

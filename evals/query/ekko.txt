@@ -1,3 +1,3 @@
-graff c6ab1e2-dirty, ekko v0.40.0-1-ga4c9c8d, 280 files graff reads, 217 of them Markdown; 24 it does not
+graff 2244593-dirty, ekko v0.40.0-1-ga4c9c8d, 280 files graff reads, 217 of them Markdown; 24 it does not
 control, each answer against the next definition's edges: 15 of 3228 the same
 3228 of 3228 definitions with the same edges, 21094 edges, 2402 of them from Markdown; 0 different, 0 refused

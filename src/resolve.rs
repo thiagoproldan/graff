@@ -20,6 +20,7 @@ pub mod markdown;
 pub mod nix;
 pub mod python;
 
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
@@ -485,6 +486,10 @@ struct Index<'a> {
     items_named: HashMap<(String, &'a str), Vec<Definition>>,
     /// The use items of each module: names brought in, and globs.
     imports: HashMap<Scope, Imports<'a>>,
+    /// What a module's use items and globs bring in of a name, at a depth
+    /// of the walk, once looked up: libc's modules, joined by chains of
+    /// `pub use self::x::*;`, were walked again for every name and path.
+    brought: RefCell<HashMap<(Scope, String, usize), Found>>,
 }
 
 #[derive(Default)]
@@ -522,6 +527,7 @@ impl<'a> Index<'a> {
             methods_named: HashMap::new(),
             items_named: HashMap::new(),
             imports: HashMap::new(),
+            brought: RefCell::new(HashMap::new()),
         };
         let mut waiting = Vec::new();
         for (f, file) in files.iter().enumerate() {
@@ -598,6 +604,9 @@ impl<'a> Index<'a> {
                     .push(d);
             }
         }
+        // What was brought in before the types held their impls' items may
+        // bring in more now, `use Kind::*` an enum's variants.
+        index.brought.borrow_mut().clear();
         index
     }
 
@@ -887,6 +896,19 @@ impl<'a> Index<'a> {
         if depth > DEPTH {
             return None;
         }
+        let key = (scope.clone(), name.to_string(), depth);
+        if let Some(found) = self.brought.borrow().get(&key) {
+            return found.clone();
+        }
+        let found = self.brought_in(file, scope, name, depth);
+        self.brought.borrow_mut().insert(key, found.clone());
+        found
+    }
+
+    /// A name a module's use items or globs bring in. What a lookup finds
+    /// does not hang on the file it starts from, but for a function's own
+    /// items, which no lookup here reaches.
+    fn brought_in(&self, file: usize, scope: &Scope, name: &str, depth: usize) -> Found {
         let imports = self.imports.get(scope);
         if let Some(paths) = imports.and_then(|i| i.named.get(name)) {
             for path in paths {
@@ -1477,6 +1499,29 @@ fn render() {}
             reaches(&edges, "src/store.rs:26", "Task", "reference value"),
             "src/item.rs Kind::Task (glob)"
         );
+    }
+
+    #[test]
+    fn a_name_looked_up_before_the_types_hold_their_items_is_looked_up_again() {
+        // `g`'s type is looked up before the enum holds its variants; `f`'s
+        // `Task`, looked up after, is the variant the glob brings in.
+        let source = "mod m {\n    pub enum Kind {\n        Task,\n    }\n}\nuse m::Kind::*;\nimpl Task {\n    fn g() {}\n}\npub fn f() {\n    let _ = Task;\n}\n";
+        let extraction = extract::extract(Language::Rust, source.as_bytes());
+        let files = [File {
+            path: "src/lib.rs",
+            language: Language::Rust,
+            extraction: &extraction,
+        }];
+        let task = resolve(&files, &[])
+            .into_iter()
+            .find(|edge| edge.line == 11 && edge.name == "Task")
+            .expect("the use of `Task` in f");
+        match task.resolution {
+            Resolution::Resolved(d, Rule::Glob) => {
+                assert_eq!(extraction.symbols[d.symbol].qualified, "m::Kind::Task")
+            }
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]

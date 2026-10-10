@@ -85,3 +85,8 @@ kept; its 2 different are options a helper declares under `${name}`,
 whose `callers` miss the helper's own read (task 163). Run against a
 graff whose function answers no for every path, 177 of ekko's 3,228
 definitions come out different.
+
+Run again the same day with task 135's change, which looks up what a Rust
+module's use items and globs bring in of a name once: ekko's report is the
+same past its first line, and graff's tree, grown since, has 1,662 of
+1,662 definitions with the same edges, 9,596 of them.

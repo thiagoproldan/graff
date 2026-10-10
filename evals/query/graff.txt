@@ -1,3 +1,3 @@
-graff c6ab1e2-dirty, graff c6ab1e2-dirty, 89 files graff reads, 20 of them Markdown; 48 it does not
-control, each answer against the next definition's edges: 13 of 1660 the same
-1660 of 1660 definitions with the same edges, 9576 edges, 82 of them from Markdown; 0 different, 0 refused
+graff 2244593-dirty, graff 2244593-dirty, 89 files graff reads, 20 of them Markdown; 48 it does not
+control, each answer against the next definition's edges: 13 of 1662 the same
+1662 of 1662 definitions with the same edges, 9596 edges, 82 of them from Markdown; 0 different, 0 refused

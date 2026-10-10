@@ -115,8 +115,8 @@ flake's generated docs/ref/options.md headed with its name: declarations
 scored 0.500 at the line and at the file (127 of 254, 132 of 264) at
 1e06e63 and 5b91f3c. A section now answers a name only where no code
 definition has it; `file.md#anchor` names it alone. Run again with task
-144, and again with task 152, the reports are the same past their first
-two lines.
+144, and again with tasks 152 and 162, the reports are the same past
+their first two lines.
 
 - **What step 1 misses is the helpers, as expected.** At the file, 83 of
   the 102 options missed are declared by a helper (`mkSys`, `mkSpec`,
@@ -217,6 +217,26 @@ two lines.
   (seven alternating runs, 2026-10-10, on AC under TLP's performance
   profile, boost on); `graff def`, `callers` and `outline` there take the
   same time as before.
+- **A question places options from every use that places them** (task
+  162). Task 152 placed a submodule's options from the uses the files'
+  definitions make of their bindings, `type = submodule userOpts;`, but a
+  question reads only the sites it names: at 0f72b32 the use of `userOpts`
+  was not there, and its options went nowhere.
+  `graff callers config/users-groups.nix:225`, the `home` of `userOpts`,
+  gave 0 callers on nixos/modules, against 270 at 37301d4 and the 253
+  settings and 10 reads examples/resolve ties to it. A question now reads
+  those uses once, before its first edges, and resolves each read of sites
+  against the options they place. Of 150 options not under a module's own
+  `options` (seed 132), `callers` ties the uses examples/resolve ties for
+  35 at 0f72b32 and for all 150 now; of 150 drawn from every option (seed
+  1320), for all 150. On the flake, 117 of its 119 options agree, as at
+  0f72b32; the other two are declared by a helper under `${name}` (task
+  163). The flake's 795 questions and nixos/modules' 122 get the same
+  answers. Placing costs a `callers` on nixos/modules 541-616 ms, against
+  403-408 at 0f72b32 and 413-434 at 37301d4 (five runs each, 2026-10-10,
+  on AC under TLP's performance profile, boost on); on the flake it costs
+  nothing measurable, 17-18 ms; `def` and `outline` take the same time as
+  before.
 - **What counts as wrong, read by hand**: 6 settings at each step. 3 at
   step 1 and 4 at step 2 sit under a `mkIf` the host's configuration makes
   false, which step 2 does not evaluate: it decides a condition on the
@@ -321,8 +341,8 @@ nixpkgs at c59305b (the host's), nil 2026-07-23.
   through each file's definitions: an `inherit` under a binding became one
   (task 90), and one in what a function of nixpkgs consumes stopped being
   one (task 144), so its precision on lib/ went to 0.063, then 0.062, and
-  on nixos/modules/ to 0.018 (2026-10-09). Task 152 changes none of the
-  three reports past their first two lines (2026-10-10).
+  on nixos/modules/ to 0.018 (2026-10-09). Tasks 152 and 162 change none
+  of the three reports past their first two lines (2026-10-10).
 - **nixpkgs lib/ is no longer held out**: its first run scored 0.998 and
   0.987, and its misses fixed three rules. A `let` inside an option's
   declaration binds names (graff had taken it for the option's fields); a

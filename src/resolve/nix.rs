@@ -231,6 +231,19 @@ struct Index<'a> {
 /// of the file stands for, `userOpts`, `grafanaTypes.dashboardConfig`.
 type Context<'a> = (usize, &'a str);
 
+/// An option under a path: at the top, or in a context below it.
+type Placed<'a> = (Definition, Option<Context<'a>>, Pattern<'a>);
+
+/// What `Placed` is, holding its names rather than borrowing them from the
+/// files it was found in.
+type Filed = (Definition, Option<(usize, String)>, Vec<Option<String>>);
+
+/// Where the worktree's Nix options are, found from every use a definition
+/// makes of a binding of its file, as `type = submodule userOpts;` does. A
+/// question reads only some of the sites, from which no option could be
+/// placed: it resolves them against this, which `place` found from all.
+pub struct Placement(Vec<Filed>);
+
 /// The names of a qualified name after its last `options`: `server` of
 /// `serverOptions.options.server`.
 fn after_options<'s>(raw: &[&'s str]) -> Vec<&'s str> {
@@ -256,8 +269,20 @@ fn prefix<'s>(path: &'s str, names: &[&'s str], k: usize) -> &'s str {
 impl<'a> Index<'a> {
     fn new(files: &'a [File<'a>]) -> Index<'a> {
         let mut index = Index::read(files);
-        index.declare();
+        let placed = index.declare();
+        index.fill(placed);
         index
+    }
+
+    /// Files options under their paths: at the top, where a module's path
+    /// may name them, or in a context below it, whose own bindings set them.
+    fn fill(&mut self, placed: impl IntoIterator<Item = Placed<'a>>) {
+        for (d, context, path) in placed {
+            match context {
+                None => self.options.add(d, path),
+                Some(context) => self.submodules.entry(context).or_default().add(d, path),
+            }
+        }
     }
 
     /// The index of the worktree's Nix files and their names, without the
@@ -347,8 +372,9 @@ impl<'a> Index<'a> {
         (path, declared)
     }
 
-    /// Files the options the worktree declares under the paths a module
-    /// sets them by. A file's module is at the top, and so is what its
+    /// The paths a module sets the options the worktree declares by, from
+    /// the uses the files' definitions make of their bindings and the
+    /// files' imports. A file's module is at the top, and so is what its
     /// `imports` holds, unless a declaration names the file, `type =
     /// submodule ./vhost-options.nix;`. What a declaration names -- a
     /// binding of its file, as `userOpts` in `type = attrsOf (submodule
@@ -361,7 +387,7 @@ impl<'a> Index<'a> {
     /// no path from the top reaches, as one a module in a list of Home
     /// Manager's holds, is left out, but where no other option's path ends
     /// in the names after its last `options`: then it goes by those.
-    fn declare(&mut self) {
+    fn declare(&self) -> Vec<Placed<'a>> {
         let files = self.files;
         // What each use in a declaration names -- a context of its file, or
         // a file's module -- the file the use is in, the declaration's name,
@@ -581,6 +607,7 @@ impl<'a> Index<'a> {
             .copied()
             .collect();
         let top = |context: &Context<'a>| tops.contains(context);
+        let mut filed: Vec<Placed<'a>> = Vec::new();
         for (d, qualified, ks) in placed {
             let raw = segments(qualified);
             let mut found = false;
@@ -588,20 +615,20 @@ impl<'a> Index<'a> {
                 let context = (d.file, prefix(qualified, &raw, k));
                 let (path, _) = self.relative(d.file, qualified, k);
                 if anchor(&context) {
-                    self.options.add(d, path.clone());
+                    filed.push((d, None, path.clone()));
                     found = true;
                 }
                 for (outer, above) in under.get(&context).into_iter().flatten() {
                     let whole: Pattern<'a> = above.iter().chain(&path).copied().collect();
                     if anchor(outer) {
-                        self.options.add(d, whole);
+                        filed.push((d, None, whole));
                         found = true;
                     } else if !top(outer) {
-                        self.submodules.entry(*outer).or_default().add(d, whole);
+                        filed.push((d, Some(*outer), whole));
                     }
                 }
                 if !top(&context) {
-                    self.submodules.entry(context).or_default().add(d, path);
+                    filed.push((d, Some(context), path));
                 }
             }
             let tail = after_options(&raw);
@@ -619,9 +646,10 @@ impl<'a> Index<'a> {
                     .get(last)
                     .is_some_and(|all| all.iter().filter(alike).count() == 1)
             {
-                self.options.add(d, tail.into_iter().map(Some).collect());
+                filed.push((d, None, tail.into_iter().map(Some).collect()));
             }
         }
+        filed
     }
 
     fn symbols(&self, file: usize) -> &'a [Symbol] {
@@ -905,7 +933,48 @@ impl<'a> Index<'a> {
 /// option a binding sets, with what each reaches. `files` are all of the
 /// worktree's: those in other languages are left alone.
 pub fn resolve(files: &[File]) -> Vec<Edge> {
-    let index = Index::new(files);
+    edges(&Index::new(files))
+}
+
+/// Where the options of the worktree's Nix files are: `files` hold, if not
+/// every site, every use a definition makes of a binding of its own file.
+pub fn place(files: &[File]) -> Placement {
+    let placed = Index::read(files).declare();
+    Placement(
+        placed
+            .into_iter()
+            .map(|(d, context, path)| {
+                let context = context.map(|(file, prefix)| (file, prefix.to_string()));
+                (
+                    d,
+                    context,
+                    path.into_iter()
+                        .map(|name| name.map(str::to_string))
+                        .collect(),
+                )
+            })
+            .collect(),
+    )
+}
+
+/// What `resolve` does, for files that hold only some of the worktree's
+/// sites: the options where `placement`, found from the same files with
+/// all of theirs, has them.
+pub fn resolve_placed<'a>(files: &'a [File<'a>], placement: &'a Placement) -> Vec<Edge> {
+    let mut index = Index::read(files);
+    index.fill(placement.0.iter().map(|(d, context, path)| {
+        let context = context
+            .as_ref()
+            .map(|(file, prefix)| (*file, prefix.as_str()));
+        (*d, context, path.iter().map(Option::as_deref).collect())
+    }));
+    edges(&index)
+}
+
+/// The edges of the calls, references, paths and settings of the files an
+/// index holds, against the options it holds.
+fn edges(index: &Index) -> Vec<Edge> {
+    let files = index.files;
     let mut edges = Vec::new();
     for (f, file) in files.iter().enumerate() {
         if !index.paths.contains_key(file.path) {
@@ -1515,6 +1584,122 @@ a
             set(&sources, "host.nix"),
             lines(&[(4, "x.timeoutSec", "mail.nix unused.options.timeoutSec")])
         );
+    }
+
+    /// The files of some Nix sources, as read.
+    fn nix_files<'a>(
+        sources: &'a [(&'a str, &'a str)],
+        extractions: &'a [Extraction],
+    ) -> Vec<File<'a>> {
+        sources
+            .iter()
+            .zip(extractions)
+            .map(|((path, _), extraction)| File {
+                path,
+                language: Language::Nix,
+                extraction,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn some_sites_resolve_against_the_placement_as_all_of_them_do() {
+        // Options a binding, a function and a file a declaration names hold,
+        // which only those uses place, and a setting and a read of each.
+        let sources = [
+            (
+                "users.nix",
+                "{ lib, ... }:\nlet\n  userOpts = { name, ... }: {\n    options.home = lib.mkOption { };\n    config.home = \"/home/${name}\";\n  };\nin\n{\n  options.users.users = lib.mkOption {\n    type = lib.types.attrsOf (lib.types.submodule userOpts);\n  };\n}\n",
+            ),
+            (
+                "web.nix",
+                "{ lib, ... }:\nlet\n  mkCommon = { port }: { port = lib.mkOption { }; };\nin\n{\n  options.services.web.vhosts = lib.mkOption {\n    type = lib.types.attrsOf (lib.types.submodule (import ./vhost.nix));\n  };\n  options.services.web.exporter = lib.mkOption {\n    type = lib.types.submodule { options = mkCommon { port = 1; }; };\n  };\n}\n",
+            ),
+            (
+                "vhost.nix",
+                "{ lib, ... }:\n{\n  options.root = lib.mkOption { };\n}\n",
+            ),
+            (
+                "host.nix",
+                "{ config, ... }:\n{\n  users.users.alice.home = \"/srv/alice\";\n  services.web.vhosts.site.root = \"/srv\";\n  services.web.exporter.port = 9100;\n  environment.etc.a.text = config.users.users.alice.home;\n  environment.etc.b.text = config.services.web.vhosts.site.root;\n  environment.etc.c.text = config.services.web.exporter.port;\n}\n",
+            ),
+        ];
+        let extractions: Vec<Extraction> = sources
+            .iter()
+            .map(|(_, source)| extract::extract(Language::Nix, source.as_bytes()))
+            .collect();
+        let all = resolve(&nix_files(&sources, &extractions));
+        let placement = place(&nix_files(&sources, &extractions));
+        let option = |edge: &Edge| match edge.resolution {
+            Resolution::Resolved(d, _) => extractions[d.file].symbols[d.symbol].qualified.clone(),
+            _ => String::new(),
+        };
+        // Each read meets its option, as each setting does.
+        let reads: Vec<String> = all
+            .iter()
+            .filter(|edge| edge.file == 3 && matches!(edge.used, Use::Reference(_)))
+            .map(option)
+            .collect();
+        assert_eq!(
+            reads,
+            ["userOpts.options.home", "options.root", "mkCommon.port"]
+        );
+        // Each call and reference alone, and none: what it reaches, and the
+        // settings and paths, are what they are with every site.
+        let site = |edge: &Edge| matches!(edge.used, Use::Call(_) | Use::Reference(_));
+        let shown = |edges: Vec<&Edge>| {
+            let mut shown: Vec<String> = edges.iter().map(|edge| format!("{edge:?}")).collect();
+            shown.sort();
+            shown
+        };
+        let mut sites: Vec<Option<(usize, bool, usize)>> = vec![None];
+        for (f, extraction) in extractions.iter().enumerate() {
+            sites.extend((0..extraction.calls.len()).map(|i| Some((f, true, i))));
+            sites.extend((0..extraction.references.len()).map(|i| Some((f, false, i))));
+        }
+        for kept in sites {
+            let some: Vec<Extraction> = extractions
+                .iter()
+                .enumerate()
+                .map(|(f, extraction)| {
+                    let mut some = extraction.clone();
+                    some.calls.clear();
+                    some.references.clear();
+                    match kept {
+                        Some((at, true, i)) if at == f => {
+                            some.calls.push(extraction.calls[i].clone());
+                        }
+                        Some((at, false, i)) if at == f => {
+                            some.references.push(extraction.references[i].clone());
+                        }
+                        _ => {}
+                    }
+                    some
+                })
+                .collect();
+            let found = resolve_placed(&nix_files(&sources, &some), &placement);
+            let own = |edge: &Edge| {
+                kept.is_some_and(|(at, call, i)| {
+                    let extraction = &extractions[at];
+                    let (line, name, path, from) = if call {
+                        let call = &extraction.calls[i];
+                        (call.line, &call.name, &call.path, &call.from)
+                    } else {
+                        let reference = &extraction.references[i];
+                        (
+                            reference.line,
+                            &reference.name,
+                            &reference.path,
+                            &reference.from,
+                        )
+                    };
+                    (edge.file, edge.line, &edge.name, &edge.path, &edge.from)
+                        == (at, line, name, path, from)
+                })
+            };
+            let wanted = all.iter().filter(|edge| !site(edge) || own(edge)).collect();
+            assert_eq!(shown(found.iter().collect()), shown(wanted), "{kept:?}");
+        }
     }
 
     #[test]

@@ -368,6 +368,10 @@ pub enum Sites<'a> {
     /// Those that may stand where a Nix module goes: at the top of a file,
     /// in no definition, or in its `imports`.
     Top,
+    /// The Nix uses of a binding of their own file, in a definition but in
+    /// what a module sets: those that may place an option, as `userOpts`
+    /// in `type = submodule userOpts;` does.
+    Bound,
 }
 
 impl Store {
@@ -704,6 +708,13 @@ impl Store {
                 "content IN (SELECT content FROM files WHERE worktree = ?1) AND ({from} IS NULL OR {from} = 'imports')"
                     .to_string(),
                 vec![worktree.id.into()],
+            ),
+            Sites::Bound => (
+                "content IN (SELECT f.content FROM files f JOIN contents c ON c.id = f.content
+                 WHERE f.worktree = ?1 AND c.language = ?2)
+                 AND local IS NOT NULL AND {from} != 'config' AND {from} NOT GLOB 'config.*'"
+                    .to_string(),
+                vec![worktree.id.into(), Language::Nix.name().to_string().into()],
             ),
         };
         let holders = worktree.holders();

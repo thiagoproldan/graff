@@ -1142,6 +1142,17 @@ struct Site<'a> {
 /// themselves. `libraries` names the packages' libraries, for their other
 /// crates' paths.
 pub fn resolve(files: &[File], libraries: &[Library]) -> Vec<Edge> {
+    resolve_placed(files, libraries, None)
+}
+
+/// What `resolve` does, the Nix options where `placement` has them, when
+/// given: for files that hold only some of the worktree's sites, from which
+/// `nix::place` could not find them.
+pub fn resolve_placed(
+    files: &[File],
+    libraries: &[Library],
+    placement: Option<&nix::Placement>,
+) -> Vec<Edge> {
     let rust: Vec<usize> = (0..files.len())
         .filter(|&f| files[f].language == Language::Rust)
         .collect();
@@ -1171,7 +1182,10 @@ pub fn resolve(files: &[File], libraries: &[Library]) -> Vec<Edge> {
             ..edge
         })
         .collect();
-    edges.extend(nix::resolve(files));
+    edges.extend(match placement {
+        Some(placement) => nix::resolve_placed(files, placement),
+        None => nix::resolve(files),
+    });
     edges.extend(bash::resolve(files));
     edges.extend(python::resolve(files));
     edges.extend(c::resolve(files));

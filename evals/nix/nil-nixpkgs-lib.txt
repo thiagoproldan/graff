@@ -1,5 +1,5 @@
 run 2026-10-10
-graff 37301d4 with uncommitted changes
+graff 0f72b32 with uncommitted changes
 corpus nixpkgs-lib: github:NixOS/nixpkgs/c59305bab2065cfecc4944690d9eedbb56f3a9fa (/nix/store/fd5qgysvbfx27wj651swlr899w6jnbwd-source), lib, 275 .nix files
 truth nil 2026-07-23: 16046 names asked, 2232 with no definition nil finds; 6082 bound by let, 901 bound by other, 5910 bound by parameter, 921 bound by rec
 

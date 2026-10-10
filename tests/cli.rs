@@ -883,6 +883,40 @@ host.nix:7-9 attribute named.services.foo.instances: 1 callee, 0 possible, 1 out
 }
 
 #[test]
+fn nix_callers_of_a_bound_submodules_option_are_its_settings_and_reads() {
+    let demo = Demo::of(
+        "nix-bound",
+        &[
+            (
+                "users.nix",
+                "{ lib, ... }:\nlet\n  userOpts = { name, ... }: {\n    options.home = lib.mkOption { };\n  };\nin\n{\n  options.users.users = lib.mkOption {\n    type = lib.types.attrsOf (lib.types.submodule userOpts);\n  };\n}\n",
+            ),
+            (
+                "web.nix",
+                "{ lib, ... }:\n{\n  options.services.web.home = lib.mkOption { };\n}\n",
+            ),
+            (
+                "host.nix",
+                "{ config, ... }:\n{\n  users.users.alice.home = \"/srv/alice\";\n  environment.etc.a.text = config.users.users.alice.home;\n}\n",
+            ),
+        ],
+    );
+    // Only the use of `userOpts` in users.nix puts its options under
+    // `users.users`, though the question reads no site of that name; and
+    // another option ends in `home`, so the option has no place without it.
+    assert_eq!(
+        demo.ask(&["callers", "users.nix:4"]),
+        demo.rooted(
+            "callers users.nix:4 in ROOT
+users.nix:4 option userOpts.options.home: 2 callers, 0 possible
+  host.nix:3 attribute users.users.alice.home: set 3
+  host.nix:4 attribute environment.etc.a.text: ref 4
+"
+        )
+    );
+}
+
+#[test]
 fn nix_instances_are_made_again_when_a_file_they_come_from_changes() {
     let demo = Demo::of("nix-kept", NIX_DEMO);
     let audio = "def sys.audio.enable in ROOT

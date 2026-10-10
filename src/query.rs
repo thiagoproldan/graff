@@ -516,6 +516,20 @@ pub fn impact(
     Ok(render(&format!("impact {symbol}"), root, &lines, options))
 }
 
+/// A worktree's files, with what was read of each.
+fn files(worktree: &Worktree) -> Vec<File<'_>> {
+    worktree
+        .files
+        .iter()
+        .zip(&worktree.languages)
+        .map(|((path, extraction), &language)| File {
+            path,
+            language,
+            extraction,
+        })
+        .collect()
+}
+
 /// A worktree as a question reads it.
 struct Code<'s> {
     store: &'s Store,
@@ -530,6 +544,9 @@ struct Code<'s> {
     /// Where a Nix helper writes each binding it makes where a module
     /// calls it.
     written: HashMap<Definition, resolve::nix::Written>,
+    /// Where the Nix options are, found from the uses that place them, which
+    /// a question's sites may leave out: once, before the first edges.
+    placement: Option<resolve::nix::Placement>,
 }
 
 /// The build of graff that runs, by its executable's path, size and time of
@@ -623,16 +640,7 @@ impl<'s> Code<'s> {
             Some(instances) => instances,
             None => {
                 store.sites(&mut worktree, Sites::Top)?;
-                let files: Vec<File> = worktree
-                    .files
-                    .iter()
-                    .zip(&worktree.languages)
-                    .map(|((path, extraction), &language)| File {
-                        path,
-                        language,
-                        extraction,
-                    })
-                    .collect();
+                let files = files(&worktree);
                 let instances =
                     resolve::nix::instantiate(&files, &|path| fs::read(root.join(path)).ok());
                 if let Some(key) = &key {
@@ -687,30 +695,29 @@ impl<'s> Code<'s> {
             defined,
             places,
             written,
+            placement: None,
         })
     }
 
     /// The edges of the calls and references `which` names, of every use
     /// item, and of the types their paths go through.
     fn edges(&mut self, which: Sites) -> Result<Vec<Edge>, Error> {
+        if self.placement.is_none() && self.worktree.languages.contains(&Language::Nix) {
+            self.store.sites(&mut self.worktree, Sites::Bound)?;
+            self.placement = Some(resolve::nix::place(&files(&self.worktree)));
+        }
         self.store.sites(&mut self.worktree, which)?;
-        let files: Vec<File> = self
-            .worktree
-            .files
-            .iter()
-            .zip(&self.worktree.languages)
-            .map(|((path, extraction), &language)| File {
-                path,
-                language,
-                extraction,
-            })
-            .collect();
+        let files = files(&self.worktree);
         let libraries: Vec<Library> = self
             .libraries
             .iter()
             .map(|(package, name)| Library { package, name })
             .collect();
-        Ok(resolve::resolve(&files, &libraries))
+        Ok(resolve::resolve_placed(
+            &files,
+            &libraries,
+            self.placement.as_ref(),
+        ))
     }
 
     /// The edges that may reach some definitions: those of the uses named

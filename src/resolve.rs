@@ -24,7 +24,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::LazyLock;
 
-use crate::extract::{CallKind, Extraction, Kind, RefKind, Symbol};
+use crate::extract::{Branch, CallKind, Extraction, Kind, RefKind, Symbol};
 use crate::lang::Language;
 
 /// The names of the methods std's types have, as evals/resolve/std_methods.py
@@ -1463,6 +1463,40 @@ impl<'a> Index<'a> {
         }
         Some((segment.to_string(), one(types, rule)))
     }
+}
+
+/// Each of a file's branches' parent, the innermost branch that holds it,
+/// for branches in the order they start, the outer first of two that start
+/// on one line: branches nest, or neither holds the other, so a branch's
+/// parent is the last one open where it starts.
+pub(crate) fn nesting(branches: &[Branch]) -> Vec<Option<usize>> {
+    let mut parents = Vec::with_capacity(branches.len());
+    let mut open: Vec<usize> = Vec::new();
+    for (b, branch) in branches.iter().enumerate() {
+        while open.last().is_some_and(|&o| branches[o].end < branch.start) {
+            open.pop();
+        }
+        parents.push(open.last().copied());
+        open.push(b);
+    }
+    parents
+}
+
+/// The branches a line is in, the innermost first: from the last that
+/// starts at or before it, out to the first that holds it, and on to those
+/// it is in. `parents` is what `nesting` gives for `branches`.
+pub(crate) fn around<'b>(
+    branches: &[Branch],
+    parents: &'b [Option<usize>],
+    line: u32,
+) -> impl Iterator<Item = usize> + 'b {
+    let mut at = branches.partition_point(|b| b.start <= line).checked_sub(1);
+    while let Some(b) = at
+        && branches[b].end < line
+    {
+        at = parents[b];
+    }
+    std::iter::successors(at, move |&b| parents[b])
 }
 
 fn distinct(definitions: Vec<Definition>) -> Vec<Definition> {

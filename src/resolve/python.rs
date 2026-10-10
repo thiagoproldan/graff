@@ -23,6 +23,17 @@
 //! What none of these finds is external: the builtins', the library's, or
 //! a package's.
 //!
+//! Of the definitions a scope gives one name, `f` and `f#2`, and of the
+//! imports that bind it there, a name reaches the first no branch around
+//! it leaves out -- the block of an `if`, an `elif` or an `else` whose
+//! condition is false on the platform graff runs on, as pyright reads it
+//! (python/conditions.rs), or false where the name is used: code in a
+//! block runs where its condition holds, so an `else`'s definitions are
+//! none for code in the `if`'s block, and code the platform leaves out is
+//! read as on a platform that runs it -- else the first. A method found
+//! by its name alone is one no branch leaves out on the platform, unless
+//! each is.
+//!
 //! Besides the calls and references read out of the files, each import is
 //! an edge, to the module or the name it names, a `from` import's module
 //! one to its file, and each class's base is a reference to that class; a
@@ -31,14 +42,21 @@
 //! the class or its bases is one its methods set, an instance's, which
 //! graff does not read: it is left out.
 
+use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
+
+use tree_sitter::Parser;
 
 use crate::extract::{Call, CallKind, Import, Kind, RefKind, Reference};
 use crate::lang::Language;
 
 use super::nix::{folder, joined};
-use super::{DEPTH, Definition, Edge, File, Resolution, Rule, Use};
+use super::{DEPTH, Definition, Edge, File, Resolution, Rule, Use, around, nesting};
+
+mod conditions;
+
+use conditions::{Condition, Given, Names};
 
 /// The names of the methods the types of Python's library have, as
 /// evals/python/builtin_methods.py wrote them.
@@ -73,6 +91,13 @@ enum Target<'a> {
     Instance(Definition),
 }
 
+/// What a scope binds a name to.
+#[derive(Clone, Copy, Debug)]
+enum Binding<'a> {
+    Definition(Definition),
+    Import(&'a Import),
+}
+
 /// What looking a name or a path up comes to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Reach<'a> {
@@ -96,16 +121,32 @@ struct Index<'a> {
     /// Each file's definitions, by qualified name.
     qualified: Vec<HashMap<&'a str, usize>>,
     /// Each file's imports that bind a name, by the definition they are in,
-    /// `` for the module's top.
-    imports: Vec<HashMap<&'a str, Vec<&'a Import>>>,
+    /// `` for the module's top, and the name.
+    imports: Vec<HashMap<&'a str, HashMap<&'a str, Vec<&'a Import>>>>,
     /// Each file's star imports, `from m import *`.
     stars: Vec<Vec<&'a Import>>,
     /// Each file's classes' bases, by the class's qualified name.
     bases: Vec<HashMap<&'a str, Vec<&'a Import>>>,
     /// The folders each file's absolute imports are looked for in, in order.
     roots: Vec<Vec<String>>,
-    /// The worktree's methods, by name.
+    /// The worktree's methods, by name: of several, those no branch leaves
+    /// out on the platform graff runs on, unless each is.
     methods: HashMap<&'a str, Vec<Definition>>,
+    /// Each file's definitions that a scope gives a name another has, `f`
+    /// and `f#2`, by the first: all of them, in the order they are written,
+    /// where a branch holds one.
+    siblings: Vec<HashMap<usize, Vec<usize>>>,
+    /// The branch each branch of a file is in, by their places among the
+    /// file's.
+    parents: Vec<Vec<Option<usize>>>,
+    /// Each branch's condition, parsed when first read.
+    conditions: Vec<Vec<OnceCell<Condition<'a>>>>,
+    parser: RefCell<Parser>,
+    /// Each file's names for `sys`, `os`, `sys.platform` and `os.name`.
+    names: Vec<Names<'a>>,
+    /// The use being resolved, by file and line: its branches tell what
+    /// holds there.
+    at: Cell<Option<(usize, u32)>>,
 }
 
 impl<'a> Index<'a> {
@@ -121,6 +162,12 @@ impl<'a> Index<'a> {
             bases: vec![HashMap::new(); n],
             roots: vec![Vec::new(); n],
             methods: HashMap::new(),
+            siblings: vec![HashMap::new(); n],
+            parents: vec![Vec::new(); n],
+            conditions: Vec::with_capacity(n),
+            parser: RefCell::new(crate::extract::python::parser()),
+            names: Vec::with_capacity(n),
+            at: Cell::new(None),
         };
         for (f, file) in files.iter().enumerate() {
             if file.language != Language::Python {
@@ -141,23 +188,77 @@ impl<'a> Index<'a> {
                     index.methods.entry(&symbol.name).or_default().push(d);
                 }
             }
+            for (s, symbol) in file.extraction.symbols.iter().enumerate() {
+                if let Some((first, n)) = symbol.qualified.rsplit_once('#')
+                    && !n.is_empty()
+                    && n.bytes().all(|b| b.is_ascii_digit())
+                    && let Some(&first) = index.qualified[f].get(first)
+                {
+                    index.siblings[f]
+                        .entry(first)
+                        .or_insert_with(|| vec![first])
+                        .push(s);
+                }
+            }
+            index.parents[f] = nesting(&file.extraction.branches);
+            let branched = |s: usize| {
+                around(
+                    &file.extraction.branches,
+                    &index.parents[f],
+                    file.extraction.symbols[s].start,
+                )
+                .next()
+                .is_some()
+            };
+            index.siblings[f].retain(|_, all| all.iter().any(|&s| branched(s)));
             for import in &file.extraction.imports {
                 let scope = import.from.as_deref().unwrap_or("");
                 match import.via.as_deref() {
                     Some("class") => index.bases[f].entry(scope).or_default().push(import),
                     Some("from") if import.glob => index.stars[f].push(import),
-                    Some("import" | "from") => {
-                        index.imports[f].entry(scope).or_default().push(import)
-                    }
+                    Some("import" | "from") => index.imports[f]
+                        .entry(scope)
+                        .or_default()
+                        .entry(bound(import))
+                        .or_default()
+                        .push(import),
                     _ => {}
                 }
             }
+        }
+        for file in files {
+            let branches = &file.extraction.branches;
+            let python = file.language == Language::Python;
+            index.conditions.push(if python {
+                branches.iter().map(|_| OnceCell::new()).collect()
+            } else {
+                Vec::new()
+            });
+            index.names.push(if python {
+                names(file)
+            } else {
+                Names::default()
+            });
         }
         for (f, file) in files.iter().enumerate() {
             if file.language == Language::Python {
                 index.roots[f] = index.roots_of(f);
             }
         }
+        let mut methods = std::mem::take(&mut index.methods);
+        for found in methods.values_mut() {
+            if found.len() > 1 {
+                let kept: Vec<Definition> = found
+                    .iter()
+                    .copied()
+                    .filter(|&d| !index.left_out(d.file, index.symbol_line(d), &Given::new()))
+                    .collect();
+                if !kept.is_empty() {
+                    *found = kept;
+                }
+            }
+        }
+        index.methods = methods;
         index
     }
 
@@ -215,23 +316,139 @@ impl<'a> Index<'a> {
         Some(Definition { file, symbol: *s })
     }
 
-    /// The definition a scope of a file holds by a name: `` for the module's top.
+    /// The definition a scope of a file holds by a name, `` for the
+    /// module's top: of those it gives the name, the one `taken` gives.
     fn defined(&self, file: usize, scope: &str, name: &str) -> Option<Definition> {
         let s = if scope.is_empty() {
             self.qualified[file].get(name)
         } else {
             self.qualified[file].get(format!("{scope}.{name}").as_str())
         }?;
-        Some(Definition { file, symbol: *s })
+        Some(self.taken(file, *s))
     }
 
-    /// The import of a scope of a file that binds a name.
-    fn binding(&self, file: usize, scope: &str, name: &str) -> Option<&'a Import> {
-        self.imports[file]
-            .get(scope)?
+    /// Of a definition and those its scope gives its name again, the first
+    /// no branch leaves out where the use being resolved is; the
+    /// definition itself where each is left out.
+    fn taken(&self, file: usize, s: usize) -> Definition {
+        let d = Definition { file, symbol: s };
+        let Some(all) = self.siblings[file].get(&s) else {
+            return d;
+        };
+        let given = self.given();
+        all.iter()
+            .map(|&s| Definition { file, symbol: s })
+            .find(|&d| !self.left_out(d.file, self.symbol_line(d), &given))
+            .unwrap_or(d)
+    }
+
+    fn symbol_line(&self, d: Definition) -> u32 {
+        self.files[d.file].extraction.symbols[d.symbol].start
+    }
+
+    /// What a scope of a file binds a name to, `` for the module's top: of
+    /// the definitions it gives the name, `f` and `f#2`, and the imports
+    /// that bind it there, the first definition no branch leaves out where
+    /// the use being resolved is, else the first such import, else the
+    /// first definition, else the first import.
+    fn binding(&self, file: usize, scope: &str, name: &str) -> Option<Binding<'a>> {
+        let first = if scope.is_empty() {
+            self.qualified[file].get(name)
+        } else {
+            self.qualified[file].get(format!("{scope}.{name}").as_str())
+        }
+        .copied();
+        let definition = |s: usize| Definition { file, symbol: s };
+        // A definition in no branch is what the scope binds the name to.
+        if let Some(s) = first
+            && !self.siblings[file].contains_key(&s)
+        {
+            let branches = &self.files[file].extraction.branches;
+            let line = self.symbol_line(definition(s));
+            if around(branches, &self.parents[file], line).next().is_none() {
+                return Some(Binding::Definition(definition(s)));
+            }
+        }
+        let imports = self.imports[file]
+            .get(scope)
+            .and_then(|names| names.get(name))
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        match (first, imports) {
+            (None, []) => return None,
+            (Some(s), []) => return Some(Binding::Definition(self.taken(file, s))),
+            (None, [import]) => return Some(Binding::Import(import)),
+            _ => {}
+        }
+        let given = self.given();
+        let runs = |line: u32| !self.left_out(file, line, &given);
+        let definitions = match first {
+            Some(s) => self.siblings[file]
+                .get(&s)
+                .cloned()
+                .unwrap_or_else(|| vec![s]),
+            None => Vec::new(),
+        };
+        definitions
             .iter()
-            .find(|import| bound(import) == name)
-            .copied()
+            .map(|&s| definition(s))
+            .find(|&d| runs(self.symbol_line(d)))
+            .map(Binding::Definition)
+            .or_else(|| {
+                imports
+                    .iter()
+                    .find(|import| runs(import.line))
+                    .map(|import| Binding::Import(import))
+            })
+            .or_else(|| first.map(|s| Binding::Definition(definition(s))))
+            .or_else(|| imports.first().map(|import| Binding::Import(import)))
+    }
+
+    /// What a name extraction tied to a definition of its file reaches:
+    /// what the definition's scope binds the name to, `binding`'s.
+    fn local(&self, file: usize, s: usize) -> Reach<'a> {
+        let qualified = self.qualified_name(Definition { file, symbol: s });
+        let (scope, name) = qualified.rsplit_once('.').unwrap_or(("", qualified));
+        let name = name.split('#').next().unwrap_or(name);
+        match self.binding(file, scope, name) {
+            Some(Binding::Import(import)) => match self.imported(file, import, 1) {
+                Some(target) => Reach::Found(target, Rule::Import),
+                None => Reach::Outside,
+            },
+            Some(Binding::Definition(d)) => Reach::Found(Target::Definition(d), Rule::Scope),
+            None => Reach::Found(
+                Target::Definition(Definition { file, symbol: s }),
+                Rule::Scope,
+            ),
+        }
+    }
+
+    /// What holds where the use being resolved is: the conditions of the
+    /// branches it is in.
+    fn given(&self) -> Given<'a> {
+        let mut given = Given::new();
+        if let Some((file, line)) = self.at.get() {
+            let branches = &self.files[file].extraction.branches;
+            for b in around(branches, &self.parents[file], line) {
+                self.condition(file, b).give(true, &mut given);
+            }
+        }
+        given
+    }
+
+    /// Whether a line of a file is in a branch that does not run on the
+    /// platform graff runs on, given what holds where the use is.
+    fn left_out(&self, file: usize, line: u32, given: &Given<'a>) -> bool {
+        let branches = &self.files[file].extraction.branches;
+        around(branches, &self.parents[file], line)
+            .any(|b| self.condition(file, b).value(given, &self.names[file]) == Some(false))
+    }
+
+    fn condition(&self, file: usize, b: usize) -> &Condition<'a> {
+        self.conditions[file][b].get_or_init(|| {
+            let text = &self.files[file].extraction.branches[b].condition;
+            Condition::new(text, &mut self.parser.borrow_mut())
+        })
     }
 
     /// The scopes whose names code in a definition sees, innermost first,
@@ -269,14 +486,17 @@ impl<'a> Index<'a> {
     /// module's star imports bring.
     fn name(&self, file: usize, from: Option<&str>, name: &str) -> Reach<'a> {
         for scope in self.scopes(file, from) {
-            if let Some(d) = self.defined(file, scope, name) {
-                return Reach::Found(Target::Definition(d), Rule::Scope);
-            }
-            if let Some(import) = self.binding(file, scope, name) {
-                return match self.imported(file, import, 1) {
-                    Some(target) => Reach::Found(target, Rule::Import),
-                    None => Reach::Outside,
-                };
+            match self.binding(file, scope, name) {
+                Some(Binding::Definition(d)) => {
+                    return Reach::Found(Target::Definition(d), Rule::Scope);
+                }
+                Some(Binding::Import(import)) => {
+                    return match self.imported(file, import, 1) {
+                        Some(target) => Reach::Found(target, Rule::Import),
+                        None => Reach::Outside,
+                    };
+                }
+                None => {}
             }
         }
         for star in &self.stars[file] {
@@ -415,13 +635,14 @@ impl<'a> Index<'a> {
             return None;
         }
         if let Module::File(f) = module {
-            if let Some(d) = self.defined(f, "", name) {
-                return Some((Target::Definition(d), Rule::Path));
-            }
-            if let Some(import) = self.binding(f, "", name) {
-                return self
-                    .imported(f, import, depth + 1)
-                    .map(|target| (target, Rule::Path));
+            match self.binding(f, "", name) {
+                Some(Binding::Definition(d)) => return Some((Target::Definition(d), Rule::Path)),
+                Some(Binding::Import(import)) => {
+                    return self
+                        .imported(f, import, depth + 1)
+                        .map(|target| (target, Rule::Path));
+                }
+                None => {}
             }
             for star in &self.stars[f] {
                 if let Some(held) = self.module(f, &star.path)
@@ -608,10 +829,7 @@ impl<'a> Index<'a> {
             return (Reach::Unbound, through);
         };
         let mut reach = match local.and_then(|q| self.qualified[file].get(q)) {
-            Some(&s) => Reach::Found(
-                Target::Definition(Definition { file, symbol: s }),
-                Rule::Scope,
-            ),
+            Some(&s) => self.local(file, s),
             // The extraction writes a path through a method's instance from `self`.
             None if head == "self" => match from.and_then(|from| self.class_of(file, from)) {
                 Some(class) => Reach::Found(Target::Instance(class), Rule::Receiver),
@@ -690,6 +908,7 @@ impl<'a> Index<'a> {
     }
 
     fn call(&self, file: usize, call: &'a Call, edges: &mut Vec<Edge>) {
+        self.at.set(Some((file, call.line)));
         let from = call.from.as_deref();
         let resolution = match (call.path.as_deref(), call.receiver.as_deref()) {
             (Some(path), Some("self")) if path.starts_with("self.") => {
@@ -758,6 +977,7 @@ impl<'a> Index<'a> {
     }
 
     fn reference(&self, file: usize, reference: &'a Reference, edges: &mut Vec<Edge>) {
+        self.at.set(Some((file, reference.line)));
         let from = reference.from.as_deref();
         let resolution = match reference.path.as_deref() {
             Some(path) if path.starts_with("self.") || path.starts_with("super().") => {
@@ -806,6 +1026,7 @@ impl<'a> Index<'a> {
     /// An import's edge, to the module or the name it names; a class's
     /// base's, to the class.
     fn import(&self, file: usize, import: &'a Import, edges: &mut Vec<Edge>) {
+        self.at.set(Some((file, import.line)));
         let path = import.path.as_str();
         let (used, resolution) = match import.via.as_deref() {
             Some("import") => (
@@ -921,6 +1142,30 @@ impl<'a> Index<'a> {
             });
         }
     }
+}
+
+/// The names a file's imports bind to `sys`, `os`, `sys.platform` and
+/// `os.name`, in any of its scopes, beside `sys` and `os`.
+fn names<'a>(file: &File<'a>) -> Names<'a> {
+    let mut names = Names {
+        sys: vec!["sys"],
+        os: vec!["os"],
+        ..Names::default()
+    };
+    for import in &file.extraction.imports {
+        let held = match (import.via.as_deref(), import.path.as_str()) {
+            (Some("import"), "sys") => &mut names.sys,
+            (Some("import"), "os") => &mut names.os,
+            (Some("from"), "sys.platform") => &mut names.platform,
+            (Some("from"), "os.name") => &mut names.os_name,
+            _ => continue,
+        };
+        let name = bound(import);
+        if !held.contains(&name) {
+            held.push(name);
+        }
+    }
+    names
 }
 
 /// The name an import binds: its alias; else `a` for `import a.b`, and `x`
@@ -1463,5 +1708,130 @@ class Config(Base):
             reached,
             vec![(6, "other.py".to_string()), (9, "lib.py".to_string())]
         );
+    }
+
+    #[test]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    fn a_name_reaches_the_definition_of_the_branch_that_runs_where_it_is_used() {
+        let source = br#"import sys
+import os as _os
+
+if sys.platform == "win32":
+    def spawn():
+        return helper()
+    def helper():
+        pass
+else:
+    def spawn():
+        return helper()
+    def helper():
+        pass
+
+spawn()
+
+if _os.name == "nt":
+    from winlib import Console
+else:
+    from unixlib import Console
+
+Console()
+
+if have_x:
+    def pick():
+        return 1
+    pick()
+else:
+    def pick():
+        return 2
+    pick()
+pick()
+
+
+class Transport:
+    if sys.platform.startswith("win"):
+        def zap(self):
+            pass
+    else:
+        def zap(self):
+            pass
+
+    def stop(self):
+        self.zap()
+
+
+def stop(t):
+    t.zap()
+
+
+if _os.name == "nt":
+    def fetch():
+        pass
+else:
+    from unixlib import fetch
+
+fetch()
+"#;
+        let extraction = extract::extract(Language::Python, source);
+        let winlib = extract::extract(Language::Python, b"class Console:\n    pass\n");
+        let unixlib = extract::extract(
+            Language::Python,
+            b"class Console:\n    pass\n\n\ndef fetch():\n    pass\n",
+        );
+        let files = [
+            File {
+                path: "plat.py",
+                language: Language::Python,
+                extraction: &extraction,
+            },
+            File {
+                path: "winlib.py",
+                language: Language::Python,
+                extraction: &winlib,
+            },
+            File {
+                path: "unixlib.py",
+                language: Language::Python,
+                extraction: &unixlib,
+            },
+        ];
+        let reached: Vec<(u32, String, String)> = resolve(&files)
+            .into_iter()
+            .filter(|edge| matches!(edge.used, Use::Call(_)))
+            .map(|edge| {
+                let reached = match edge.resolution {
+                    Resolution::Resolved(d, rule) => format!(
+                        "{} {} ({})",
+                        files[d.file].path,
+                        files[d.file].extraction.symbols[d.symbol].qualified,
+                        rule.name()
+                    ),
+                    other => format!("{other:?}"),
+                };
+                (edge.line, edge.name, reached)
+            })
+            .collect();
+        let expected = [
+            // In the branch the host leaves out, as on a host that takes it.
+            (6, "helper", "plat.py helper (scope)"),
+            // In the `else`, none of the `if`'s.
+            (11, "helper", "plat.py helper#2 (scope)"),
+            // Past both, the branch the host takes.
+            (15, "spawn", "plat.py spawn#2 (scope)"),
+            (22, "Console", "unixlib.py Console (import)"),
+            // Of an `if` neither host nor use decides, the first.
+            (27, "pick", "plat.py pick (scope)"),
+            (31, "pick", "plat.py pick#2 (scope)"),
+            (32, "pick", "plat.py pick (scope)"),
+            (36, "startswith", "External"),
+            (44, "zap", "plat.py Transport.zap#2 (receiver)"),
+            (48, "zap", "plat.py Transport.zap#2 (unique)"),
+            // An import that runs over a definition that does not.
+            (57, "fetch", "unixlib.py fetch (import)"),
+        ];
+        let expected: Vec<(u32, String, String)> = expected
+            .iter()
+            .map(|(line, name, reached)| (*line, name.to_string(), reached.to_string()))
+            .collect();
+        assert_eq!(reached, expected);
     }
 }

@@ -1,5 +1,5 @@
-run 2026-10-09
-graff f127aae with uncommitted changes
+run 2026-10-10
+graff c52530d with uncommitted changes
 corpus graff-evals: a git repository at f127aae (git archive of evals), 31 Python files
 truth: pyright 1.1.414 (nixpkgs), default settings, Python 3.14.7 on PATH, each file opened as it is asked
   4079 names asked, 3663 answered; 0 names not found on their line

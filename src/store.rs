@@ -1360,7 +1360,7 @@ mod tests {
         // and only C's, `internal`.
         let nix = "{ myLib, ... }:\n# Doc.\nlet cfg = myLib.x; in { imports = [ ./a.nix ]; b = myLib.mkSys { n = cfg.y; }; c = builtins.toJSON { d = 1; }; }\n";
         let python = "from .m import Shards as S\n\n\nclass C(Base):\n    \"\"\"Doc.\"\"\"\n\n    def m(self):\n        s = S(1)\n        s.get()\n        return self.n\n";
-        // Only C's gives branches and a guard.
+        // C's gives branches, as Python's does, and alone a guard.
         let c = "#ifndef A_H\n#define A_H\n#include \"a.h\"\n#include <stdint.h>\n/* Doc. */\nstatic int f(int x) { return g(x) + MAX; }\n#ifdef _WIN32\nint w;\n#endif\n#endif\n";
         let mut given = HashSet::new();
         for (path, language, source) in [

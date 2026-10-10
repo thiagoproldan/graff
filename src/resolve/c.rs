@@ -42,7 +42,7 @@ use crate::extract::{Call, CallKind, Import, Kind, RefKind, Reference};
 use crate::lang::Language;
 
 use super::nix::joined;
-use super::{Definition, Edge, File, Resolution, Rule, Use};
+use super::{Definition, Edge, File, Resolution, Rule, Use, around, nesting};
 
 /// What a name is used as, which tells the kinds of definition it may reach.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -113,17 +113,7 @@ impl<'a> Index<'a> {
             if let Some(guard) = &file.extraction.guard {
                 index.guarded.entry(guard).or_default().push(f);
             }
-            // Branches nest, or none holds the other: a branch's parent is
-            // the last one open where it starts.
-            let branches = &file.extraction.branches;
-            let mut open: Vec<usize> = Vec::new();
-            for (b, branch) in branches.iter().enumerate() {
-                while open.last().is_some_and(|&o| branches[o].end < branch.start) {
-                    open.pop();
-                }
-                index.parents[f].push(open.last().copied());
-                open.push(b);
-            }
+            index.parents[f] = nesting(&file.extraction.branches);
             for (s, symbol) in file.extraction.symbols.iter().enumerate() {
                 if symbol.kind != Kind::File {
                     let d = Definition { file: f, symbol: s };
@@ -642,19 +632,13 @@ impl Index<'_> {
             .all(|b| value(&branches[b].condition, &host) == Some(true))
     }
 
-    /// The branches of a file a line is in, the innermost first: from the
-    /// last that starts at or before it, out to the first that holds it,
-    /// and on to those it is in.
+    /// The branches of a file a line is in, the innermost first.
     fn around_line(&self, file: usize, line: u32) -> impl Iterator<Item = usize> + '_ {
-        let branches = &self.files[file].extraction.branches;
-        let parents = &self.parents[file];
-        let mut at = branches.partition_point(|b| b.start <= line).checked_sub(1);
-        while let Some(b) = at
-            && branches[b].end < line
-        {
-            at = parents[b];
-        }
-        std::iter::successors(at, move |&b| parents[b])
+        around(
+            &self.files[file].extraction.branches,
+            &self.parents[file],
+            line,
+        )
     }
 }
 

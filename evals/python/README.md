@@ -15,8 +15,11 @@ through modules and classes, `self.f()` and `super().f()` through the
 class and its bases in Python's method resolution order (C3), a method
 called on what a class of the worktree made to that class's, and any
 other method call to the worktree's only method of that name, unless a
-type of Python's library has one too. One check holds it against what
-knows more:
+type of Python's library has one too. Of the definitions a scope gives
+one name and the imports that bind it there, a name reaches the first in
+no branch of an `if` false on the host, as pyright reads `sys.platform`
+and `os.name`, or false where the name is used. One check holds it
+against what knows more:
 
 - **pyright.py**: graff's ties of names, each call, reference, import,
   class base and qualifier, against pyright's, asked over the language
@@ -160,3 +163,72 @@ Fixed by this check, on the library from precision 0.988 and recall 0.932
   to a keyword of its own name, `onerror=onerror`, was asked at the
   keyword; and a place on a later assignment of a name mapped to the file
   or the function around it (81 edges).
+
+### Result, 2026-10-10 (task 119)
+
+graff reads a file's `if` statements now: of the definitions a scope
+gives one name, `f` and `f#2`, and the imports that bind it there, a name
+reaches the first in no branch false on the host, Linux here, as pyright
+reads `sys.platform` and `os.name`, or false where the name is used (the
+first paragraph).
+
+|                            | kimi tools/, 23 files | graff evals/, 31      | ekko evals/, 19       | Python 3.14.7, 775      |
+| -------------------------- | --------------------- | --------------------- | --------------------- | ----------------------- |
+| names asked                | 3,356                 | 4,079                 | 4,402                 | 138,596                 |
+| answered                   | 2,136                 | 3,663                 | 3,876                 | 126,388                 |
+| broken resolver, precision | 0.000                 | 0.003                 | 0.000                 | 0.008                   |
+| precision                  | 1.000, 820 of 820     | 1.000, 1,369 of 1,369 | 1.000, 1,705 of 1,705 | 0.991, 81,287 of 82,009 |
+| not judged                 | 4                     | 86                    | 132                   | 2,116                   |
+| recall                     | 1.000, 788 of 788     | 1.000, 1,328 of 1,328 | 1.000, 1,602 of 1,602 | 0.937, 80,609 of 86,016 |
+
+By rule on the library: `file` 3,893 of 3,901, `glob` 920 of 932,
+`import` 4,355 of 4,404, `path` 10,553 of 10,874, `receiver` 38,533 of
+38,843, `scope` 22,402 of 22,424, `unique` 631 of 631.
+
+- **The three corpora graff's Python was written against** have no name
+  defined twice under an `if`: their reports are as on 2026-10-09.
+- **On the library, the 76 edges counted wrong** for tying a name its
+  file defines in each branch of a platform test to the first are none
+  now; 722 edges are counted wrong, against 801. examples/resolve over
+  the 773 `.py` files of a git copy of it ties 218 of 140,332 edges
+  otherwise than c52530d: 91 to another definition, 2 to nothing, and
+  125 method calls found by name among fewer candidates, those in a
+  branch false on Linux left out.
+- **Past pyright, as certain on the host**: `in` and `not in` a literal
+  tuple, list or set, `sys.platform.startswith(..)`, a name an import
+  binds to `sys` or `os` (`import os as _os`), and an `and` or an `or`
+  one side of which decides it. pyright keeps both branches of such a
+  test, so either answer counts right: ctypes/util.py's `find_library`
+  reaches its seventh definition, the one Linux runs, where pyright
+  places the second, fifth and seventh and _aix.py's alike.
+- **Where all the definitions are left out, an import that runs.**
+  ctypes/util.py defines `dllist` for Windows and for macOS's family
+  (`sys.platform in {"darwin", "ios", ..}`), and Linux takes `from
+  _ctypes import dllist`: graff ties the two uses to that import, outside
+  the corpus, where pyright, not reading `in`, places them at macOS's (2
+  names missed). Its test code for AIX reaches `from ctypes._aix import
+  find_library`, as pyright does.
+- **A use is read under the branches around it.** An `else` holds none of
+  its `if`'s definitions for code in it, as pyright's flow has it:
+  xml/etree/ElementTree.py's five `handler`s in `XMLParser._setevents`,
+  operator.py's `func` in `attrgetter.__init__` and in
+  `itemgetter.__init__`. Code the host
+  leaves out is read as on a platform that runs it, which pyright does
+  not answer for.
+- **The branches kept** are those that hold a definition, an import or a
+  use of a name a scope binds twice: 1,146 of the library's 27,097, 34
+  KB. Keeping them all, 850 KB of conditions, gave the same edges and
+  cost a question 27 ms: `graff def find_library` in the copy, 149 ms
+  against 176 ms, median of 9, on TLP's balanced profile, the boost off.
+- **Cost, against c52530d, alternating runs on the copy, 2026-10-10**:
+  resolution 166.4 ms against 169.7 ms (median of 15, performance
+  profile, boost on); `graff def find_library` 75 ms against 74 (median
+  of 9, same); extraction on one thread 3,916 ms against 3,885 ms (median
+  of 7, balanced profile, boost off); the index 18,247,680 bytes against
+  18,182,144.
+- **What is left**: a module constant that names the platform, as
+  subprocess.py's `_mswindows = (sys.platform == "win32")` (23 tests
+  around a name defined twice in the library), which pyright does not
+  read either (task 175); `match` statements; and a method found by its
+  name alone, which is filtered by the host only, not by where it is
+  called.

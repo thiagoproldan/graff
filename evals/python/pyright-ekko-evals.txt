@@ -1,5 +1,5 @@
-run 2026-10-09
-graff f127aae with uncommitted changes
+run 2026-10-10
+graff c52530d with uncommitted changes
 corpus ekko-evals: a git repository at 07e5ac7 (git archive of evals), 19 Python files
 truth: pyright 1.1.414 (nixpkgs), default settings, Python 3.14.7 on PATH, each file opened as it is asked
   4402 names asked, 3876 answered; 0 names not found on their line

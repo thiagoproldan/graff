@@ -1,5 +1,5 @@
-run 2026-10-09
-graff f127aae with uncommitted changes
+run 2026-10-10
+graff c52530d with uncommitted changes
 corpus kimi-tools: a git repository at ac1584a (git archive of tools), 23 Python files
 truth: pyright 1.1.414 (nixpkgs), default settings, Python 3.14.7 on PATH, each file opened as it is asked
   3356 names asked, 2136 answered; 3 names not found on their line

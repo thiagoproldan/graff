@@ -59,7 +59,11 @@ followed through modules and classes; `self.f()` and `super().f()` reach the
 method of the class or of a base, in Python's method resolution order, a
 method called on what a class of the worktree made reaches that class's, and
 one called on anything else, the worktree's only method of that name, unless
-a type of Python's library has one too (`src/resolve/python.rs`). In C, a
+a type of Python's library has one too. Of the definitions a scope gives one
+name and the imports that bind it there, a name reaches the first in no
+branch of an `if` false on the host, as pyright reads `sys.platform` and
+`os.name`, or false where the name is used, an `else`'s for code in the
+`if`'s block (`src/resolve/python.rs`). In C, a
 file's functions, variables, structs, unions and enums (by the tag, else by
 the typedef that names one), enumerators, typedefs and macros, those a
 function defines for itself among them, the prototypes of what it does not

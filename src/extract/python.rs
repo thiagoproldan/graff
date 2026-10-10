@@ -17,7 +17,13 @@
 //! gives none, as a Rust local does not. A name an import binds, or nothing
 //! in the file does, is left to resolution, with its path when it is
 //! written through attributes, `tok.encode`. A call through the first
-//! parameter of a method is one through `self`, whatever its name.
+//! parameter of a method is one through `self`, whatever its name. A name
+//! a scope defines twice, `f` and `f#2`, is bound to the first; which one
+//! runs, resolution tells from the branches of the file's `if` statements
+//! that hold a definition, an import or a use of a name a scope binds
+//! twice, each kept with the condition it runs under: an `elif`'s and an
+//! `else`'s with the negation of each test before it, to MAX_CONDITION's
+//! length.
 //!
 //! An import is one per name it binds: `import a.b` is `a.b`, `from .m
 //! import x as y` is `.m.x` as `y`, and `from m import *` is a glob of `m`.
@@ -34,7 +40,8 @@ use tree_sitter::{Node, Parser};
 
 use super::bash::normal;
 use super::{
-    Call, CallKind, Extraction, Import, Kind, MAX_DEPTH, RefKind, Reference, Symbol, end_line, line,
+    Branch, Call, CallKind, Extraction, Import, Kind, MAX_DEPTH, RefKind, Reference, Symbol,
+    end_line, line,
 };
 
 /// What Python sets in every module, which no module defines.
@@ -52,6 +59,12 @@ const MODULE_NAMES: &[&str] = &[
     "__path__",
     "__spec__",
 ];
+
+/// The longest condition a branch is kept with, in bytes: a chain of
+/// `elif`s whose later conditions, with the negations they carry, run past
+/// it tests a value rather than a platform, and keeping it whole would
+/// grow as its length squared. Python 3.14's library has none past 786.
+const MAX_CONDITION: usize = 4096;
 
 /// Comments that tell a tool something rather than the reader.
 const DIRECTIVES: &[&str] = &[
@@ -86,13 +99,74 @@ pub fn extract(source: &[u8]) -> Extraction {
         values: HashMap::new(),
         types: HashMap::new(),
         comments: HashMap::new(),
+        ifs: Vec::new(),
         too_deep: false,
     };
     scan.visit(root, 0, 0);
     let mut reader = Reader::new(source, root, scan);
     reader.symbols(root);
     reader.visit(root, 0, 0);
+    reader.out.branches = kept_branches(&reader, source);
     reader.out
+}
+
+/// The branches of the file's `if` statements that hold a definition or an
+/// import, what a name reaches, or a use of a name a scope binds twice, by
+/// a def, a class or an import: those resolution reads. Of two that start
+/// on one line, the outer first.
+fn kept_branches(reader: &Reader, source: &[u8]) -> Vec<Branch> {
+    if reader.scan.ifs.is_empty() {
+        return Vec::new();
+    }
+    let out = &reader.out;
+    let mut held: Vec<u32> = out.symbols[1..].iter().map(|s| s.start).collect();
+    held.extend(out.imports.iter().map(|i| i.line));
+    let mut bindings: HashMap<(usize, &str), u32> = HashMap::new();
+    let definitions = reader
+        .scan
+        .definitions
+        .iter()
+        .map(|d| (d.scope, d.name.as_str()));
+    let imported = reader
+        .scan
+        .imported
+        .iter()
+        .map(|(scope, name, _)| (*scope, name.as_str()));
+    for key in definitions.chain(imported) {
+        *bindings.entry(key).or_default() += 1;
+    }
+    let rebound: HashSet<&str> = bindings
+        .into_iter()
+        .filter(|&(_, n)| n > 1)
+        .map(|((_, name), _)| name)
+        .collect();
+    if !rebound.is_empty() {
+        let calls = out.calls.iter().map(|c| (c.name.as_str(), c.line));
+        let references = out.references.iter().map(|r| (r.name.as_str(), r.line));
+        held.extend(
+            calls
+                .chain(references)
+                .filter(|(name, _)| rebound.contains(name))
+                .map(|(_, line)| line),
+        );
+    }
+    held.sort_unstable();
+    let holds = |(start, end): (u32, u32)| {
+        let at = held.partition_point(|&line| line < start);
+        held.get(at).is_some_and(|&line| line <= end)
+    };
+    let mut kept = Vec::new();
+    for clauses in &reader.scan.ifs {
+        if clauses.iter().any(|&(_, block)| block.is_some_and(holds)) {
+            kept.extend(
+                branches(clauses, source)
+                    .into_iter()
+                    .filter(|b| holds((b.start, b.end))),
+            );
+        }
+    }
+    kept.sort_by_key(|b| (b.start, std::cmp::Reverse(b.end)));
+    kept
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -170,6 +244,10 @@ struct Site<'t> {
     value: Option<Node<'t>>,
 }
 
+/// A clause of an `if` statement: its test, none for an `else`, and the
+/// first and last line of its block.
+type Clause<'t> = (Option<Node<'t>>, Option<(u32, u32)>);
+
 /// How a target binds what it names.
 #[derive(Clone, Copy)]
 enum How<'t> {
@@ -204,6 +282,8 @@ struct Scan<'s, 't> {
     types: HashMap<(usize, String), Node<'t>>,
     /// Comments by row, each with whether it starts its line.
     comments: HashMap<u32, (Node<'t>, bool)>,
+    /// Each `if` statement's clauses, as they are met.
+    ifs: Vec<Vec<Clause<'t>>>,
     too_deep: bool,
 }
 
@@ -424,11 +504,35 @@ impl<'s, 't> Scan<'s, 't> {
                 self.captures(node, scope, depth + 1);
                 return;
             }
+            "if_statement" => self.clauses(node),
             _ => {}
         }
         for child in children(node) {
             self.visit(child, scope, depth + 1);
         }
+    }
+
+    /// An `if` statement's clauses: its own, each `elif`, its `else`.
+    fn clauses(&mut self, node: Node<'t>) {
+        let lines = |block: Option<Node>| block.map(|block| (line(block), end_line(block)));
+        let mut clauses = vec![(
+            node.child_by_field_name("condition"),
+            lines(node.child_by_field_name("consequence")),
+        )];
+        let mut cursor = node.walk();
+        for alternative in node.children_by_field_name("alternative", &mut cursor) {
+            match alternative.kind() {
+                "elif_clause" => clauses.push((
+                    alternative.child_by_field_name("condition"),
+                    lines(alternative.child_by_field_name("consequence")),
+                )),
+                "else_clause" => {
+                    clauses.push((None, lines(alternative.child_by_field_name("body"))))
+                }
+                _ => {}
+            }
+        }
+        self.ifs.push(clauses);
     }
 
     /// A def or a class: its name, then what it holds in a scope of its own.
@@ -2011,6 +2115,74 @@ impl<'s, 't> Reader<'s, 't> {
     }
 }
 
+/// The branches of an `if` statement -- its block, each `elif`'s and its
+/// `else`'s, from its clauses -- each with the condition under which it
+/// runs: an `elif`'s or an `else`'s carries the negation of each test
+/// before it.
+fn branches(clauses: &[Clause], source: &[u8]) -> Vec<Branch> {
+    let mut found = Vec::new();
+    // The negation of each test so far: `not (a) and not (b) and `.
+    let mut before = String::new();
+    for &(test, block) in clauses {
+        let test = test.map(|test| condition(test, source));
+        let condition = match &test {
+            Some(test) if before.is_empty() => test.clone(),
+            Some(test) => format!("{before}({test})"),
+            None => before.strip_suffix(" and ").unwrap_or(&before).to_string(),
+        };
+        if condition.len() > MAX_CONDITION {
+            break;
+        }
+        if let Some((start, end)) = block
+            && !condition.is_empty()
+        {
+            found.push(Branch {
+                start,
+                end,
+                condition,
+            });
+        }
+        if let Some(test) = test {
+            before.push_str(&format!("not ({test}) and "));
+        }
+    }
+    found
+}
+
+/// A condition as written, on one line: its comments left out, and each
+/// gap between its tokens -- spaces, a line break, a `\` that continues the
+/// line -- one space. A string is a token, as written.
+fn condition(node: Node, source: &[u8]) -> String {
+    let mut text = String::new();
+    let mut last: Option<usize> = None;
+    let mut cursor = node.walk();
+    loop {
+        let at = cursor.node();
+        let leaf = at.child_count() == 0 || at.kind() == "string";
+        if leaf && !matches!(at.kind(), "comment" | "line_continuation") {
+            if last.is_some_and(|end| end < at.start_byte()) {
+                text.push(' ');
+            }
+            text.push_str(std::str::from_utf8(&source[at.byte_range()]).unwrap_or(""));
+            last = Some(at.end_byte());
+        }
+        if !leaf && cursor.goto_first_child() {
+            continue;
+        }
+        loop {
+            if cursor.node() == node {
+                return text;
+            }
+            if cursor.goto_next_sibling() {
+                break;
+            }
+            if !cursor.goto_parent() {
+                return text;
+            }
+        }
+    }
+}
+
 /// A node's children with the field each is in.
 fn fields<'t>(node: Node<'t>) -> Vec<(Option<&'t str>, Node<'t>)> {
     let mut cursor = node.walk();
@@ -2095,7 +2267,7 @@ fn statement(node: Node) -> Node {
 }
 
 /// A plain string literal's text: `".."` and `'lib'`, not an f-string.
-fn literal<'s>(node: Node, source: &'s [u8]) -> Option<&'s str> {
+pub(crate) fn literal<'s>(node: Node, source: &'s [u8]) -> Option<&'s str> {
     if node.kind() != "string" {
         return None;
     }
@@ -2794,6 +2966,84 @@ match command:
         assert_eq!(
             references(&out),
             vec![("x", RefKind::Value, 3, None, None, Some("x"))]
+        );
+    }
+
+    #[test]
+    fn the_branches_resolution_reads_are_kept_with_the_condition_they_run_under() {
+        let out = extract(
+            br#"import sys
+
+if sys.platform == "win32":
+    def f():
+        pass
+elif (os.name == 'posix'  # a comment
+        and \
+        HAVE_X):
+    def f():
+        if y: return 1
+else:
+    def f():
+        pass
+
+
+class C:
+    if TYPE_CHECKING: x: int
+
+
+def g():
+    if sys.platform == "win32":
+        f()
+    if y:
+        h()
+"#,
+        );
+        let branches: Vec<(u32, u32, &str)> = out
+            .branches
+            .iter()
+            .map(|b| (b.start, b.end, b.condition.as_str()))
+            .collect();
+        // `if y:` holds no definition, no import, no use of `f`, which the
+        // module binds three times.
+        assert_eq!(
+            branches,
+            vec![
+                (4, 5, "sys.platform == \"win32\""),
+                (
+                    9,
+                    10,
+                    "not (sys.platform == \"win32\") and ((os.name == 'posix' and HAVE_X))"
+                ),
+                (
+                    12,
+                    13,
+                    "not (sys.platform == \"win32\") and not ((os.name == 'posix' and HAVE_X))"
+                ),
+                (17, 17, "TYPE_CHECKING"),
+                (22, 22, "sys.platform == \"win32\""),
+            ]
+        );
+        // One line holds a branch and the outer one it starts: the outer first.
+        let out = extract(b"if a:\n    if b: import c\n    def d(): pass\n");
+        let branches: Vec<(u32, u32, &str)> = out
+            .branches
+            .iter()
+            .map(|b| (b.start, b.end, b.condition.as_str()))
+            .collect();
+        assert_eq!(branches, vec![(2, 3, "a"), (2, 2, "b")]);
+        // A chain of tests on a value keeps its branches to MAX_CONDITION.
+        let mut source = String::from("if x == 0:\n    def f(): pass\n");
+        for n in 1..400 {
+            source.push_str(&format!("elif x == {n}:\n    def f(): pass\n"));
+        }
+        let out = extract(source.as_bytes());
+        let kept = out.branches.len();
+        assert!((200..400).contains(&kept), "{kept} branches kept");
+        assert_eq!(out.branches[kept - 1].start, 2 * kept as u32);
+        assert!(
+            out.branches
+                .iter()
+                .all(|b| b.condition.len() <= MAX_CONDITION)
         );
     }
 }

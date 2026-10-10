@@ -16,7 +16,7 @@ use crate::lang::Language;
 
 /// Bumped whenever what an extractor produces changes, so that results kept
 /// from an older extractor are read again rather than trusted.
-pub const VERSION: u32 = 12;
+pub const VERSION: u32 = 13;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Extraction {
@@ -26,6 +26,8 @@ pub struct Extraction {
     pub imports: Vec<Import>,
     /// C: the branches of the file's conditionals, which a build may leave
     /// out, in the order they start; its include guard's `#ifndef` is none.
+    /// Python: those of its `if` statements, which a platform may leave out,
+    /// that hold a definition, an import or a use of a name bound twice.
     #[serde(default)]
     pub branches: Vec<Branch>,
     /// C: the macro the file's include guard defines, `K3_H`.
@@ -258,17 +260,20 @@ pub struct Import {
 
 /// A branch of a C conditional: `#if`, `#ifdef`, `#ifndef`, `#elif`,
 /// `#elifdef`, `#elifndef` or `#else`, to the next directive of its
-/// conditional.
+/// conditional. In Python, the block of an `if`, an `elif` or an `else`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Branch {
     /// First and last line, 1-based and inclusive: past its directive's
-    /// lines, to the line before the next directive of its conditional.
+    /// lines, to the line before the next directive of its conditional; in
+    /// Python, its block's.
     pub start: u32,
     pub end: u32,
     /// The condition under which a compiler reads it, as the directives
     /// write it: `defined(_WIN32)` for `#ifdef _WIN32`, and for the `#elif
     /// defined(_WIN32)` after an `#if defined(__APPLE__)`,
-    /// `!(defined(__APPLE__)) && (defined(_WIN32))`.
+    /// `!(defined(__APPLE__)) && (defined(_WIN32))`. In Python, under which
+    /// it runs, on one line: `not (os.name == "nt") and (os.name == "posix")`
+    /// for the `elif os.name == "posix":` after an `if os.name == "nt":`.
     pub condition: String,
 }
 

@@ -93,6 +93,26 @@ fn index_reads_a_worktree_once_and_then_only_what_changed() {
 }
 
 #[test]
+fn a_reader_gone_before_graff_writes_wants_no_more() {
+    let demo = Demo::new("gone");
+    for args in [&["index"][..], &["outline", "src/store.rs"]] {
+        // The pipe's other end is closed before graff starts, as `head`
+        // closes it once it has read enough.
+        let (reader, writer) = std::io::pipe().unwrap();
+        drop(reader);
+        let out = Command::new(env!("CARGO_BIN_EXE_graff"))
+            .args(args)
+            .current_dir(&demo.repo)
+            .env("XDG_CACHE_HOME", demo.top.join("cache"))
+            .stdout(writer)
+            .output()
+            .expect("graff runs");
+        assert!(out.status.success(), "{args:?}: {out:?}");
+        assert!(out.stderr.is_empty(), "{args:?}: {out:?}");
+    }
+}
+
+#[test]
 fn index_outside_a_git_worktree_fails_and_says_why() {
     let top = folder("nowhere");
     let out = graff_in(&top, &top.join("cache"), &["index"]);

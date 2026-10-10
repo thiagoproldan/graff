@@ -143,8 +143,8 @@ fn index(folder: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
     let started = Instant::now();
     let (mut store, root) = open(folder)?;
     let checked = store.check(&root)?;
-    println!(
-        "{}: {}, {} in a language graff reads; {} hashed, {} extracted, {} gone; {:.1} ms",
+    put(&format!(
+        "{}: {}, {} in a language graff reads; {} hashed, {} extracted, {} gone; {:.1} ms\n",
         root.display(),
         plural(checked.listed, "file"),
         checked.read,
@@ -152,8 +152,7 @@ fn index(folder: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
         checked.extracted,
         checked.gone,
         started.elapsed().as_secs_f64() * 1000.0
-    );
-    Ok(())
+    ))
 }
 
 /// Answers a question about the worktree, on stdout.
@@ -167,7 +166,12 @@ fn ask(
         json: asked.json,
     };
     let answer = question(&mut store, &root, &options)?;
-    match io::stdout().lock().write_all(answer.as_bytes()) {
+    put(&answer)
+}
+
+/// Writes on stdout.
+fn put(text: &str) -> Result<(), Box<dyn Error>> {
+    match io::stdout().lock().write_all(text.as_bytes()) {
         // A reader that stops early, as `head` does, wants no more.
         Err(error) if error.kind() == io::ErrorKind::BrokenPipe => Ok(()),
         done => Ok(done?),

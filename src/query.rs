@@ -1,8 +1,9 @@
 //! The questions graff answers about a worktree's code: where a symbol is
 //! defined (def), what reaches it (callers), what it reaches (callees), what
-//! a file holds (outline), and what reaches it from afar (impact). An answer
-//! gives places as file:line ranges, fits a budget of tokens, and says what
-//! it left out and the budget that would hold it all.
+//! a file holds (outline), what reaches it from afar (impact), and which
+//! definitions some words find (search). An answer gives places as
+//! file:line ranges, fits a budget of tokens, and says what it left out and
+//! the budget that would hold it all.
 //!
 //! A question brings the index up to date, builds the index of names from
 //! the worktree's definitions and use items, and resolves only the calls and
@@ -22,6 +23,7 @@ use crate::extract::{CallKind, Kind, RefKind, Symbol};
 use crate::lang::Language;
 use crate::resolve::nix::Instances;
 use crate::resolve::{self, Definition, Edge, File, Library, Resolution, Use};
+use crate::search;
 use crate::store::{self, Sites, Store, Worktree};
 
 /// Bytes to a token, as a budget counts them and evals/bar scores answers:
@@ -514,6 +516,94 @@ pub fn impact(
     let item = json!({"callers": total, "files": files.len(), "depth": levels});
     lines.push(Line::new(text, item, rank(6, 0), "summaries"));
     Ok(render(&format!("impact {symbol}"), root, &lines, options))
+}
+
+/// The definitions some words find, best first, ranked by BM25 over their
+/// names, the rest of their qualified names, their files' paths and their
+/// docs (`src/search.rs`): the first `limit`, each with its doc's first
+/// sentence. A file is one by its path, a Markdown section by its heading;
+/// test code, by its file's path or a `tests` module, ranks lower.
+pub fn search(
+    store: &mut Store,
+    root: &Path,
+    query: &str,
+    limit: usize,
+    options: &Options,
+) -> Result<String, Error> {
+    if search::words(query).is_empty() {
+        return Err(Error::Refused(format!(
+            "no word to search for in {query:?}: a word is a run of letters, digits and underscores"
+        )));
+    }
+    let code = Code::open(store, root)?;
+    let mut held: Vec<Definition> = Vec::new();
+    let mut documents: Vec<search::Document> = Vec::new();
+    for (file, (path, extraction)) in code.worktree.files.iter().enumerate() {
+        let stem = match path.rsplit_once('.') {
+            Some((stem, extension)) if !extension.contains('/') => stem,
+            _ => path.as_str(),
+        };
+        let symbols = &extraction.symbols;
+        let test_file = resolve::markdown::test_file(path);
+        // A helper's argument the binding of the module stands for, as in
+        // `outline`; an impl block, which `def` lists under its type.
+        let made: HashSet<(u32, u32)> = symbols
+            .iter()
+            .filter(|s| s.kind != Kind::Argument)
+            .map(|s| (s.start, s.end))
+            .collect();
+        for (s, symbol) in symbols.iter().enumerate() {
+            if matches!(symbol.kind, Kind::Anchor | Kind::Impl)
+                || (symbol.kind == Kind::Argument && made.contains(&(symbol.start, symbol.end)))
+            {
+                continue;
+            }
+            let qualified = match symbol.qualified.rsplit_once('#') {
+                Some((qualified, n)) if n.bytes().all(|b| b.is_ascii_digit()) => qualified,
+                _ => symbol.qualified.as_str(),
+            };
+            let (name, qualifier) = if symbol.kind == Kind::File {
+                (path.as_str(), "")
+            } else {
+                let name = symbol.name.as_str();
+                (name, qualified.strip_suffix(name).unwrap_or_default())
+            };
+            held.push(Definition { file, symbol: s });
+            documents.push(search::Document {
+                name,
+                qualifier,
+                path: stem,
+                doc: symbol.doc.as_deref(),
+                test: test_file
+                    || resolve::segments(&symbol.qualified)
+                        .iter()
+                        .any(|s| matches!(*s, "tests" | "test")),
+            });
+        }
+    }
+    let ranked = search::rank(query, &documents);
+    let mut text = format!(
+        "{} of {} match",
+        ranked.len(),
+        count(documents.len(), "definition")
+    );
+    if ranked.len() > limit {
+        text.push_str(&format!("; the first {limit} by score"));
+    }
+    let item = json!({"matched": ranked.len(), "definitions": documents.len(), "limit": limit});
+    let mut lines = vec![Line::new(text, item, rank(6, 0), "headers")];
+    for (n, &(i, score)) in ranked.iter().take(limit).enumerate() {
+        let d = held[i];
+        let doc = code.symbol(d).doc.as_deref().and_then(first_sentence);
+        let mut text = code.describe(d);
+        if let Some(doc) = &doc {
+            text.push_str(&format!("\n  /// {doc}"));
+        }
+        let score = (score * 1000.0).round() / 1000.0;
+        let item = json!({"definition": code.json(d), "score": score, "doc": doc});
+        lines.push(Line::new(text, item, rank(5, n), "results"));
+    }
+    Ok(render(&format!("search {query}"), root, &lines, options))
 }
 
 /// A worktree's files, with what was read of each.

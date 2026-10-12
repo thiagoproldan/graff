@@ -91,7 +91,7 @@ code span writes as code names one (`Storage::load`, `k3_mmw()`,
 `CTX_MIN`, not a bare `kind`) are tied to the file, the section, the
 definition holding the line, or the one definition out of test code
 whose full name ends as written; a Rust file stands for the `mod` items
-that load it (`src/resolve/markdown.rs`). It answers five
+that load it (`src/resolve/markdown.rs`). It answers six
 questions (`src/query.rs`):
 
     graff def Storage::load        # its lines, doc, signature, a type's impl blocks
@@ -99,6 +99,7 @@ questions (`src/query.rs`):
     graff callees Storage::load    # what it reaches
     graff outline src/store.rs     # what a file defines, nested, with its lines
     graff impact Storage::load     # its callers, theirs, and so on, 3 levels deep
+    graff search open store        # the definitions those words find, best first
 
 A symbol is named by the end of its path (`load`, `store::Storage::load`),
 with its file (`src/store.rs:Storage::load`) or by a line
@@ -110,6 +111,12 @@ Markdown section by its heading, its anchor, or its file and anchor
 (`Stable ids`, `stable-ids`, `readme.md#stable-ids`), by the first two only
 where no code definition has the name. `def` gives a C
 function's definition before its prototypes, which a budget cuts first.
+`search` ranks definitions by BM25 over the words of their names, the rest
+of their qualified names, their paths and their docs, an identifier split
+at underscores and where its case says a word starts and kept whole too, a
+word in a name counting five times, as Zoekt counts one, and test code
+keeping half its score (`src/search.rs`); it gives 20 unless `--limit` says
+how many.
 An answer is cut to `--budget` tokens, 2,000 unless told, counted as 4
 bytes each, least important lines first, and its last line says what it
 left out and the budget that would hold it all; `--json` gives the same
@@ -147,6 +154,8 @@ What graff does so far is measured there too:
 - `evals/query/`: the edges a question resolves for itself against those of
   the whole worktree resolved, the same for each of ekko's 3,228 definitions
   in every language it reads.
+- `evals/search/`: how often `search` finds where a commit's change went,
+  asked its subject, on two repositories the question set does not hold.
 - `evals/nix/`: Nix against nix's evaluation of a NixOS host (options
   declared and set, the module graph) and against nil's ties of names, on a
   NixOS flake and on nixpkgs.

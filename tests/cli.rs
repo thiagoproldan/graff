@@ -459,6 +459,49 @@ depth 1: 0 callers, 1 possible not followed
 }
 
 #[test]
+fn search_ranks_definitions_by_the_words_of_their_names_paths_and_docs() {
+    let demo = Demo::new("search");
+    assert_eq!(
+        demo.ask(&["search", "open", "store", "--limit", "2"]),
+        demo.rooted(
+            "search open store in ROOT
+15 of 17 definitions match; the first 2 by score
+src/store.rs:11-13 function Storage::open
+  /// Opens the store at a path.
+src/lib.rs:6-9 function run
+  /// Opens the store and reads one key.
+"
+        )
+    );
+    // A name splits into its words, which a query's name matches too.
+    assert_eq!(
+        demo.ask(&["search", "MAX_ENTRIES"]),
+        demo.rooted(
+            "search MAX_ENTRIES in ROOT
+1 of 17 definitions match
+src/store.rs:2 const MAX
+  /// The most a store holds.
+"
+        )
+    );
+    assert_eq!(
+        demo.ask(&["search", "nowhere"]),
+        demo.rooted("search nowhere in ROOT\n0 of 17 definitions match\n")
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&demo.ask(&["search", "open", "--limit", "1", "--json"])).unwrap();
+    assert_eq!(
+        json["results"][1]["definition"]["qualified"],
+        "Storage::open"
+    );
+    assert!(json["results"][1]["score"].as_f64().unwrap() > 0.0);
+    assert_eq!(
+        demo.refused(&["search", "::"]),
+        "graff: no word to search for in \"::\": a word is a run of letters, digits and underscores\n"
+    );
+}
+
+#[test]
 fn an_answer_fits_its_budget_and_says_what_it_left_out() {
     let demo = Demo::new("budget");
     let whole = demo.ask(&["callers", "Storage"]);

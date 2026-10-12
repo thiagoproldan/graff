@@ -1,0 +1,63 @@
+probe.py on kmux at 5377be7: graff /projects/graff/.claude/worktrees/task-17/target/release/graff (sha1 287be610fcc9), its tree e87d5df-dirty
+--sample 60 --seed 0: 60 of 99 commits
+66712b6  - refactor(memory): paste_buffer -> Box ownership
+a913e33  1 feat: cyberpunk --help / -h screen for ztmux
+50f04c5  1 refactor(memory): status_line_entry.expanded -> owned CString
+addd781  4 docs: the parity numbers lose their quarantine caveat
+2548078  2 Refresh the docs against the tree: parity 1173, the six undocumented extensions, and the socket story
+27e02f1  - clippy: use usize::from for bool in message wrap (fix -D warnings CI)
+a9b409f  3 copy-mode: skip whole tab cells in word motion (port grid_in_set)
+a5bab50  - docs: sync stale version/count references
+5b6f1b6  6 fix: cursor-position sentinel aborted tty_cursor and tty_is_visible
+59fa0ae  2 copy-mode: restore grid_reader_cursor_right onemore parameter (vi clamp)
+5d0720a  1 refactor(memory): format_entry -> owned CString + Box
+886dfcd  1 feat: a single @ztmux-zellij-mode setting, applied instantly
+2c2a7fa  4 key-bindings: four default bindings that were simply absent
+64d37f1  - copy-mode: fix next-word skipping whole lines (mis-ported De Morgan)
+4219845  4 README: drop self-ranking superlatives
+784e32d  - Remove the obscured redraw fallback; it is no longer needed
+01c8d99  3 fix: retheme status-format[0] + pane-border-format defaults to next-3.7
+1edd521  1 fix(ci): move record_table_drop into extensions, restore rustfmt
+7821333  - fix: resolve extension popups against the live socket, not SOCKET_PATH
+cef4183  - Record an undetected prompt-type divergence found while lining up the prompt port
+a470e10  - fix: :tree (and other printer extensions) flash the popup shut
+8867fbb  1 fix: default the always-on pane-name frames off; don't overdraw overlays
+4e5a9a5  - docs: bring every number to what the tree measures after the request queue
+aa94452  - fix: cursor increments aborted on the "position unknown" sentinel
+3ec440f  - docs: document the `triggers` extension
+64ffbb5  1 docs: carry the cost-vs-C measurement onto the hub, and say which rows survive a re-run
+0349c74  2 parity: floating-pane clip case — 1124/1124
+297bd26  2 copy-mode: clamp cursor to line in window_copy_update_cursor (vi mode)
+6521343  1 port: kill-pane -f (filter) + fix usage typo
+c49ba33  1 port: kill-session -g (session group) and -f (filter)
+b53f6a6  3 refactor(memory): tty_term.name -> owned CString
+ef92402  1 fix: scrolling pane scrolled the floating pane above it away
+4c1cd14  - choose-*: port the -k and -y flags (8 of the 11 mode-tree slots)
+889913d  1 port: list-panes -O/-r (sort panes within each window)
+5d1bf07  - refactor(memory): window.old_layout -> owned CString
+2f238ff  - fix(port-report): exclude test code from the Rust fn count
+9567a44  8 docs: drop the ASCII banner from the README
+8270ee6  - port: list-clients -O/-r + fix orphaned utf8_width doc comment
+c89767f  - fix(clippy): allow byte_char_slices (C-mirror policy) + drop useless format borrows (rust 1.97)
+15b09c1  - Revert "Remove the obscured redraw fallback"
+4215a3e  - fix: collapsed stacked panes render as box tops with command names
+0630e9c  3 fix(find_cwd): take $PWD where it names the working directory, as tmux's C does
+8abfeb1  3 fix(doctor): drop the fake $ZTMUX check
+a9b4249  - fix(memory): the gate was blind to Option<std::ffi::CString>; fix the 9 sites it hid
+4306db9  - fix: exact tmux getopt parity (add -h) + make 256 completable in _ztmux
+35bd0e9  3 choose-tree/choose-client: port -h, the preview-hiding flag
+fcf650e  - feat: zellij-style floating pane (prefix C-f)
+93877c9  2 refactor(memory): window_buffer_modedata -> owned CString + Box
+ddc7815  - feat: zellij-style pane stacks
+47f091a  - feat: re-add the zellij tab-bar toggle to the pane menu
+25e622b  1 refactor(memory): client_file.path -> owned CString
+578e2b7  - fix: blank tmux's own borders in framed mode (drop the stray dotted line)
+bc6303a  1 resolve the socket from $TMUX when it is one of ztmux's own
+3e41044  1 completion: close the apostrophe that made the whole zsh completion unparseable
+935bfdf  - znative: make the shared ABI file pass the host's own lint gates
+1336e09  1 triggers.log: date each fired trigger in local time
+a002335  - docs: ztmux logo, README banner, favicon, and user and developer decks
+caba091  1 feat: hint bar shows note-less (user-rebound) keys via their command
+9613516  1 fix: default-terminal defaults to tmux-256color (match tmux build default)
+68ed63e  1 parity: verify_one.sh said OK for a case file it never read
+found @1 0.30, @3 0.48, @5 0.53, @10 0.57; MRR@10 0.392

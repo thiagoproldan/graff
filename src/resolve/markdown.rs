@@ -295,7 +295,7 @@ fn module_path<'p>(file: &File<'p>, rust: &'p [String]) -> Vec<&'p str> {
 /// Whether a file is a test's, by where it is or how it is named: under a
 /// `tests` or `test` folder, `test_x.py`, `x_test.go`, `test-hooks.sh`,
 /// `conftest.py`, or `tests.rs`, Rust's `mod tests` in a file of its own.
-fn test_file(path: &str) -> bool {
+pub(crate) fn test_file(path: &str) -> bool {
     let mut parts: Vec<&str> = path.split('/').collect();
     let file = parts.pop().unwrap_or("");
     if parts

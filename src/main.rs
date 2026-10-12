@@ -71,6 +71,18 @@ enum Command {
         #[command(flatten)]
         asked: Asked,
     },
+    /// The definitions some words find, best first: ranked by BM25 over
+    /// their names, split at underscores and case, their paths and their docs
+    Search {
+        /// Words, names or both: storage file, parseMap, open_store
+        #[arg(required = true)]
+        words: Vec<String>,
+        /// How many definitions to give at most
+        #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u32).range(1..))]
+        limit: u32,
+        #[command(flatten)]
+        asked: Asked,
+    },
 }
 
 #[derive(Args)]
@@ -116,6 +128,13 @@ fn main() -> ExitCode {
             asked,
         } => ask(asked, |store, root, options| {
             query::impact(store, root, &symbol.symbol, depth.into(), options)
+        }),
+        Command::Search {
+            words,
+            limit,
+            asked,
+        } => ask(asked, |store, root, options| {
+            query::search(store, root, &words.join(" "), limit as usize, options)
         }),
     };
     match done {

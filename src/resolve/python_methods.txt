@@ -1036,6 +1036,7 @@ exit
 exitcode
 exitonclick
 exp
+expand
 expandNode
 expand_default
 expand_prog_name
@@ -1112,6 +1113,7 @@ find_spec
 find_user_password
 find_withtag
 findall
+finditer
 findtext
 finish
 finish_content
@@ -1211,6 +1213,7 @@ ftp_open
 full
 full_match
 full_url
+fullmatch
 gammavariate
 gather
 gauss
@@ -1580,6 +1583,7 @@ grid_rowconfigure
 grid_size
 grid_slaves
 group
+groupdict
 groups
 guess_all_extensions
 guess_extension
@@ -2754,6 +2758,7 @@ scan_dragto
 scan_mark
 scan_opcodes
 scandir
+scanner
 scope_id
 screen_xy
 screensize
@@ -3073,6 +3078,7 @@ sort
 sort_stats
 source_to_code
 sourcehook
+span
 special_selector
 speed
 split
@@ -3143,9 +3149,11 @@ strip
 strip_dirs
 stripped_value
 strptime
+sub
 subTest
 subgroup
 submit
+subn
 subnet_of
 subnets
 subpad

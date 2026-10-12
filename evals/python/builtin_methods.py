@@ -5,7 +5,8 @@ method of the worktree (a call `x.get()` on a dict is not the worktree's
 that name: one written in Python, read off the library's source with `ast`
 -- its tests left out -- or one written in C, found by `dir()` on the
 classes of the builtins and of the modules built into the interpreter or
-shipped as its extensions. Names private to a class, `_x` but not `__x__`,
+shipped as its extensions, or of the types a module written in Python
+binds at its top with `X = type(..)`, as re's `Pattern` and `Match`. Names private to a class, `_x` but not `__x__`,
 are left out: a call of one is the worktree's own.
 
     nix develop -c python3 evals/python/builtin_methods.py
@@ -36,8 +37,11 @@ def public(name):
 
 
 def from_source(stdlib):
-    """The methods of the classes the library writes in Python."""
+    """The methods of the classes the library writes in Python, and the
+    types its modules bind at their top that are no class of its source,
+    as (module, name)."""
     found = set()
+    bound = set()
     for folder, subfolders, files in os.walk(stdlib):
         subfolders[:] = sorted(s for s in subfolders if s not in LEFT_OUT)
         for name in sorted(files):
@@ -52,7 +56,30 @@ def from_source(stdlib):
             for node in ast.walk(tree):
                 if isinstance(node, ast.ClassDef):
                     found |= defined(node.body)
-    return found
+            module = module_name(stdlib, path)
+            for node in tree.body:
+                if is_type_binding(node):
+                    bound |= {(module, t.id) for t in node.targets if public(t.id)}
+    return found, bound
+
+
+def module_name(stdlib, path):
+    parts = os.path.relpath(path, stdlib)[: -len(".py")].split(os.sep)
+    if parts[-1] == "__init__":
+        parts.pop()
+    return ".".join(parts)
+
+
+def is_type_binding(node):
+    """`X = type(..)` at the top of a module."""
+    return (
+        isinstance(node, ast.Assign)
+        and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Name)
+        and node.value.func.id == "type"
+        and len(node.value.args) == 1
+        and all(isinstance(t, ast.Name) for t in node.targets)
+    )
 
 
 def defined(body):
@@ -83,8 +110,9 @@ def methods(cls):
     return found
 
 
-def from_c(stdlib):
-    """The methods of the classes the builtins and the library's C modules hold."""
+def from_c(stdlib, bound):
+    """The methods of the classes the builtins and the library's C modules
+    hold, and of the types `bound` names in the modules that bind them."""
     found = set()
     for value in vars(builtins).values():
         if isinstance(value, type):
@@ -101,12 +129,22 @@ def from_c(stdlib):
         for value in list(vars(module).values()):
             if isinstance(value, type):
                 found |= methods(value)
+    for name, attribute in sorted(bound):
+        if name in NOT_IMPORTED:
+            continue
+        try:
+            value = getattr(importlib.import_module(name), attribute)
+        except Exception:
+            continue
+        if isinstance(value, type):
+            found |= methods(value)
     return found
 
 
 def main():
     stdlib = sysconfig.get_paths()["stdlib"]
-    names = sorted(n for n in from_source(stdlib) | from_c(stdlib) if public(n))
+    written, bound = from_source(stdlib)
+    names = sorted(n for n in written | from_c(stdlib, bound) if public(n))
     version = sys.version.split()[0]
     with open(OUT, "w") as f:
         f.write(f"# Written by evals/python/builtin_methods.py from the library of Python {version}.\n")

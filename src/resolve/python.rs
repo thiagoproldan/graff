@@ -1471,6 +1471,33 @@ class Config(Base):
         )
     }
 
+    /// re binds its two types with `type(..)`, which no class of its source
+    /// writes: every public method of a pattern and of a match is in.
+    #[test]
+    fn the_library_methods_hold_those_of_a_regex_pattern_and_match() {
+        for name in [
+            "match",
+            "fullmatch",
+            "search",
+            "sub",
+            "subn",
+            "split",
+            "findall",
+            "finditer",
+            "scanner",
+            "groupdict",
+            "groups",
+            "group",
+            "expand",
+            "span",
+            "start",
+            "end",
+        ] {
+            assert!(library_method(name), "{name}");
+        }
+        assert!(!library_method("not_a_python_method"));
+    }
+
     #[test]
     fn a_name_reaches_its_scope_then_its_imports_then_star_imports() {
         let mut found = edges();

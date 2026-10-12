@@ -401,6 +401,19 @@ of these, keeps both branches and counts either answer right.
   `while` and `with` statements too, and python_methods.txt has 11 names
   more (`group`, `owner`, `hardlink_to`, `minimum_version` ..): those
   calls stay untied.
+- **The types a module binds with `type(..)` (task 346)**: re's `Pattern`
+  and `Match` (`Pattern = type(_compiler.compile('', 0))`) are no class of
+  its source and `_sre` holds neither, so groupdict, fullmatch, finditer,
+  subn, scanner, expand, sub and span were missing from python_methods.txt,
+  and `m.groupdict()` was tied to a worktree's only `groupdict` by name
+  alone. builtin_methods.py takes the `X = type(..)` a module of the library
+  writes at its top, and imports that module for the type: 8 names more.
+  Measured 2026-10-12, A at 3a23368 against B, on the four corpora:
+  precision and recall are the same on each (the library 0.993 and 0.940),
+  and examples/resolve's edges are the same, line by line (3,519, 4,258,
+  4,664 and 140,385): none of the four calls a method of re's types that a
+  class of the corpus also has. A scratch worktree with `class K: def
+  groupdict(self)` and `m.groupdict()` goes from `unique` to ambiguous.
 - **The extraction**: 53 symbols of the library get a value, 2,740 bytes;
   the index is 18,386,944 bytes either way.
 - **Cost, against c2f8bec, alternating runs, 2026-10-12**, TLP's balanced

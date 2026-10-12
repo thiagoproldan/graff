@@ -168,17 +168,43 @@ pub fn callers(
     let edges = code.edges_named(&targets)?;
     let written = Named::parse(symbol).parts;
     let mut lines = Vec::new();
+    // The edges each definition is reached by, in the edges' order: one
+    // pass over them in place of one for each target, of which a name such
+    // as `mkOption` has hundreds.
+    let mut reached: HashMap<Definition, Vec<&Edge>> = HashMap::new();
+    let mut maybe: HashMap<Definition, Vec<&Edge>> = HashMap::new();
+    for edge in &edges {
+        match &edge.resolution {
+            Resolution::Resolved(d, _) => reached.entry(*d).or_default().push(edge),
+            Resolution::Ambiguous(found) => {
+                let mut seen: Vec<Definition> = Vec::new();
+                for &d in found {
+                    if !seen.contains(&d) {
+                        seen.push(d);
+                        maybe.entry(d).or_default().push(edge);
+                    }
+                }
+            }
+            Resolution::External => {}
+        }
+    }
     for (n, &target) in targets.iter().enumerate() {
         let of = code.symbol(target).qualified.as_str();
         let sure = code.by_caller(
-            edges
-                .iter()
-                .filter(|edge| reaches(edge, target) && as_named(edge, of, &written)),
+            reached
+                .get(&target)
+                .into_iter()
+                .flatten()
+                .copied()
+                .filter(|edge| as_named(edge, of, &written)),
         );
         let possible = code.by_caller(
-            edges
-                .iter()
-                .filter(|edge| may_reach(edge, target) && as_named(edge, of, &written)),
+            maybe
+                .get(&target)
+                .into_iter()
+                .flatten()
+                .copied()
+                .filter(|edge| as_named(edge, of, &written)),
         );
         let mut text = format!(
             "{}: {}, {} possible",
@@ -1621,10 +1647,19 @@ impl<'s> Code<'s> {
             symbol.kind,
             Kind::Attribute | Kind::Variable | Kind::Function
         );
-        if !binding || Language::of(self.path(d), b"") != Some(Language::Nix) {
+        if !binding {
             return false;
         }
         let full = resolve::segments(&symbol.qualified);
+        // Only a path that runs through the names somewhere before its end
+        // can pass through them: most definitions of a worktree do not, and
+        // are told so before the work of finding where their own path starts.
+        if !(parts.len()..full.len()).any(|end| names_run(parts, &full[end - parts.len()..end])) {
+            return false;
+        }
+        if Language::of(self.path(d), b"") != Some(Language::Nix) {
+            return false;
+        }
         let own = (1..full.len())
             .rev()
             .find(|&n| self.defined(d.file).contains_key(&full[..n].join(".")))
@@ -1829,14 +1864,6 @@ fn option_named<'w>(written: &'w [&'w str], qualified: &str) -> &'w [&'w str] {
         .rposition(|segment| segment.split('#').next() == Some("options"))
         .map_or(full.len(), |i| full.len() - i - 1);
     &written[written.len().saturating_sub(own)..]
-}
-
-fn reaches(edge: &Edge, target: Definition) -> bool {
-    matches!(&edge.resolution, Resolution::Resolved(d, _) if *d == target)
-}
-
-fn may_reach(edge: &Edge, target: Definition) -> bool {
-    matches!(&edge.resolution, Resolution::Ambiguous(found) if found.contains(&target))
 }
 
 /// Adds a use to the group of its key, once.

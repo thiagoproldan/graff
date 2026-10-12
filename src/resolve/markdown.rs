@@ -59,13 +59,20 @@ impl<'a> Index<'a> {
             let test = test_file(file.path);
             for (s, symbol) in file.extraction.symbols.iter().enumerate() {
                 let d = Definition { file: f, symbol: s };
-                let qualified = segments(&symbol.qualified);
                 let mentioned = !matches!(
                     symbol.kind,
                     Kind::File | Kind::Section | Kind::Anchor | Kind::Argument | Kind::Impl
                 );
-                let tested = qualified.iter().any(|s| matches!(*s, "tests" | "test"));
-                if !mentioned || test || tested || symbol.name.is_empty() {
+                if !mentioned || test || symbol.name.is_empty() {
+                    continue;
+                }
+                // Only a name with "test" in it can have a segment that is
+                // one: the rest are not split.
+                let tested = symbol.qualified.contains("test")
+                    && segments(&symbol.qualified)
+                        .iter()
+                        .any(|s| matches!(*s, "tests" | "test"));
+                if tested {
                     continue;
                 }
                 index.named.entry(symbol.name.as_str()).or_default().push(d);

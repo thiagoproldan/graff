@@ -132,7 +132,24 @@ fn declared(symbol: &Symbol) -> bool {
 /// What `overrides` keeps: a class, the method of it a use is in, the
 /// name the use reads through `self`, and the file and the innermost
 /// branch around the use, none outside any.
-type Reached = (Definition, Option<String>, String, Option<(usize, usize)>);
+type Reached<'a> = (Definition, Option<&'a str>, &'a str, Option<(usize, usize)>);
+
+/// What a folder holds by a name: the package `name/__init__.py`, the
+/// module `name.py`, the folder `name`.
+#[derive(Clone, Copy, Default)]
+struct Child<'a> {
+    package: Option<usize>,
+    module: Option<usize>,
+    folder: Option<&'a str>,
+}
+
+/// What `candidates` keeps: `Reached` but the method, which only tells
+/// which of the candidates run it.
+type Read<'a> = (Definition, &'a str, Option<(usize, usize)>);
+
+/// What `candidates` gives: each subclass's place in its class's `Below`
+/// and its member of the name.
+type Candidates = Rc<[(usize, Definition)]>;
 
 /// A class's subclasses, at any depth, each with its method resolution
 /// order, and the names their members have, of the classes of those
@@ -149,8 +166,15 @@ struct Index<'a> {
     /// The folders that hold Python files, at any depth: the packages and
     /// the namespace packages a module path may name.
     folders: HashSet<&'a str>,
+    /// What each folder of `folders`, and the top, ``, holds by a name:
+    /// `paths` and `folders` read with no path to make.
+    children: HashMap<(&'a str, &'a str), Child<'a>>,
     /// Each file's definitions, by qualified name.
     qualified: Vec<HashMap<&'a str, usize>>,
+    /// Each file's definitions inside another, by the qualified name of
+    /// the one they are in and their own last: `qualified`'s, found with
+    /// no qualified name to make.
+    scoped: Vec<HashMap<(&'a str, &'a str), usize>>,
     /// Each file's imports that bind a name, by the definition they are in,
     /// `` for the module's top, and the name.
     imports: Vec<HashMap<&'a str, HashMap<&'a str, Vec<&'a Import>>>>,
@@ -181,14 +205,19 @@ struct Index<'a> {
     names: Vec<Names<'a>>,
     /// The classes of the worktree that name a class as a base, by it.
     subclasses: OnceCell<HashMap<Definition, Vec<Definition>>>,
-    /// The names of each class's members: its defs, classes and variables.
-    members: HashMap<Definition, HashSet<&'a str>>,
+    /// Each class's members, its defs, classes and variables, by name: the
+    /// first the class's body gives the name, `f` before `f#2`.
+    members: HashMap<Definition, HashMap<&'a str, usize>>,
     /// Each `super().name()` call, by its file, the definition it is in
     /// and the name.
     supers: HashSet<(usize, &'a str, &'a str)>,
     /// What `overrides` found below a class, by the class, the method the
     /// use is in, the name, and the innermost branch around the use.
-    reached: RefCell<HashMap<Reached, Rc<[Definition]>>>,
+    reached: RefCell<HashMap<Reached<'a>, Rc<[Definition]>>>,
+    /// What each subclass of a class reads by a name, by the class, the
+    /// name and the innermost branch around the use: the subclass's place
+    /// in the class's `Below` and its member.
+    candidates: RefCell<HashMap<Read<'a>, Candidates>>,
     /// Each class's method resolution order `overrides` read.
     orders: RefCell<HashMap<Definition, Rc<[Definition]>>>,
     /// What `overrides` reads below each class it was asked of.
@@ -205,7 +234,9 @@ impl<'a> Index<'a> {
             files,
             paths: HashMap::new(),
             folders: HashSet::new(),
+            children: HashMap::new(),
             qualified: vec![HashMap::new(); n],
+            scoped: vec![HashMap::new(); n],
             imports: vec![HashMap::new(); n],
             stars: vec![Vec::new(); n],
             bases: vec![HashMap::new(); n],
@@ -221,6 +252,7 @@ impl<'a> Index<'a> {
             members: HashMap::new(),
             supers: HashSet::new(),
             reached: RefCell::new(HashMap::new()),
+            candidates: RefCell::new(HashMap::new()),
             orders: RefCell::new(HashMap::new()),
             below: RefCell::new(HashMap::new()),
             at: Cell::new(None),
@@ -230,15 +262,34 @@ impl<'a> Index<'a> {
                 continue;
             }
             index.paths.insert(file.path, f);
+            let (here, base) = split_folder(file.path);
+            if let Some(stem) = base.strip_suffix(".py") {
+                index.children.entry((here, stem)).or_default().module = Some(f);
+            }
+            if base == "__init__.py" && !here.is_empty() {
+                index
+                    .children
+                    .entry(split_folder(here))
+                    .or_default()
+                    .package = Some(f);
+            }
             let mut at = file.path;
             while let Some((above, _)) = at.rsplit_once('/') {
                 if !index.folders.insert(above) {
                     break;
                 }
+                index
+                    .children
+                    .entry(split_folder(above))
+                    .or_default()
+                    .folder = Some(above);
                 at = above;
             }
             for (s, symbol) in file.extraction.symbols.iter().enumerate() {
                 index.qualified[f].entry(&symbol.qualified).or_insert(s);
+                if let Some(split) = symbol.qualified.rsplit_once('.') {
+                    index.scoped[f].entry(split).or_insert(s);
+                }
                 if symbol.kind == Kind::Method {
                     let d = Definition { file: f, symbol: s };
                     index.methods.entry(&symbol.name).or_default().push(d);
@@ -270,8 +321,9 @@ impl<'a> Index<'a> {
                 .is_some()
             };
             index.siblings[f].retain(|_, all| all.iter().any(|&s| branched(s)));
-            for symbol in &file.extraction.symbols {
-                if let Some((class, _)) = symbol.qualified.rsplit_once('.')
+            for (s, symbol) in file.extraction.symbols.iter().enumerate() {
+                if let Some((class, own)) = symbol.qualified.rsplit_once('.')
+                    && own == symbol.name
                     && let Some(&c) = index.qualified[f].get(class)
                     && file.extraction.symbols[c].kind == Kind::Class
                 {
@@ -279,7 +331,7 @@ impl<'a> Index<'a> {
                         .members
                         .entry(Definition { file: f, symbol: c })
                         .or_default()
-                        .insert(&symbol.name);
+                        .insert(&symbol.name, s);
                 }
             }
             for call in &file.extraction.calls {
@@ -428,12 +480,22 @@ impl<'a> Index<'a> {
     /// The definition a scope of a file holds by a name, `` for the
     /// module's top: of those it gives the name, the one `taken` gives.
     fn defined(&self, file: usize, scope: &str, name: &str) -> Option<Definition> {
-        let s = if scope.is_empty() {
+        let s = self.in_scope(file, scope, name)?;
+        Some(self.taken(file, s))
+    }
+
+    /// The first definition a scope of a file gives a name, `` for the
+    /// module's top: the one whose qualified name is the scope's, a dot
+    /// and the name.
+    fn in_scope(&self, file: usize, scope: &str, name: &str) -> Option<usize> {
+        if scope.is_empty() {
             self.qualified[file].get(name)
-        } else {
+        } else if name.contains('.') {
             self.qualified[file].get(format!("{scope}.{name}").as_str())
-        }?;
-        Some(self.taken(file, *s))
+        } else {
+            self.scoped[file].get(&(scope, name))
+        }
+        .copied()
     }
 
     /// Of a definition and those its scope gives its name again, the first
@@ -461,12 +523,7 @@ impl<'a> Index<'a> {
     /// the use being resolved is, else the first such import, else the
     /// first definition, else the first import.
     fn binding(&self, file: usize, scope: &str, name: &str) -> Option<Binding<'a>> {
-        let first = if scope.is_empty() {
-            self.qualified[file].get(name)
-        } else {
-            self.qualified[file].get(format!("{scope}.{name}").as_str())
-        }
-        .copied();
+        let first = self.in_scope(file, scope, name);
         let definition = |s: usize| Definition { file, symbol: s };
         // A definition in no branch is what the scope binds the name to.
         if let Some(s) = first
@@ -690,18 +747,12 @@ impl<'a> Index<'a> {
     fn top(&self, file: usize, name: &str) -> Option<Module<'a>> {
         let mut namespace = None;
         for root in &self.roots[file] {
-            let at = join(root, name);
-            if let Some(&f) = self.paths.get(join(&at, "__init__.py").as_str()) {
-                return Some(Module::File(f));
-            }
-            if let Some(&f) = self.paths.get(format!("{at}.py").as_str()) {
+            let child = self.child(root, name);
+            if let Some(f) = child.package.or(child.module) {
                 return Some(Module::File(f));
             }
             if namespace.is_none() {
-                namespace = self
-                    .folders
-                    .get(at.as_str())
-                    .map(|&held| Module::Folder(held));
+                namespace = child.folder.map(Module::Folder);
             }
         }
         namespace
@@ -720,16 +771,25 @@ impl<'a> Index<'a> {
             }
             Module::Folder(at) => at,
         };
-        let at = join(at, name);
-        if let Some(&f) = self.paths.get(join(&at, "__init__.py").as_str()) {
-            return Some(Module::File(f));
+        let child = self.child(at, name);
+        match child.package.or(child.module) {
+            Some(f) => Some(Module::File(f)),
+            None => child.folder.map(Module::Folder),
         }
-        if let Some(&f) = self.paths.get(format!("{at}.py").as_str()) {
-            return Some(Module::File(f));
+    }
+
+    /// What a folder, `` for the top, holds by a name.
+    fn child(&self, at: &str, name: &str) -> Child<'a> {
+        if name.contains('/') {
+            // A name that is a path is read as one.
+            let at = join(at, name);
+            return Child {
+                package: self.paths.get(join(&at, "__init__.py").as_str()).copied(),
+                module: self.paths.get(format!("{at}.py").as_str()).copied(),
+                folder: self.folders.get(at.as_str()).copied(),
+            };
         }
-        self.folders
-            .get(at.as_str())
-            .map(|&held| Module::Folder(held))
+        self.children.get(&(at, name)).copied().unwrap_or_default()
     }
 
     /// A module's attribute of a name: a name it defines, one its imports
@@ -783,7 +843,7 @@ impl<'a> Index<'a> {
         name: &str,
         order: impl FnOnce() -> O,
     ) -> Option<(Definition, Rule)> {
-        let own = self.defined(class.file, self.qualified_name(class), name);
+        let own = self.own_member(class, name);
         if let Some(d) = own
             && (self.declared(d) || !self.declared_names.contains(name))
         {
@@ -811,7 +871,7 @@ impl<'a> Index<'a> {
     fn first_member(&self, classes: &[Definition], name: &str) -> Option<Definition> {
         let mut first = None;
         for &c in classes {
-            if let Some(d) = self.defined(c.file, self.qualified_name(c), name) {
+            if let Some(d) = self.own_member(c, name) {
                 if self.declared(d) {
                     return Some(d);
                 }
@@ -819,6 +879,16 @@ impl<'a> Index<'a> {
             }
         }
         first
+    }
+
+    /// A class's own member of a name, as `defined` gives it in the class's
+    /// body, read from the class's members with no name to make.
+    fn own_member(&self, class: Definition, name: &str) -> Option<Definition> {
+        if self.kind(class) != Kind::Class {
+            return self.defined(class.file, self.qualified_name(class), name);
+        }
+        let &s = self.members.get(&class)?.get(name)?;
+        Some(self.taken(class.file, s))
     }
 
     fn declared(&self, d: Definition) -> bool {
@@ -907,14 +977,8 @@ impl<'a> Index<'a> {
 
     /// What `self.name` reaches in a method, or with `past`, `super().name`:
     /// the member of its class or of a base.
-    fn receiver(
-        &self,
-        file: usize,
-        from: Option<&str>,
-        name: &str,
-        past: bool,
-    ) -> Option<Definition> {
-        let class = self.class_of(file, from?)?;
+    fn receiver(&self, class: Option<Definition>, name: &str, past: bool) -> Option<Definition> {
+        let class = class?;
         if past {
             self.inherited(class, name, 0)
         } else {
@@ -932,18 +996,15 @@ impl<'a> Index<'a> {
     /// overrides it and calls no `super()` of it, reaches nothing there.
     fn overrides(
         &self,
-        file: usize,
-        from: Option<&str>,
-        name: &str,
+        class: Option<Definition>,
+        from: Option<&'a str>,
+        name: &'a str,
         own: Option<Definition>,
     ) -> Vec<Definition> {
-        let Some(from) = from else {
-            return Vec::new();
-        };
-        let Some(class) = self
-            .class_of(file, from)
-            .filter(|class| self.subclasses().contains_key(class))
-        else {
+        let (Some(from), Some(class)) = (
+            from,
+            class.filter(|class| self.subclasses().contains_key(class)),
+        ) else {
             return Vec::new();
         };
         // The class's method the use is in, at any depth inside it.
@@ -962,10 +1023,12 @@ impl<'a> Index<'a> {
                 .next()
                 .map(|b| (f, b))
         });
-        let key = (class, method.map(String::from), name.to_string(), branch);
+        let key = (class, method, name, branch);
         let kept = self.reached.borrow().get(&key).cloned();
         let reached = kept.unwrap_or_else(|| {
-            let reached: Rc<[Definition]> = self.reached_below(class, &below, method, name).into();
+            let reached: Rc<[Definition]> = self
+                .reached_below(class, &below, method, name, branch)
+                .into();
             self.reached.borrow_mut().insert(key, reached.clone());
             reached
         });
@@ -983,21 +1046,45 @@ impl<'a> Index<'a> {
         class: Definition,
         below: &Below,
         method: Option<&str>,
-        name: &str,
+        name: &'a str,
+        branch: Option<(usize, usize)>,
     ) -> Vec<Definition> {
         let mut found = Vec::new();
-        for (sub, order) in &below.classes {
-            if !order.iter().any(|c| self.has_member(*c, name))
-                || method.is_some_and(|method| !self.runs(order, class, method))
+        for &(i, d) in self.candidates(class, below, name, branch).iter() {
+            if found.contains(&d)
+                || method.is_some_and(|method| !self.runs(&below.classes[i].1, class, method))
             {
                 continue;
             }
-            if let Some((d, _)) = self.member_in(*sub, name, || order.clone())
-                && !found.contains(&d)
-            {
-                found.push(d);
-            }
+            found.push(d);
         }
+        found
+    }
+
+    /// The member of a name each subclass of a class reads, as `member`
+    /// picks it, of those that have one, made once for every method of
+    /// the class a use of the name is in.
+    fn candidates(
+        &self,
+        class: Definition,
+        below: &Below,
+        name: &'a str,
+        branch: Option<(usize, usize)>,
+    ) -> Candidates {
+        let key = (class, name, branch);
+        if let Some(found) = self.candidates.borrow().get(&key) {
+            return found.clone();
+        }
+        let found: Candidates = below
+            .classes
+            .iter()
+            .enumerate()
+            .filter_map(|(i, (sub, order))| {
+                self.member_in(*sub, name, || order.clone())
+                    .map(|(d, _)| (i, d))
+            })
+            .collect();
+        self.candidates.borrow_mut().insert(key, found.clone());
         found
     }
 
@@ -1016,6 +1103,8 @@ impl<'a> Index<'a> {
             names: HashSet::new(),
         };
         let mut seen = HashSet::from([class]);
+        // The classes whose members' names `names` holds already.
+        let mut read = HashSet::new();
         let mut next = vec![class];
         while let Some(above) = next.pop() {
             for &sub in self.subclasses().get(&above).into_iter().flatten() {
@@ -1024,10 +1113,13 @@ impl<'a> Index<'a> {
                 }
                 next.push(sub);
                 let order = self.order(sub);
-                for c in order.iter().filter(|c| !own.contains(c)) {
+                for &c in order.iter().filter(|&c| !own.contains(c)) {
+                    if !read.insert(c) {
+                        continue;
+                    }
                     below
                         .names
-                        .extend(self.members.get(c).into_iter().flatten().copied());
+                        .extend(self.members.get(&c).into_iter().flat_map(|m| m.keys()));
                 }
                 below.classes.push((sub, order));
             }
@@ -1035,12 +1127,6 @@ impl<'a> Index<'a> {
         let below = Rc::new(below);
         self.below.borrow_mut().insert(class, below.clone());
         below
-    }
-
-    fn has_member(&self, class: Definition, name: &str) -> bool {
-        self.members
-            .get(&class)
-            .is_some_and(|names| names.contains(name))
     }
 
     /// A class's method resolution order, made once, its bases read where
@@ -1064,8 +1150,7 @@ impl<'a> Index<'a> {
             if at == class {
                 return true;
             }
-            if self.has_member(at, method)
-                && let Some(d) = self.defined(at.file, self.qualified_name(at), method)
+            if let Some(d) = self.own_member(at, method)
                 && !self
                     .supers
                     .contains(&(d.file, self.qualified_name(d), method))
@@ -1243,15 +1328,16 @@ impl<'a> Index<'a> {
         let mut overrides = Vec::new();
         let resolution = match (call.path.as_deref(), call.receiver.as_deref()) {
             (Some(path), Some("self")) if path.starts_with("self.") => {
-                let own = self.receiver(file, from, name, false);
-                overrides = self.overrides(file, from, name, own);
+                let class = from.and_then(|from| self.class_of(file, from));
+                let own = self.receiver(class, name, false);
+                overrides = self.overrides(class, from, name, own);
                 match own {
                     Some(d) => Resolution::Resolved(d, Rule::Receiver),
                     None => Resolution::External,
                 }
             }
             (Some(path), Some("super")) if path.starts_with("super().") => {
-                match self.receiver(file, from, name, true) {
+                match self.receiver(from.and_then(|from| self.class_of(file, from)), name, true) {
                     Some(d) => Resolution::Resolved(d, Rule::Receiver),
                     None => Resolution::External,
                 }
@@ -1325,10 +1411,11 @@ impl<'a> Index<'a> {
                     && path.matches('.').count() == 1 =>
             {
                 let past = path.starts_with("super().");
-                let own = self.receiver(file, from, name, past);
+                let class = from.and_then(|from| self.class_of(file, from));
+                let own = self.receiver(class, name, past);
                 // A set gives the instance its own value: it reads none.
                 if !past && reference.kind != RefKind::Set {
-                    overrides = self.overrides(file, from, name, own);
+                    overrides = self.overrides(class, from, name, own);
                 }
                 match own {
                     Some(d) => Resolution::Resolved(d, Rule::Receiver),
@@ -1553,17 +1640,17 @@ fn reached_by<'n>(name: &'n str, path: Option<&'n str>) -> &'n str {
 /// A use's resolutions: what it reaches, then the overrides it reaches
 /// too, each as an edge of its own; what reaches nothing but overrides is
 /// those alone.
-fn with_overrides(resolution: Resolution, overrides: Vec<Definition>) -> Vec<Resolution> {
-    let mut found = Vec::with_capacity(1 + overrides.len());
-    if overrides.is_empty() || !matches!(resolution, Resolution::External) {
-        found.push(resolution);
-    }
-    found.extend(
+fn with_overrides(
+    resolution: Resolution,
+    overrides: Vec<Definition>,
+) -> impl Iterator<Item = Resolution> {
+    let first =
+        (overrides.is_empty() || !matches!(resolution, Resolution::External)).then_some(resolution);
+    first.into_iter().chain(
         overrides
             .into_iter()
             .map(|d| Resolution::Resolved(d, Rule::Override)),
-    );
-    found
+    )
 }
 
 /// Whether a text is a name as Python writes one: `Turtle`, `_x1`.
@@ -1605,6 +1692,11 @@ fn above(at: &str) -> Option<&str> {
     } else {
         Some(folder(at))
     }
+}
+
+/// A path's folder, `` at the top, and its last name.
+fn split_folder(path: &str) -> (&str, &str) {
+    path.rsplit_once('/').unwrap_or(("", path))
 }
 
 fn join(at: &str, name: &str) -> String {

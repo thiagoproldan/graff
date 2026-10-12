@@ -2,7 +2,9 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
+
+use serde_json::{Value, json};
 
 fn graff(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_graff"))
@@ -2004,4 +2006,231 @@ readme.md:5-8 section Code #code: 3 callees, 0 possible, 1 outside the worktree
 "
         )
     );
+}
+
+/// `graff --mcp` started in `at`, its cache the demo's, fed `requests` one
+/// line each: its replies, one line each, once stdin closed.
+fn serve(demo: &Demo, at: &Path, project: Option<&Path>, requests: &[Value]) -> Vec<Value> {
+    use std::io::Write;
+    let mut command = Command::new(env!("CARGO_BIN_EXE_graff"));
+    command
+        .arg("--mcp")
+        .current_dir(at)
+        .env("XDG_CACHE_HOME", demo.top.join("cache"))
+        .env_remove("CLAUDE_PROJECT_DIR")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if let Some(project) = project {
+        command.env("CLAUDE_PROJECT_DIR", project);
+    }
+    let mut child = command.spawn().expect("graff runs");
+    let mut stdin = child.stdin.take().unwrap();
+    for request in requests {
+        writeln!(stdin, "{request}").unwrap();
+    }
+    drop(stdin);
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success(), "{out:?}");
+    assert!(out.stderr.is_empty(), "{out:?}");
+    String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
+}
+
+/// A tools/call of the handshake's revision.
+fn call(id: u32, name: &str, arguments: Value) -> Value {
+    json!({"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": {"name": name, "arguments": arguments}})
+}
+
+/// A call's text, and whether it was refused.
+fn said(reply: &Value) -> (String, bool) {
+    let result = &reply["result"];
+    assert_eq!(
+        result["content"].as_array().map(Vec::len),
+        Some(1),
+        "{reply}"
+    );
+    (
+        result["content"][0]["text"].as_str().unwrap().to_string(),
+        result["isError"].as_bool().unwrap(),
+    )
+}
+
+#[test]
+fn mcp_answers_each_question_as_the_command_line_does() {
+    let demo = Demo::new("mcp-same");
+    // A row for each tool: what it is asked, and the same on the command line.
+    let rows = [
+        ("def", json!({"symbol": "Storage"}), vec!["def", "Storage"]),
+        (
+            "callers",
+            json!({"symbol": "Storage::open"}),
+            vec!["callers", "Storage::open"],
+        ),
+        ("callees", json!({"symbol": "run"}), vec!["callees", "run"]),
+        (
+            "outline",
+            json!({"file": "store.rs"}),
+            vec!["outline", "store.rs"],
+        ),
+        (
+            "impact",
+            json!({"symbol": "size", "depth": 2}),
+            vec!["impact", "size", "--depth", "2"],
+        ),
+        (
+            "search",
+            json!({"words": "open store", "limit": 3}),
+            vec!["search", "open", "store", "--limit", "3"],
+        ),
+        (
+            "map",
+            json!({"focus": ["src/lib.rs"], "budget": 500}),
+            vec!["map", "src/lib.rs", "--budget", "500"],
+        ),
+    ];
+    let names: Vec<&str> = rows.iter().map(|(name, _, _)| *name).collect();
+    assert_eq!(names, graff::mcp::TOOLS, "a row for each tool, in order");
+    let requests: Vec<Value> = rows
+        .iter()
+        .enumerate()
+        .map(|(n, (name, arguments, _))| call(n as u32, name, arguments.clone()))
+        .collect();
+    let replies = serve(&demo, &demo.repo, None, &requests);
+    assert_eq!(replies.len(), rows.len());
+    for (n, (reply, (name, _, args))) in replies.iter().zip(&rows).enumerate() {
+        assert_eq!(reply["id"], n, "{reply}");
+        let (text, refused) = said(reply);
+        assert!(!refused, "{name}: {text}");
+        assert_eq!(text, demo.ask(args), "{name}");
+    }
+}
+
+#[test]
+fn mcp_cuts_to_the_budget_a_call_names_and_says_so_in_its_words() {
+    let demo = Demo::new("mcp-cut");
+    let whole = demo.ask(&["callers", "Storage"]);
+    let needed = whole.len().div_ceil(4);
+    let replies = serve(
+        &demo,
+        &demo.repo,
+        None,
+        &[call(
+            1,
+            "callers",
+            json!({"symbol": "Storage", "budget": needed - 1}),
+        )],
+    );
+    let (text, refused) = said(&replies[0]);
+    assert!(!refused);
+    assert!(text.len() <= (needed - 1) * 4, "{text}");
+    assert!(
+        text.trim_end()
+            .ends_with(&format!("; budget {needed} holds it all")),
+        "{text}"
+    );
+}
+
+#[test]
+fn mcp_refuses_a_question_as_the_command_line_does_for_the_model_to_read() {
+    let demo = Demo::new("mcp-refused");
+    let replies = serve(
+        &demo,
+        &demo.repo,
+        None,
+        &[
+            call(1, "def", json!({"symbol": "crate::Storage::open"})),
+            call(2, "def", json!({"symbol": "Storage", "budget": 9000})),
+        ],
+    );
+    let (text, refused) = said(&replies[0]);
+    assert!(refused);
+    assert_eq!(
+        text,
+        demo.refused(&["def", "crate::Storage::open"]).trim_end()
+    );
+    let (text, refused) = said(&replies[1]);
+    assert!(refused);
+    assert_eq!(
+        text,
+        "graff: budget must be a whole number from 1 to 8000, not 9000"
+    );
+}
+
+#[test]
+fn mcp_serves_the_project_claude_code_names_else_the_folder_it_starts_in() {
+    let demo = Demo::new("mcp-where");
+    let outline = demo.ask(&["outline", "src/lib.rs"]);
+    let ask = json!({"file": "src/lib.rs"});
+    // Started outside any worktree, it takes CLAUDE_PROJECT_DIR's.
+    let replies = serve(
+        &demo,
+        &demo.top,
+        Some(&demo.repo),
+        &[call(1, "outline", ask.clone())],
+    );
+    assert_eq!(said(&replies[0]), (outline.clone(), false));
+    // Without it, the folder it was started in, or a folder a call names from there.
+    let replies = serve(
+        &demo,
+        &demo.repo.join("src"),
+        None,
+        &[
+            call(1, "outline", ask.clone()),
+            call(2, "outline", json!({"file": "src/lib.rs", "folder": ".."})),
+        ],
+    );
+    assert_eq!(said(&replies[0]), (outline.clone(), false));
+    assert_eq!(said(&replies[1]), (outline, false));
+    let replies = serve(&demo, &demo.top, None, &[call(1, "outline", ask)]);
+    let (text, refused) = said(&replies[0]);
+    assert!(
+        refused && text.starts_with("graff: git: fatal: not a git repository"),
+        "{text}"
+    );
+}
+
+#[test]
+fn mcp_speaks_the_handshake_and_2026_07_28_in_one_process() {
+    let demo = Demo::new("mcp-eras");
+    let meta = json!({
+        "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+        "io.modelcontextprotocol/clientCapabilities": {},
+        "io.modelcontextprotocol/clientInfo": {"name": "claude-code", "version": "2.1.290"},
+    });
+    let replies = serve(
+        &demo,
+        &demo.repo,
+        None,
+        &[
+            json!({"jsonrpc": "2.0", "id": 0, "method": "server/discover", "params": {"_meta": meta}}),
+            json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": {"name": "claude-code", "version": "2.1.290"}}}),
+            json!({"jsonrpc": "2.0", "method": "notifications/initialized"}),
+            json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}),
+            call(3, "def", json!({"symbol": "MAX"})),
+            json!({"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "def", "arguments": {"symbol": "MAX"}, "_meta": meta}}),
+        ],
+    );
+    let ids: Vec<&Value> = replies.iter().map(|reply| &reply["id"]).collect();
+    assert_eq!(ids, [0, 1, 2, 3, 4], "the notification gets no reply");
+    assert_eq!(
+        replies[0]["result"]["supportedVersions"],
+        json!(["2026-07-28"])
+    );
+    assert_eq!(replies[1]["result"]["protocolVersion"], "2025-11-25");
+    let names: Vec<&str> = replies[2]["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|tool| tool["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, graff::mcp::TOOLS);
+    let answer = demo.ask(&["def", "MAX"]);
+    assert_eq!(said(&replies[3]), (answer.clone(), false));
+    assert!(replies[3]["result"].get("resultType").is_none());
+    assert_eq!(said(&replies[4]), (answer, false));
+    assert_eq!(replies[4]["result"]["resultType"], "complete");
 }

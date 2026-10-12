@@ -39,6 +39,24 @@ pub struct Options {
     /// The tokens the answer may take.
     pub budget: usize,
     pub json: bool,
+    /// How the asker names the budget, in the line that tells of a cut:
+    /// `--budget` on the command line, `budget` over MCP.
+    pub knob: &'static str,
+    /// The most tokens the asker may ask for, if it has a ceiling: a cut
+    /// that needs more says so, rather than name a budget it cannot take.
+    pub most: Option<usize>,
+}
+
+impl Options {
+    /// The command line's: `--budget`, with no ceiling.
+    pub fn new(budget: usize, json: bool) -> Options {
+        Options {
+            budget,
+            json,
+            knob: "--budget",
+            most: None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -2193,10 +2211,13 @@ fn render(query: &str, root: &Path, lines: &[Line], options: &Options) -> String
             .map(|(part, n)| format!("{part} {n}"))
             .collect::<Vec<_>>()
             .join(", ");
-        let text = format!(
-            "cut to {}, leaving out {parts}; --budget {needed} holds it all",
-            count(options.budget, "token")
-        );
+        let (knob, cut_to) = (options.knob, count(options.budget, "token"));
+        let text = match options.most {
+            Some(most) if needed > most => format!(
+                "cut to {cut_to}, leaving out {parts}; {knob} {needed} would hold it all, past the {most} a call may take: narrow the question"
+            ),
+            _ => format!("cut to {cut_to}, leaving out {parts}; {knob} {needed} holds it all"),
+        };
         let left_out: serde_json::Map<String, Value> = left
             .iter()
             .map(|(part, n)| (part.replace(' ', "_"), json!(n)))
@@ -2508,10 +2529,7 @@ mod tests {
                 "callers x",
                 Path::new("/r"),
                 &lines,
-                &Options {
-                    budget,
-                    json: false,
-                },
+                &Options::new(budget, false),
             )
         };
         // 16 bytes of first line, 7 of target, 101 for each other line: 326, 82 tokens.
@@ -2544,20 +2562,37 @@ mod tests {
     }
 
     #[test]
+    fn a_cut_names_the_budget_as_its_asker_does_and_one_past_its_ceiling_as_such() {
+        let lines = [
+            line("target", 5, "definitions"),
+            line(&"a".repeat(200), 3, "callers"),
+        ];
+        let render = |most| {
+            let options = Options {
+                knob: "budget",
+                most,
+                ..Options::new(10, false)
+            };
+            render("q", Path::new("/r"), &lines, &options)
+        };
+        // 8 bytes of first line, 7 of target, 201 of the caller: 216, 54 tokens.
+        assert_eq!(
+            render(Some(54)),
+            "q in /r\ncut to 10 tokens, leaving out definitions 1, callers 1; budget 54 holds it all\n"
+        );
+        assert_eq!(
+            render(Some(53)),
+            "q in /r\ncut to 10 tokens, leaving out definitions 1, callers 1; budget 54 would hold it all, past the 53 a call may take: narrow the question\n"
+        );
+    }
+
+    #[test]
     fn a_cut_stops_at_the_first_line_that_does_not_fit() {
         let lines = [
             line(&"a".repeat(200), 3, "callers"),
             line("b", 3, "callers"),
         ];
-        let out = render(
-            "q",
-            Path::new("/r"),
-            &lines,
-            &Options {
-                budget: 30,
-                json: false,
-            },
-        );
+        let out = render("q", Path::new("/r"), &lines, &Options::new(30, false));
         assert_eq!(
             out,
             "q in /r\ncut to 30 tokens, leaving out callers 2; --budget 53 holds it all\n"
@@ -2575,7 +2610,7 @@ mod tests {
                 "callers x",
                 Path::new("/r"),
                 &lines,
-                &Options { budget, json: true },
+                &Options::new(budget, true),
             );
             assert!(out.len() <= budget * BYTES_PER_TOKEN, "{out}");
             serde_json::from_str(&out).unwrap()

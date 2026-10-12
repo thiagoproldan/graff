@@ -2,6 +2,7 @@
 
 pub mod extract;
 pub mod lang;
+pub mod mcp;
 pub mod query;
 pub mod rank;
 pub mod resolve;

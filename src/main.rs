@@ -12,10 +12,19 @@ use graff::store::{self, Store};
 
 /// A code map for Claude Code.
 #[derive(Parser)]
-#[command(version, arg_required_else_help = true)]
+#[command(
+    version,
+    arg_required_else_help = true,
+    args_conflicts_with_subcommands = true
+)]
 struct Cli {
+    /// Serve the questions as tools over the Model Context Protocol, on
+    /// stdin and stdout, for the worktree of CLAUDE_PROJECT_DIR or else of
+    /// the current folder
+    #[arg(long)]
+    mcp: bool,
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand)]
@@ -126,7 +135,15 @@ struct Asked {
 }
 
 fn main() -> ExitCode {
-    let done = match Cli::parse().command {
+    let cli = Cli::parse();
+    if cli.mcp {
+        return serve();
+    }
+    let Some(command) = cli.command else {
+        eprintln!("graff: no command: see graff --help");
+        return ExitCode::FAILURE;
+    };
+    let done = match command {
         Command::Index { folder } => index(folder),
         Command::Def { symbol, asked } => ask(asked, |store, root, options| {
             query::def(store, root, &symbol.symbol, options)
@@ -211,10 +228,7 @@ fn ask(
     question: impl FnOnce(&mut Store, &Path, &Options) -> Result<String, query::Error>,
 ) -> Result<(), Box<dyn Error>> {
     let (mut store, root) = open(asked.folder)?;
-    let options = Options {
-        budget: asked.budget as usize,
-        json: asked.json,
-    };
+    let options = Options::new(asked.budget as usize, asked.json);
     let answer = question(&mut store, &root, &options)?;
     put(&answer)
 }
@@ -234,5 +248,27 @@ fn plural(count: usize, word: &str) -> String {
         format!("1 {word}")
     } else {
         format!("{count} {word}s")
+    }
+}
+
+/// `graff --mcp`, until stdin closes: the worktree is the project's, as
+/// Claude Code names it to the servers it starts, else the current folder's.
+fn serve() -> ExitCode {
+    let project = std::env::var_os("CLAUDE_PROJECT_DIR")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute());
+    let folder = match project.map_or_else(std::env::current_dir, Ok) {
+        Ok(folder) => folder,
+        Err(error) => {
+            eprintln!("graff: no folder to serve: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match graff::mcp::run(folder) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("graff: {error}");
+            ExitCode::FAILURE
+        }
     }
 }

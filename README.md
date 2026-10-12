@@ -154,6 +154,25 @@ each level asked SQL's LIKE for each name it reached, where one pass over
 the sites now tells which paths go through any of them. `graff index`
 runs the freshness check alone.
 
+`graff --mcp` serves the seven questions as tools over the Model Context
+Protocol, on stdin and stdout (`src/mcp.rs`), for the worktree of the
+folder `CLAUDE_PROJECT_DIR` names, as Claude Code sets it for the servers
+it starts, else of the folder it was started in; a call may name another
+folder. A tool's answer is the command line's, cut to the `budget` the
+call names, at most 8,000 tokens, under the 10,000 past which Claude Code
+warns of a tool's output (an estimate: graff counts 4 bytes a token); a
+cut that would need more says so. It speaks both revisions ekko speaks: a
+request whose `_meta` names 2026-07-28 is served on its own,
+`server/discover` included, and an `initialize` handshake gets 2025-11-25
+or the earlier revision it asks for. Claude Code loads only the tools'
+names and the server's instructions at a session's start, the definitions
+on the ToolSearch that wants them: the instructions, 1,100 characters, say
+when graff answers better than grep and when it does not, and a test holds
+them to 1,200 and the seven definitions to 6,000. In one server a `def`
+on graff's own worktree took 18 ms a call, against 24 ms for the command
+line (20 calls each, three rounds, 2026-10-12, TLP's balanced profile on
+battery, the load at 10 from other sessions).
+
 What counts as graff working was fixed before its first line of code, in
 `evals/`:
 

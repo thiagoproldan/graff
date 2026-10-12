@@ -984,7 +984,9 @@ impl<'s, 't> Reader<'s, 't> {
                 declared: declared.contains(&(site.scope, site.name.as_str())),
                 value: aliases
                     .get(&(site.scope, site.name.as_str()))
-                    .and_then(|&value| self.type_name(value)),
+                    .and_then(|&value| self.type_name(value))
+                    .or_else(|| self.test(site))
+                    .or_else(|| self.import_test(site)),
             });
             if site.scope == 0
                 && counts.get(&(0, site.name.as_str())) == Some(&1)
@@ -1286,6 +1288,117 @@ impl<'s, 't> Reader<'s, 't> {
             at = held.parent;
         }
         None
+    }
+
+    /// The test a module assigns a name, where that is the one value it
+    /// gives it: `sys.platform == "win32"` for `_MS_WINDOWS =
+    /// (sys.platform == "win32")`, which an `if` may test in its stead.
+    fn test(&self, site: &Site) -> Option<String> {
+        if site.scope != 0 || self.scan.values.get(&(0, site.name.clone())) != Some(&1) {
+            return None;
+        }
+        let mut value = site.value?;
+        while value.kind() == "parenthesized_expression" && value.named_child_count() == 1 {
+            value = value.named_child(0)?;
+        }
+        let test = match value.kind() {
+            "comparison_operator" | "boolean_operator" | "not_operator" => true,
+            "call" => value
+                .child_by_field_name("function")
+                .and_then(|f| f.child_by_field_name("attribute"))
+                .is_some_and(|a| self.text(a) == "startswith"),
+            _ => false,
+        };
+        let text = self.text(value);
+        (test && text.len() <= MAX_CONDITION).then(|| text.to_string())
+    }
+
+    /// `import msvcrt` for a name a module's `try` sets true where `import
+    /// msvcrt` succeeds and false or None where it fails, subprocess.py's
+    /// `_mswindows`:
+    ///
+    /// ```python
+    /// try:
+    ///     import msvcrt
+    /// except ModuleNotFoundError:
+    ///     _mswindows = False
+    /// else:
+    ///     _mswindows = True
+    /// ```
+    fn import_test(&self, site: &Site) -> Option<String> {
+        let clause = site
+            .statement
+            .parent()
+            .filter(|b| b.kind() == "block")?
+            .parent()?;
+        if site.scope != 0
+            || !matches!(site.value?.kind(), "true" | "false" | "none")
+            || !matches!(
+                clause.kind(),
+                "try_statement" | "else_clause" | "except_clause"
+            )
+        {
+            return None;
+        }
+        let name = site.name.as_str();
+        let (mut held, mut succeeds, mut fails) = (None, false, false);
+        for site in self
+            .scan
+            .sites
+            .iter()
+            .filter(|s| s.scope == 0 && s.name == name)
+        {
+            let value = site.value?.kind();
+            let block = site.statement.parent().filter(|b| b.kind() == "block")?;
+            let clause = block.parent()?;
+            let (statement, success) = match clause.kind() {
+                "try_statement" => (clause, true),
+                "else_clause" => (clause.parent()?, true),
+                "except_clause" => {
+                    let types: Vec<Node> = named_children(clause)
+                        .into_iter()
+                        .filter(|child| child.kind() != "block")
+                        .flat_map(identifiers)
+                        .collect();
+                    let caught = types.is_empty()
+                        || types.iter().any(|e| {
+                            matches!(self.text(*e), "ImportError" | "ModuleNotFoundError")
+                        });
+                    if !caught {
+                        return None;
+                    }
+                    (clause.parent()?, false)
+                }
+                _ => return None,
+            };
+            if statement.kind() != "try_statement"
+                || held.is_some_and(|held: Node| held.id() != statement.id())
+            {
+                return None;
+            }
+            held = Some(statement);
+            match (success, value) {
+                (true, "true") => succeeds = true,
+                (false, "false" | "none") => fails = true,
+                _ => return None,
+            }
+        }
+        let statement = held.filter(|s| s.parent().is_some_and(|p| p.kind() == "module"))?;
+        if !(succeeds && fails) {
+            return None;
+        }
+        let body = statement.child_by_field_name("body")?;
+        let first = named_children(body)
+            .into_iter()
+            .find(|child| child.kind() != "comment")?;
+        let module = match first.kind() {
+            "import_statement" => first
+                .child_by_field_name("name")
+                .map(|n| n.child_by_field_name("name").unwrap_or(n))?,
+            "import_from_statement" => first.child_by_field_name("module_name")?,
+            _ => return None,
+        };
+        (module.kind() == "dotted_name").then(|| format!("import {}", self.text(module)))
     }
 
     /// A type as written, when it names a class: `C`, `mod.C`, or either
@@ -3116,6 +3229,77 @@ def g():
                 ("C.Kind", Some("Pen")),
                 ("C.m", None),
                 ("C.k", None),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_module_name_assigned_a_test_or_set_by_an_import_keeps_it_as_its_value() {
+        let out = extract(
+            br#"import sys
+
+try:
+    import msvcrt
+except ModuleNotFoundError:
+    _mswindows = False
+else:
+    _mswindows = True
+
+try:
+    from _winapi import CloseHandle
+except (ImportError, OSError) as e:
+    _winapi = None
+else:
+    _winapi = True
+
+try:
+    import msvcrt
+except AttributeError:
+    _other = False
+else:
+    _other = True
+
+try:
+    import msvcrt
+except ImportError:
+    _inverse = True
+else:
+    _inverse = False
+
+_MS_WINDOWS = (sys.platform == 'win32')
+_fork = sys.platform not in {"wasi"} and not _MS_WINDOWS
+_darwin = sys.platform.startswith("darwin")
+_twice = sys.platform == "linux"
+_twice = False
+_called = check()
+
+
+class C:
+    _in_class = sys.platform == "win32"
+"#,
+        );
+        let values: Vec<(&str, Option<&str>)> = out
+            .symbols
+            .iter()
+            .filter(|s| matches!(s.kind, Kind::Variable | Kind::Const))
+            .map(|s| (s.qualified.as_str(), s.value.as_deref()))
+            .collect();
+        assert_eq!(
+            values,
+            vec![
+                ("_mswindows", Some("import msvcrt")),
+                ("_winapi", Some("import _winapi")),
+                ("_other", None),
+                ("_inverse", None),
+                ("_MS_WINDOWS", Some("sys.platform == 'win32'")),
+                (
+                    "_fork",
+                    Some("sys.platform not in {\"wasi\"} and not _MS_WINDOWS")
+                ),
+                ("_darwin", Some("sys.platform.startswith(\"darwin\")")),
+                ("_twice", None),
+                ("_called", None),
+                ("C._in_class", None),
             ]
         );
     }

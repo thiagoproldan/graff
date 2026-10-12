@@ -51,9 +51,23 @@ def from_source(stdlib):
                 continue
             for node in ast.walk(tree):
                 if isinstance(node, ast.ClassDef):
-                    for item in node.body:
-                        if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                            found.add(item.name)
+                    found |= defined(node.body)
+    return found
+
+
+def defined(body):
+    """The functions a class's body defines, in the branches of its `if`
+    and `try` statements too: pathlib's `Path.group` under `if grp:`."""
+    found = set()
+    for item in body:
+        if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            found.add(item.name)
+        elif isinstance(item, (ast.If, ast.For, ast.While, ast.With)):
+            found |= defined(item.body) | defined(getattr(item, "orelse", []))
+        elif isinstance(item, ast.Try):
+            found |= defined(item.body) | defined(item.orelse) | defined(item.finalbody)
+            for handler in item.handlers:
+                found |= defined(handler.body)
     return found
 
 

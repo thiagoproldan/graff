@@ -10,32 +10,47 @@
 //! a literal tuple, list or set of strings, `sys.platform.startswith(..)`,
 //! a name an import binds to `sys`, `os`, `sys.platform` or `os.name`, the
 //! numbers and `None`, and an `and` one side of which is false or an `or`
-//! one side of which is true. `sys.version_info` stays unknown: graff does
-//! not know the version a worktree's code runs on.
+//! one side of which is true; a name a module assigns such a test once,
+//! read as the test, `_MS_WINDOWS = (sys.platform == 'win32')`, which
+//! pyright leaves unknown; and whether the host's CPython has a module
+//! its library builds on some platforms only, as a name the module binds
+//! to it, or sets true where importing it succeeds, tells. `sys.version_info`
+//! stays unknown: graff does not know the version a worktree's code runs on.
 //!
 //! A condition is read as given too, as what holds where the code under
 //! it runs: its own text, each side of an `and` it is, and the negation of
 //! what it negates; a condition with the same text, in that file or
 //! another, is so known there.
 
+use std::cell::OnceCell;
 use std::collections::HashMap;
 
 use tree_sitter::{Node, Parser, Tree};
 
-use crate::extract::python::literal;
+use crate::extract::python::{literal, parser};
 
 /// What is known to hold, or not, where a use is: conditions by their text.
 pub(super) type Given<'a> = HashMap<&'a str, bool>;
 
 /// The names a file gives the platform: those an import binds to `sys`,
-/// `os`, `sys.platform` and `os.name`, `sys` and `os` among them always.
-#[derive(Debug, Default)]
+/// `os`, `sys.platform` and `os.name`, `sys` and `os` among them always;
+/// the modules its imports bind names to; and the values its module
+/// assigns names once, a test or a name among them.
+#[derive(Default)]
 pub(super) struct Names<'a> {
     pub sys: Vec<&'a str>,
     pub os: Vec<&'a str>,
     pub platform: Vec<&'a str>,
     pub os_name: Vec<&'a str>,
+    /// `pwd` for `import pwd`, by the name it binds.
+    pub modules: HashMap<&'a str, &'a str>,
+    /// The symbol's value of each name the module assigns: a test, a name
+    /// or a path, or `import msvcrt` (Symbol::value), parsed when first read.
+    pub constants: HashMap<&'a str, (&'a str, OnceCell<Condition<'a>>)>,
 }
+
+/// How deep a test reads the names it holds: `_WINDOWS = _MS_WINDOWS`.
+const DEPTH: usize = 8;
 
 /// `sys.platform` and `os.name` as CPython has them on the host graff runs
 /// on, as pyright has them for that platform; none on a host pyright names
@@ -46,6 +61,44 @@ fn host() -> Option<(&'static str, &'static str)> {
         "macos" => Some(("darwin", "posix")),
         "windows" => Some(("win32", "nt")),
         _ => None,
+    }
+}
+
+/// Whether the host's CPython has a module of its library that only some
+/// platforms build: those of "MS Windows Specific Services" (msvcrt,
+/// winreg, winsound) and CPython's own `_winapi`, `_overlapped` and `nt`
+/// on Windows alone; those of "Unix Specific Services" that are no pure
+/// Python, and `_posixsubprocess`, on Linux and macOS. None for any other.
+fn host_has(module: &str) -> Option<bool> {
+    const WINDOWS: &[&str] = &[
+        "msvcrt",
+        "winreg",
+        "winsound",
+        "_winapi",
+        "_overlapped",
+        "nt",
+    ];
+    const UNIX: &[&str] = &[
+        "posix",
+        "pwd",
+        "grp",
+        "termios",
+        "fcntl",
+        "resource",
+        "syslog",
+        "_posixsubprocess",
+    ];
+    let windows = match std::env::consts::OS {
+        "linux" | "macos" => false,
+        "windows" => true,
+        _ => return None,
+    };
+    if WINDOWS.contains(&module) {
+        Some(windows)
+    } else if UNIX.contains(&module) {
+        Some(!windows)
+    } else {
+        None
     }
 }
 
@@ -81,9 +134,9 @@ impl<'a> Condition<'a> {
 
     /// Whether it holds on the host, given what holds where it is read;
     /// none where neither tells.
-    pub(super) fn value(&self, given: &Given<'a>, names: &Names) -> Option<bool> {
+    pub(super) fn value(&self, given: &Given<'a>, names: &Names<'a>) -> Option<bool> {
         match self.expression() {
-            Some(expression) => self.value_of(expression, given, names),
+            Some(expression) => self.value_of(expression, given, names, 0),
             None => given.get(self.text).copied(),
         }
     }
@@ -124,18 +177,24 @@ impl<'a> Condition<'a> {
         }
     }
 
-    fn value_of(&self, node: Node, given: &Given<'a>, names: &Names) -> Option<bool> {
+    fn value_of(
+        &self,
+        node: Node,
+        given: &Given<'a>,
+        names: &Names<'a>,
+        depth: usize,
+    ) -> Option<bool> {
         let node = unparenthesized(node);
         if let Some(&known) = given.get(self.text(node)) {
             return Some(known);
         }
         match node.kind() {
             "not_operator" => self
-                .value_of(node.child_by_field_name("argument")?, given, names)
+                .value_of(node.child_by_field_name("argument")?, given, names, depth)
                 .map(|v| !v),
             "boolean_operator" => {
-                let left = self.value_of(node.child_by_field_name("left")?, given, names);
-                let right = self.value_of(node.child_by_field_name("right")?, given, names);
+                let left = self.value_of(node.child_by_field_name("left")?, given, names, depth);
+                let right = self.value_of(node.child_by_field_name("right")?, given, names, depth);
                 match operator(node, self.text)? {
                     "and" => match (left, right) {
                         (Some(false), _) | (_, Some(false)) => Some(false),
@@ -161,12 +220,32 @@ impl<'a> Condition<'a> {
             {
                 Some(true)
             }
+            "identifier" => self.name(self.text(node), names, depth),
             "comparison_operator" => self.comparison(node, names),
             "call" => self.starts_with(node, names),
             // `(x := test)`: what it assigns.
-            "named_expression" => self.value_of(node.child_by_field_name("value")?, given, names),
+            "named_expression" => {
+                self.value_of(node.child_by_field_name("value")?, given, names, depth)
+            }
             _ => None,
         }
+    }
+
+    /// A name's value: the module's it binds, or the test the module
+    /// assigns it, read where the module assigns it, as nothing holds there.
+    fn name(&self, name: &str, names: &Names<'a>, depth: usize) -> Option<bool> {
+        if let Some(module) = names.modules.get(name) {
+            return host_has(module);
+        }
+        let (value, parsed) = names.constants.get(name)?;
+        if depth >= DEPTH {
+            return None;
+        }
+        if let Some(module) = value.strip_prefix("import ") {
+            return host_has(module);
+        }
+        let test = parsed.get_or_init(|| Condition::new(value, &mut parser()));
+        test.value_of(test.expression()?, &Given::new(), names, depth + 1)
     }
 
     /// What the host has for `sys.platform` or `os.name`, where a node
@@ -325,7 +404,6 @@ fn parse_integer(text: &str) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::extract::python::parser;
 
     fn names() -> Names<'static> {
         Names {
@@ -333,10 +411,24 @@ mod tests {
             os: vec!["os", "_os"],
             platform: vec!["PLATFORM"],
             os_name: vec![],
+            modules: [("pwd", "pwd"), ("_w", "_winapi"), ("json", "json")].into(),
+            constants: [
+                ("_MS_WINDOWS", "(sys.platform == 'win32')"),
+                ("_WINDOWS", "_MS_WINDOWS"),
+                ("_mswindows", "import msvcrt"),
+                ("_posix", "import posix"),
+                ("_json", "import json"),
+                ("a", "b"),
+                ("b", "a"),
+                ("Pen", "turtle.Turtle"),
+            ]
+            .into_iter()
+            .map(|(name, value)| (name, (value, OnceCell::new())))
+            .collect(),
         }
     }
 
-    fn value(text: &str, given: &[(&'static str, bool)]) -> Option<bool> {
+    fn value(text: &'static str, given: &[(&'static str, bool)]) -> Option<bool> {
         let given: Given = given.iter().copied().collect();
         Condition::new(text, &mut parser()).value(&given, &names())
     }
@@ -398,6 +490,18 @@ mod tests {
             ("a < sys.platform < b", None),
             ("x.name == \"nt\"", None),
             ("trace := os.environ.get(\"X\")", None),
+            // A module's names: what the module assigns them, or the module
+            // `import` binds them to.
+            ("_MS_WINDOWS", Some(false)),
+            ("not _WINDOWS", Some(true)),
+            ("_mswindows", Some(false)),
+            ("_posix", Some(true)),
+            ("pwd", Some(true)),
+            ("_w or _MS_WINDOWS", Some(false)),
+            ("_json", None),
+            ("json", None),
+            ("a", None),
+            ("Pen", None),
         ];
         for (text, expected) in cases {
             assert_eq!(value(text, &[]), *expected, "{text}");

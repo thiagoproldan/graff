@@ -16,7 +16,7 @@ use crate::lang::Language;
 
 /// Bumped whenever what an extractor produces changes, so that results kept
 /// from an older extractor are read again rather than trusted.
-pub const VERSION: u32 = 19;
+pub const VERSION: u32 = 20;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Extraction {
@@ -84,7 +84,10 @@ pub struct Symbol {
     /// `64` for `#define TS_PTR_SIZE 64`, `(A + 1)`. None for any other
     /// macro. Python: the name or the path a variable of a module or a class
     /// is assigned, where that is the one value its scope gives it: `Turtle`
-    /// for `Pen = Turtle`, `tur.Turtle`. Rust: the `cfg` predicate a
+    /// for `Pen = Turtle`, `tur.Turtle`; the test a module so assigns a
+    /// name, `sys.platform == "win32"` for `_MS_WINDOWS = (sys.platform ==
+    /// "win32")`; `import msvcrt` for a name a module's `try` sets true
+    /// where `import msvcrt` succeeds and false where it fails. Rust: the `cfg` predicate a
     /// macro_rules puts on every item it is given, unspaced,
     /// `target_has_atomic="64"` for tokio's `cfg_has_atomic_u64!`. None in
     /// other languages.

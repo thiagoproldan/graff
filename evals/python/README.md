@@ -22,7 +22,9 @@ other method call to the worktree's only method of that name, unless a
 type of Python's library has one too. Of the definitions a scope gives
 one name and the imports that bind it there, a name reaches the first in
 no branch of an `if` false on the host, as pyright reads `sys.platform`
-and `os.name`, or false where the name is used. One check holds it
+and `os.name`, as a name the module assigns such a test once reads, or
+as the host's CPython lacks a module only some platforms build, or false
+where the name is used. One check holds it
 against what knows more:
 
 - **pyright.py**: graff's ties of names, each call, reference, import,
@@ -345,3 +347,68 @@ By rule on the library: `path` 10,563 of 10,866, `receiver` 38,779 of
 - **Cost, against cdb58d3, alternating runs on the library, 2026-10-12**,
   on TLP's balanced profile, the boost off, other sessions holding the
   load at 8 to 11: resolution 342 ms against 343 (median of 15).
+
+### Result, 2026-10-12 (task 175)
+
+A name a module assigns once a test is read as the test where an `if`
+tests it: `_MS_WINDOWS = (sys.platform == 'win32')` in
+importlib/_bootstrap_external.py, subprocess.py's `_can_fork_exec =
+sys.platform not in {..}`, shutil.py's `_WINDOWS = os.name == 'nt'`, and
+through a name assigned such a name, `_WINDOWS = _MS_WINDOWS`. The symbol
+keeps the test as its `value`. subprocess.py's `_mswindows`, which the
+task named, is no such test in Python 3.14.7: a `try` sets it, `import
+msvcrt` then `_mswindows = False` where that fails and `True` in its
+`else`. Its symbol keeps `import msvcrt`, and the condition reads it, and
+a name an import binds, `if _winapi:` or pathlib's `if grp:`, as the
+host's CPython has the module: those of the documentation's "MS Windows
+Specific Services" and `_winapi`, `_overlapped` and `nt` on Windows
+alone, its "Unix Specific Services" that are not pure Python and
+`_posixsubprocess` on Linux and macOS; `importlib.util.find_spec` agrees
+on each of the 14 under the python3 of `nix develop`. pyright reads none
+of these, keeps both branches and counts either answer right.
+
+- **The library, against the definition CPython runs**: examples/resolve
+  gives 25 edges a target other than 1491b4c's; for each, the first line
+  of the function the host's CPython 3.14.7 binds to that name
+  (`subprocess.Popen._execute_child.__code__.co_firstlineno`) is the
+  start of graff's new target, 25 of 25, and of none of the 24 old ones
+  (one edge was untied): `Popen._execute_child`, `_get_handles`, `_wait`,
+  `_internal_poll`, `_communicate` and `_cleanup` in subprocess.py,
+  `_path_join` and `_path_isabs` in _bootstrap_external.py
+  (/tmp/graff-175/scripts/runtime.py). 333 more stay untied, with
+  fewer candidates: 187 `group`, 110 `copy`, 18 `__init__`, 12
+  `terminate` and 6 others.
+- **pyright.py**: the library's report is 1491b4c's but for one edge
+  unjudged more, `inst._internal_poll` in `_cleanup`, now tied by name
+  alone (precision 0.993, 81,556 of 82,165; recall 80,875 of 86,052);
+  the three corpora graff's Python was written against are as before but
+  for the line that says what ran, and pyright's 3,876 names answered on
+  ekko's evals/ rather than 3,880, which moves 4 of graff's external
+  edges from "outside" to "no place", as in task 121's runs.
+- **A method name of the library's types read in its branches**: pathlib's
+  `Path.group` and `Path.owner` are defined under `if grp:` and `if pwd:`;
+  once the host decided those, `m.group()` on a regular expression's match
+  (187 calls, `_markupbase.py` and others) was tied to `Path.group` by
+  name alone, since evals/python/builtin_methods.py read only the defs
+  directly in a class's body. It reads those of its `if`, `try`, `for`,
+  `while` and `with` statements too, and python_methods.txt has 11 names
+  more (`group`, `owner`, `hardlink_to`, `minimum_version` ..): those
+  calls stay untied.
+- **The extraction**: 53 symbols of the library get a value, 2,740 bytes;
+  the index is 18,386,944 bytes either way.
+- **Cost, against c2f8bec, alternating runs, 2026-10-12**, TLP's balanced
+  profile, the boost off, load 9 to 15 from other sessions: resolution of
+  the library 354 ms against 360 (median of 9); `graff callers
+  Popen._execute_child` warm on a git copy of the library 267 ms against
+  263 (median of 9).
+- **Task 217, counted**: a member a class assigns in its body and declares
+  with a type in a method, `x = 0` and `self.x: int = 1`, is placed by
+  pyright at the typed declaration, but pyright.py reads a place on a
+  later assignment of a name as graff's definition of it
+  (`first_assigned`, since task 15), so no such edge counts wrong: none of
+  the library's 609 wrong edges is one, nor of the other corpora's none.
+  A probe of 10 names (/tmp/graff-175/probe217) scores 7 of 7 right, and 3
+  of 7 with `first_assigned` turned off, so pyright does place them there.
+  graff's symbol stays at the first assignment.
+- **What is left**: a test imported from another module, `from
+  test.support import MS_WINDOWS`, stays unknown.

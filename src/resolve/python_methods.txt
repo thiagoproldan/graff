@@ -1579,6 +1579,7 @@ grid_remove
 grid_rowconfigure
 grid_size
 grid_slaves
+group
 groups
 guess_all_extensions
 guess_extension
@@ -1609,6 +1610,7 @@ handle_startendtag
 handle_starttag
 handle_timeout
 handle_xmlrpc
+hardlink_to
 hasAttribute
 hasAttributeNS
 hasAttributes
@@ -1659,6 +1661,7 @@ hline
 home
 hostmask
 hostname
+hostname_checks_common_name
 hosts
 hour
 http_error_302
@@ -2114,6 +2117,7 @@ max
 max_column
 max_mag
 max_row
+maximum_version
 maxsize
 maybe
 maybe_newline
@@ -2146,6 +2150,7 @@ microsecond
 microseconds
 min
 min_mag
+minimum_version
 minor
 minus
 minute
@@ -2188,6 +2193,7 @@ namelist
 names
 namespace
 nametowidget
+native_id
 nearest
 new
 new_child
@@ -2268,6 +2274,7 @@ overlaps
 overlay
 override
 overwrite
+owner
 pack
 pack_configure
 pack_forget
@@ -2424,6 +2431,7 @@ print_help
 print_instruction
 print_instruction_line
 print_line
+print_log
 print_stack
 print_stack_entry
 print_stack_trace
@@ -2731,6 +2739,7 @@ save_list
 save_long
 save_none
 save_pers
+save_picklebuffer
 save_reduce
 save_set
 save_state
@@ -2910,6 +2919,7 @@ set_geometry
 set_history_length
 set_http_debuglevel
 set_info
+set_inheritable
 set_labels
 set_location
 set_long_opt_delimiter
@@ -3004,6 +3014,7 @@ settimeout
 setundobuffer
 setup
 setup_environ
+setup_python
 setup_scripts
 setupcanvas
 setvar

@@ -850,7 +850,13 @@ impl<'a> Index<'a> {
         if depth > DEPTH || !matches!(symbol.kind, Kind::Variable | Kind::Const) {
             return d;
         }
-        let Some(value) = symbol.value.as_deref() else {
+        // A test the variable is assigned, `sys.platform == "win32"`, names
+        // nothing to follow.
+        let Some(value) = symbol
+            .value
+            .as_deref()
+            .filter(|value| value.split('.').all(is_identifier))
+        else {
             return d;
         };
         let outer = symbol.qualified.rsplit_once('.').map(|(outer, _)| outer);
@@ -1212,14 +1218,28 @@ impl<'a> Index<'a> {
 }
 
 /// The names a file's imports bind to `sys`, `os`, `sys.platform` and
-/// `os.name`, in any of its scopes, beside `sys` and `os`.
+/// `os.name`, in any of its scopes, beside `sys` and `os`; the modules
+/// `import` binds names to; and the values its module assigns names.
 fn names<'a>(file: &File<'a>) -> Names<'a> {
     let mut names = Names {
         sys: vec!["sys"],
         os: vec!["os"],
         ..Names::default()
     };
+    for symbol in &file.extraction.symbols {
+        if matches!(symbol.kind, Kind::Variable | Kind::Const)
+            && symbol.qualified == symbol.name
+            && let Some(value) = symbol.value.as_deref()
+        {
+            names
+                .constants
+                .insert(symbol.name.as_str(), (value, OnceCell::new()));
+        }
+    }
     for import in &file.extraction.imports {
+        if import.via.as_deref() == Some("import") {
+            names.modules.insert(bound(import), import.path.as_str());
+        }
         let held = match (import.via.as_deref(), import.path.as_str()) {
             (Some("import"), "sys") => &mut names.sys,
             (Some("import"), "os") => &mut names.os,
@@ -1233,6 +1253,13 @@ fn names<'a>(file: &File<'a>) -> Names<'a> {
         }
     }
     names
+}
+
+/// Whether a text is a name as Python writes one: `Turtle`, `_x1`.
+fn is_identifier(text: &str) -> bool {
+    let mut chars = text.chars();
+    chars.next().is_some_and(|c| c.is_alphabetic() || c == '_')
+        && chars.all(|c| c.is_alphanumeric() || c == '_')
 }
 
 /// The name an import binds: its alias; else `a` for `import a.b`, and `x`
@@ -1898,6 +1925,139 @@ fetch()
         let expected: Vec<(u32, String, String)> = expected
             .iter()
             .map(|(line, name, reached)| (*line, name.to_string(), reached.to_string()))
+            .collect();
+        assert_eq!(reached, expected);
+    }
+
+    #[test]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    fn a_name_the_module_assigns_a_platform_test_decides_its_branches_too() {
+        let source = br#"import sys
+
+try:
+    import msvcrt
+except ModuleNotFoundError:
+    _mswindows = False
+else:
+    _mswindows = True
+
+try:
+    import _winapi
+except ImportError:
+    _winapi = None
+
+try:
+    import msvcrt
+except AttributeError:
+    _caught_else = False
+else:
+    _caught_else = True
+
+_MS_WINDOWS = (sys.platform == 'win32')
+_WINDOWS = _MS_WINDOWS
+_can_fork = sys.platform not in {"emscripten", "wasi"}
+_a = _b
+_b = _a
+have_x = check()
+
+
+class Popen:
+    if _mswindows:
+        def _execute_child(self):
+            pass
+    else:
+        def _execute_child(self):
+            pass
+
+    def start(self):
+        self._execute_child()
+
+
+if _WINDOWS:
+    def sep():
+        pass
+else:
+    def sep():
+        pass
+
+if not _can_fork:
+    def fork():
+        pass
+else:
+    def fork():
+        pass
+
+if _winapi:
+    def close():
+        pass
+else:
+    def close():
+        pass
+
+if _caught_else:
+    def other():
+        pass
+else:
+    def other():
+        pass
+
+if _a:
+    def loop():
+        pass
+else:
+    def loop():
+        pass
+
+if have_x:
+    def pick():
+        pass
+else:
+    def pick():
+        pass
+
+sep()
+fork()
+close()
+other()
+loop()
+pick()
+"#;
+        let extraction = extract::extract(Language::Python, source);
+        let files = [File {
+            path: "sub.py",
+            language: Language::Python,
+            extraction: &extraction,
+        }];
+        let reached: Vec<(String, String)> = resolve(&files)
+            .into_iter()
+            .filter(|edge| matches!(edge.used, Use::Call(_)) && edge.name != "check")
+            .map(|edge| {
+                let reached = match edge.resolution {
+                    Resolution::Resolved(d, _) => {
+                        files[d.file].extraction.symbols[d.symbol].qualified.clone()
+                    }
+                    other => format!("{other:?}"),
+                };
+                (edge.name, reached)
+            })
+            .collect();
+        let expected = [
+            // `import msvcrt` fails on the host: `_mswindows` is false.
+            ("_execute_child", "Popen._execute_child#2"),
+            // `sys.platform == 'win32'`, through the name assigned it.
+            ("sep", "sep#2"),
+            ("fork", "fork#2"),
+            // A module the host lacks, the name `import` binds it to.
+            ("close", "close#2"),
+            // Neither tells: a `try` that catches no failed import, names
+            // assigned each other, a call.
+            ("other", "other"),
+            ("loop", "loop"),
+            ("pick", "pick"),
+        ];
+        let expected: Vec<(String, String)> = expected
+            .iter()
+            .map(|(name, reached)| (name.to_string(), reached.to_string()))
             .collect();
         assert_eq!(reached, expected);
     }

@@ -69,7 +69,9 @@ worktree's only method of that name, unless a type of Python's library has
 one too. Of the definitions a scope gives one
 name and the imports that bind it there, a name reaches the first in no
 branch of an `if` false on the host, as pyright reads `sys.platform` and
-`os.name`, or false where the name is used, an `else`'s for code in the
+`os.name`, as a name the module assigns such a test once reads, or as the
+host's CPython lacks a module only some platforms build (`msvcrt`, `pwd`),
+or false where the name is used, an `else`'s for code in the
 `if`'s block (`src/resolve/python.rs`). In C, a
 file's functions, variables, structs, unions and enums (by the tag, else by
 the typedef that names one), enumerators, typedefs and macros, those a

@@ -780,8 +780,8 @@ impl<'a> Index<'a> {
                     .path(class.file, outer, &base.path, None, None, depth + 1)
                     .0
                 {
-                    Reach::Found(Target::Definition(d), _) if self.kind(d) == Kind::Class => {
-                        Some(d)
+                    Reach::Found(Target::Definition(d), _) => {
+                        Some(self.aliased(d, depth + 1)).filter(|&d| self.kind(d) == Kind::Class)
                     }
                     _ => None,
                 }
@@ -833,10 +833,30 @@ impl<'a> Index<'a> {
         else {
             return None;
         };
+        let d = self.aliased(d, depth + 1);
         match self.kind(d) {
             Kind::Class => Some(d),
             // What a function returns, what a name holds: its own type.
             _ => self.instance_of(d, depth + 1),
+        }
+    }
+
+    /// What a variable stands for where it is assigned a name or a path,
+    /// and nothing else, `Pen = Turtle`: what that reaches in the worktree,
+    /// itself followed so; else the variable. pyright reads `class
+    /// CurvesTurtle(Pen)` so, and `Pen()` as a Turtle.
+    fn aliased(&self, d: Definition, depth: usize) -> Definition {
+        let symbol = &self.files[d.file].extraction.symbols[d.symbol];
+        if depth > DEPTH || !matches!(symbol.kind, Kind::Variable | Kind::Const) {
+            return d;
+        }
+        let Some(value) = symbol.value.as_deref() else {
+            return d;
+        };
+        let outer = symbol.qualified.rsplit_once('.').map(|(outer, _)| outer);
+        match self.path(d.file, outer, value, None, None, depth + 1).0 {
+            Reach::Found(Target::Definition(to), _) if to != d => self.aliased(to, depth + 1),
+            _ => d,
         }
     }
 
@@ -905,6 +925,7 @@ impl<'a> Index<'a> {
                 },
                 Target::Definition(d) => {
                     through.push((written_as, d, rule));
+                    let d = self.aliased(d, depth);
                     if self.kind(d) == Kind::Class {
                         match self.member(d, name, depth) {
                             Some((d, rule)) => Reach::Found(Target::Definition(d), rule),
@@ -2071,6 +2092,135 @@ def outside(s: BodyTypedSub):
                     other => format!("{other:?}"),
                 };
                 (edge.line, edge.name, reached)
+            })
+            .collect();
+        reached.sort();
+        expected.sort();
+        assert_eq!(reached, expected);
+    }
+
+    #[test]
+    fn a_variable_assigned_a_class_once_stands_for_it() {
+        // Each `# -> Class.name` is where pyright 1.1.414 places the method
+        // called on its line (textDocument/definition, 2026-10-12), all in
+        // tur.py: turtle.py's `Pen = Turtle`, which turtledemo's
+        // `class CurvesTurtle(Pen)` derives from.
+        let tur = br#"class RawTurtle:
+    def forward(self, distance):
+        pass
+
+    fd = forward
+
+    def penup(self):
+        pass
+
+
+class Turtle(RawTurtle):
+    def home(self):
+        pass
+
+
+RawPen = RawTurtle
+Pen = Turtle
+Twice = Pen
+default = Turtle()
+current = default
+
+
+class Local(Pen):
+    def go(self):
+        self.fd(3)  # -> RawTurtle.fd
+        self.home()  # -> Turtle.home
+
+
+class Again(Twice):
+    def go(self):
+        self.penup()  # -> RawTurtle.penup
+
+
+def make():
+    p = Pen()
+    p.forward(1)  # -> RawTurtle.forward
+    Pen.penup(p)  # -> RawTurtle.penup
+    t = Twice()
+    t.home()  # -> Turtle.home
+    current.home()  # -> Turtle.home
+    q: Pen = p
+    q.penup()  # -> RawTurtle.penup
+"#;
+        let other = br#"from tur import *
+import tur
+from tur import Pen as P
+
+
+class Curves(Pen):
+    def run(self):
+        self.fd(1)  # -> RawTurtle.fd
+
+
+class Dotted(tur.RawPen):
+    def run(self):
+        self.forward(2)  # -> RawTurtle.forward
+
+
+class Renamed(P):
+    def run(self):
+        self.home()  # -> Turtle.home
+
+
+Mod = tur.Turtle
+
+
+class ByPath(Mod):
+    def run(self):
+        self.home()  # -> Turtle.home
+
+
+def use():
+    x = tur.Pen()
+    x.home()  # -> Turtle.home
+    y = P()
+    y.fd(1)  # -> RawTurtle.fd
+    tur.Pen.home(x)  # -> Turtle.home
+"#;
+        let sources: [(&str, &[u8]); 2] = [("tur.py", tur), ("other.py", other)];
+        let extractions: Vec<Extraction> = sources
+            .iter()
+            .map(|(_, source)| extract::extract(Language::Python, source))
+            .collect();
+        let files: Vec<File> = sources
+            .iter()
+            .zip(&extractions)
+            .map(|((path, _), extraction)| File {
+                path,
+                language: Language::Python,
+                extraction,
+            })
+            .collect();
+        let mut expected: Vec<(usize, u32, String, String)> = Vec::new();
+        for (f, (_, source)) in sources.iter().enumerate() {
+            for (i, line) in std::str::from_utf8(source).unwrap().lines().enumerate() {
+                if let Some((_, place)) = line.split_once("# -> ") {
+                    let name = place.rsplit_once('.').unwrap().1;
+                    expected.push((f, i as u32 + 1, name.to_string(), place.to_string()));
+                }
+            }
+        }
+        let mut reached: Vec<(usize, u32, String, String)> = resolve(&files)
+            .into_iter()
+            .filter(|edge| {
+                expected.iter().any(|(f, line, name, _)| {
+                    (edge.file, edge.line) == (*f, *line) && edge.name == *name
+                })
+            })
+            .map(|edge| {
+                let reached = match edge.resolution {
+                    Resolution::Resolved(d, _) if d.file == 0 => {
+                        extractions[0].symbols[d.symbol].qualified.clone()
+                    }
+                    other => format!("{other:?}"),
+                };
+                (edge.file, edge.line, edge.name, reached)
             })
             .collect();
         reached.sort();

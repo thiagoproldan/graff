@@ -16,7 +16,7 @@ use crate::lang::Language;
 
 /// Bumped whenever what an extractor produces changes, so that results kept
 /// from an older extractor are read again rather than trusted.
-pub const VERSION: u32 = 17;
+pub const VERSION: u32 = 18;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Extraction {
@@ -82,7 +82,9 @@ pub struct Symbol {
     /// C: the replacement list of an object-like macro that reads as an
     /// integer expression, on one line and with its comments left out:
     /// `64` for `#define TS_PTR_SIZE 64`, `(A + 1)`. None for any other
-    /// macro, and in other languages.
+    /// macro. Python: the name or the path a variable of a module or a class
+    /// is assigned, where that is the one value its scope gives it: `Turtle`
+    /// for `Pen = Turtle`, `tur.Turtle`. None in other languages.
     #[serde(default)]
     pub value: Option<String>,
     /// Python: whether the class or the module a variable is of declares it

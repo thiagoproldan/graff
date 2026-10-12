@@ -826,6 +826,7 @@ struct Pending {
     key: Key,
     typed: Option<String>,
     declared: bool,
+    value: Option<String>,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -920,6 +921,7 @@ impl<'s, 't> Reader<'s, 't> {
                 key: Key::Definition(d.node.id(), d.scope),
                 typed,
                 declared: false,
+                value: None,
             });
         }
         // The names a scope declares with a type at any of their
@@ -937,6 +939,19 @@ impl<'s, 't> Reader<'s, 't> {
                 })
             })
             .map(|site| (site.scope, site.name.as_str()))
+            .collect();
+        // The name or the path a scope assigns a name, where that is the
+        // one value it gives it: `Turtle` for `Pen = Turtle`, `tur.Turtle`.
+        let aliases: HashMap<(usize, &str), Node> = self
+            .scan
+            .sites
+            .iter()
+            .filter(|site| self.scan.values.get(&(site.scope, site.name.clone())) == Some(&1))
+            .filter_map(|site| {
+                let value = site.value?;
+                matches!(value.kind(), "identifier" | "attribute")
+                    .then_some(((site.scope, site.name.as_str()), value))
+            })
             .collect();
         // Each name a module's top or a class's body binds to a value, at
         // its first assignment, unless an import or a def binds it there.
@@ -967,6 +982,9 @@ impl<'s, 't> Reader<'s, 't> {
                 key: Key::Variable(site.scope, site.name.clone()),
                 typed: self.typed(site.scope, &site.name),
                 declared: declared.contains(&(site.scope, site.name.as_str())),
+                value: aliases
+                    .get(&(site.scope, site.name.as_str()))
+                    .and_then(|&value| self.type_name(value)),
             });
             if site.scope == 0
                 && counts.get(&(0, site.name.as_str())) == Some(&1)
@@ -999,6 +1017,7 @@ impl<'s, 't> Reader<'s, 't> {
                 key: Key::Variable(site.scope, site.name.clone()),
                 typed: self.attribute_type(site.at),
                 declared: declared.contains(&(site.scope, site.name.as_str())),
+                value: None,
             });
             self.setting.insert(site.at.id());
         }
@@ -1049,7 +1068,7 @@ impl<'s, 't> Reader<'s, 't> {
                 internal: false,
                 typed: p.typed,
                 consumed: false,
-                value: None,
+                value: p.value,
                 declared: p.declared,
             });
         }
@@ -3068,6 +3087,32 @@ def g():
             out.branches
                 .iter()
                 .all(|b| b.condition.len() <= MAX_CONDITION)
+        );
+    }
+
+    #[test]
+    fn a_variable_assigned_a_name_once_keeps_it_as_its_value() {
+        let out = extract(
+            b"import tur\nPen = Turtle\nMod = tur.Turtle\nLate = None\nLate = Turtle\nTwice = A\nTwice = B\nCalled = Turtle()\nText = \"Turtle\"\n\n\nclass C:\n    Kind = Pen\n\n    def m(self):\n        self.k = Pen\n",
+        );
+        let values: Vec<(&str, Option<&str>)> = out.symbols[1..]
+            .iter()
+            .map(|s| (s.qualified.as_str(), s.value.as_deref()))
+            .collect();
+        assert_eq!(
+            values,
+            vec![
+                ("Pen", Some("Turtle")),
+                ("Mod", Some("tur.Turtle")),
+                ("Late", Some("Turtle")),
+                ("Twice", None),
+                ("Called", None),
+                ("Text", None),
+                ("C", None),
+                ("C.Kind", Some("Pen")),
+                ("C.m", None),
+                ("C.k", None),
+            ]
         );
     }
 }

@@ -11,7 +11,9 @@ settled: in the folders a `sys.path.insert` adds, evaluated from
 `__file__`, then the importing file's folder and those above it, the
 worktree's `src/`, and those a `sys.path.append` adds; a package's module
 looks in the top and `src/` before its own folder. A path is followed
-through modules and classes, `self.f()` and `super().f()` through the
+through modules and classes, and through a variable assigned a name or a
+path and nothing else, `Pen = Turtle`, as through what that names, a
+base and a type included; `self.f()` and `super().f()` through the
 class and its bases in Python's method resolution order (C3), where a
 member a class declares with a type, `pos: int` or a def, comes before
 one a class only assigns, as pyright reads it, a method
@@ -43,7 +45,7 @@ f127aae, 31; and Python 3.14.7's library as nixpkgs builds it, the
 python3 of `nix develop`, 775 files, which graff's Python was not written
 against, though some of the fixes below came from what it showed. Each
 report starts with what ran: graff's commit, the corpus's, pyright's
-version and the Python on PATH. The library's report, 887 KB, is not
+version and the Python on PATH. The library's report, 865 KB, is not
 committed; the other three are.
 
 Extraction alone, examples/extract.rs on one thread, three runs each with
@@ -132,7 +134,7 @@ What is left on the library, of the 801 edges counted wrong and the
   `ABCMeta`, the metaclass.
 - **A class named through an alias (task 120).** turtledemo's
   `class CurvesTurtle(Pen)` derives from turtle.py's `Pen = Turtle`, which
-  graff does not follow: 50 names missed.
+  graff does not follow: 50 names missed (followed since task 120, below).
 - **A package's module importing a module of the library**: `import
   __main__` in idlelib's modules is tied to idlelib/__main__.py and
   `import zlib` in compression/zlib.py to the file itself, found in the
@@ -291,3 +293,55 @@ By rule on the library: `glob` 938 of 950, `path` 10,553 of 10,856,
   class's own member of a name no class declares with a type is taken
   without its bases: reading the bases for every such member cost 476 ms
   against d0e05b7's 327 in a first build.
+
+### Result, 2026-10-12 (task 120)
+
+A variable a module or a class assigns a name or a path and nothing else,
+`Pen = Turtle` or `Mod = tur.Turtle`, stands for what that reaches where a
+path goes on through it, where it is a class's base and where it is a
+type, `p = Pen()` or `q: Pen`, followed through such variables up to
+graff's depth: the variable's symbol keeps the name as its `value`. The
+name itself is still tied to the variable, where pyright places it. A
+probe of pyright 1.1.414 on 15 method calls through aliases, in one file
+and through `from m import *`, `import m` and `from m import Pen as P`,
+is held by the test `a_variable_assigned_a_class_once_stands_for_it`;
+the one call it left out, through a name assigned twice (`Maybe =
+RawTurtle`, then `Maybe = Turtle`), graff does not follow.
+
+|                            | kimi tools/, 23 files | graff evals/, 31      | ekko evals/, 19       | Python 3.14.7, 775      |
+| -------------------------- | --------------------- | --------------------- | --------------------- | ----------------------- |
+| names asked                | 3,356                 | 4,079                 | 4,402                 | 138,615                 |
+| answered                   | 2,136                 | 3,663                 | 3,880                 | 126,398                 |
+| broken resolver, precision | 0.000                 | 0.003                 | 0.000                 | 0.008                   |
+| precision                  | 1.000, 820 of 820     | 1.000, 1,369 of 1,369 | 1.000, 1,705 of 1,705 | 0.993, 81,556 of 82,165 |
+| not judged                 | 4                     | 86                    | 132                   | 2,110                   |
+| recall                     | 1.000, 788 of 788     | 1.000, 1,328 of 1,328 | 1.000, 1,602 of 1,602 | 0.940, 80,875 of 86,025 |
+
+By rule on the library: `path` 10,563 of 10,866, `receiver` 38,779 of
+38,994, `unique` 626 of 626; the others as on 2026-10-12 (task 121).
+
+- **The three corpora graff's Python was written against**: their reports
+  are as before, but for the line that says what ran, and pyright's 4
+  names more on ekko's evals/, 3,880, as in task 121's runs.
+- **On the library, 156 more edges are tied, none wrong**: 609 edges are
+  counted wrong, as before, and none of them is one this changed.
+  examples/resolve over the library gives 162 edges otherwise than
+  cdb58d3, of 140,385 against 140,366: 143 tied otherwise and 19 more,
+  reads of a base's attribute, `self._loop` in asyncio/tasks.py's `class
+  Task(futures._PyFuture)`, through futures.py's `_PyFuture = Future`.
+  151 reach a member by the receiver's class and 10 by a path, where 101
+  were external, 37 ambiguous and 5 found by name alone; one,
+  `_Precedence.BOR.next` in _ast_unparse.py, goes from ambiguous to
+  external, through `BOR = EXPR` to `EXPR = auto()`, read as an instance
+  of enum.py's `auto`; pyright places it in no file of the corpus.
+  turtledemo/fractalcurves.py's 50 are all tied; the rest go through
+  aliases of a class, `_ForkingPickler = ForkingPickler`, `tarinfo =
+  TarInfo` in TarFile's body, or of a value, logging's `lastResort =
+  _defaultLastResort` and idlelib's tests' `idleConf`.
+- **Missed now**, 3,754 names graff lists candidates for (3,792), 1,231
+  it calls external (1,355); recall 80,875 of 86,025 against 80,721 of
+  86,033, pyright placing 8 names fewer in the corpus than in task 121's
+  run.
+- **Cost, against cdb58d3, alternating runs on the library, 2026-10-12**,
+  on TLP's balanced profile, the boost off, other sessions holding the
+  load at 8 to 11: resolution 342 ms against 343 (median of 15).

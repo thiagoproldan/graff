@@ -57,8 +57,11 @@ package, and an absolute one in the folders a `sys.path.insert` adds,
 evaluated from `__file__`, then the importing file's folder and those above
 it, the worktree's `src/`, and those a `sys.path.append` adds, a package's
 module looking in the top and `src/` before its own folder. A path is
-followed through modules and classes; `self.f()` and `super().f()` reach the
-method of the class or of a base, in Python's method resolution order, where
+followed through modules and classes, and through a variable a module or a
+class assigns a name or a path and nothing else, `Pen = Turtle`, as through
+what that names, a class's base and a type included; `self.f()` and
+`super().f()` reach the method of the class or of a base, in Python's method
+resolution order, where
 a member a class declares with a type, `pos: int` or a def, comes before one
 a class only assigns, as pyright reads it; a method called on what a class of
 the worktree made reaches that class's, and one called on anything else, the

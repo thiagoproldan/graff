@@ -37,8 +37,22 @@
 //! their own line, as Bash does. It reads a negated group, `! { ..; }`, as
 //! a command named `{`; the file is read again with a blank for the `!`,
 //! which negates nothing graff reads.
+//!
+//! Its scanners also misread patterns -- extglob in a case item or a
+//! `[[ ]]`, `--!(no-*)dir*`, `-${o}@([sD]|[hV]*)`, a regular expression
+//! after `=~`, an expansion's pattern holding a group or an escaped quote,
+//! `${host%]?(:+([0-9]))}` -- and a case statement whose last item ends in
+//! `;;&` or `;&`; the error can take in the function around it and the
+//! next ones, 32 of bash-completion 2.18's 3,670. Where an error stands, the
+//! file is read again with the patterns on its lines double-quoted, an
+//! expansion's pattern blanked and the last `;;&` made `;;`: what a pattern
+//! matches is nothing graff reads, and the expansions in it are kept. That
+//! reading is kept only where it reads no fewer functions and no more lines
+//! in errors, as an error that is no pattern's, `[ "$a" = - ]`, may
+//! recover worse.
 
 use std::borrow::Cow;
+use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 
 use tree_sitter::{Node, Parser};
@@ -154,21 +168,28 @@ pub fn extract(source: &[u8]) -> Extraction {
     let mut source = Cow::Borrowed(source);
     // With no timeout and no cancellation flag set, the parser always returns a tree.
     let mut tree = parser.parse(&*source, None).expect("a tree");
+    // Whether patterns are still mended: not once a reading with them
+    // mended reads less.
+    let mut patterns = true;
     for _ in 0..REREADS {
-        let misreadings = misread(&source, tree.root_node());
+        let mut misreadings = misread(&source, tree.root_node(), patterns);
         if misreadings.is_empty() {
             break;
         }
-        // Every line keeps its number: a `;` goes on the assignments' own
-        // line, and a blank stands for the `!`.
-        let mut mended = source.into_owned();
-        for misreading in misreadings.iter().rev() {
-            match *misreading {
-                Misreading::Prefix(end) => mended.insert(end, b';'),
-                Misreading::Negation(at) => mended[at] = b' ',
+        let mut mended = mend(&source, &misreadings);
+        let mut reread = parser.parse(&mended, None).expect("a tree");
+        if misreadings.iter().any(|m| m.pattern())
+            && reading(reread.root_node()) < reading(tree.root_node())
+        {
+            patterns = false;
+            misreadings.retain(|m| !m.pattern());
+            if misreadings.is_empty() {
+                break;
             }
+            mended = mend(&source, &misreadings);
+            reread = parser.parse(&mended, None).expect("a tree");
         }
-        tree = parser.parse(&mended, None).expect("a tree");
+        tree = reread;
         source = Cow::Owned(mended);
     }
     let source: &[u8] = &source;
@@ -601,6 +622,59 @@ fn prefixes<'t>(source: &[u8], command: Node<'t>) -> Vec<Prefix<'t>> {
         .collect()
 }
 
+/// A file's source with its misreadings mended. Every line keeps its
+/// number: a `;` goes on the assignments' own line, a blank stands for the
+/// `!`, and a pattern's quotes go on its own line.
+fn mend(source: &[u8], misreadings: &[Misreading]) -> Vec<u8> {
+    let mut mended = source.to_vec();
+    for misreading in misreadings.iter().rev() {
+        match *misreading {
+            Misreading::Prefix(end) => mended.insert(end, b';'),
+            Misreading::Negation(at) => mended[at] = b' ',
+            Misreading::Pattern(start, end) => {
+                unquote(&mut mended[start..end]);
+                mended.insert(end, b'"');
+                mended.insert(start, b'"');
+            }
+            Misreading::Blank(start, end) => blank(&mut mended[start..end]),
+            Misreading::Fallthrough(at, byte) => mended[at] = byte,
+        }
+    }
+    mended
+}
+
+/// How well a tree reads its file, the better the greater: the functions
+/// it reads, in errors too, then the fewer lines its errors stand on. Quoting a pattern
+/// can mend an error and still read worse where the error was another,
+/// as `[ "$a" = - ]` is: tree-sitter recovers from it otherwise.
+fn reading(root: Node) -> (usize, Reverse<usize>) {
+    let (mut functions, mut lines) = (0, 0);
+    // The last row an error counted stands on, so that two errors on one
+    // row count it once.
+    let mut counted: Option<usize> = None;
+    let mut cursor = root.walk();
+    loop {
+        let node = cursor.node();
+        if node.is_error() {
+            let start = node.start_position().row;
+            let end = node.end_position().row;
+            let from = counted.map_or(start, |row| start.max(row + 1));
+            lines += (end + 1).saturating_sub(from);
+            counted = Some(counted.map_or(end, |row| row.max(end)));
+        } else if node.kind() == "function_definition" {
+            functions += 1;
+        }
+        if cursor.goto_first_child() {
+            continue;
+        }
+        while !cursor.goto_next_sibling() {
+            if !cursor.goto_parent() {
+                return (functions, Reverse(lines));
+            }
+        }
+    }
+}
+
 /// A statement tree-sitter-bash misreads, by where it is mended.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Misreading {
@@ -611,22 +685,60 @@ enum Misreading {
     /// name, the assignments in it for words: the `!` is here, and nothing
     /// extracted needs it.
     Negation(usize),
+    /// A pattern in an error, `--!(no-*)dir*` in a case item, runs from here
+    /// to there: it is double-quoted.
+    Pattern(usize, usize),
+    /// An expansion's pattern in an error, `]?(:+([0-9]))` in
+    /// `${host%]?(:+([0-9]))}`, runs from here to there: it is blanked.
+    Blank(usize, usize),
+    /// The last item of a case statement ends in `;;&` or `;&`, whose `&` is
+    /// here: it becomes the byte given, so that the item ends in `;;`, as
+    /// Bash runs it, there being no next item to go on to.
+    Fallthrough(usize, u8),
 }
 
 impl Misreading {
+    /// Whether it is one of a pattern's, mended only where that reads
+    /// better.
+    fn pattern(self) -> bool {
+        matches!(
+            self,
+            Misreading::Pattern(..) | Misreading::Blank(..) | Misreading::Fallthrough(..)
+        )
+    }
+
     fn at(self) -> usize {
         match self {
-            Misreading::Prefix(at) | Misreading::Negation(at) => at,
+            Misreading::Prefix(at)
+            | Misreading::Negation(at)
+            | Misreading::Pattern(at, _)
+            | Misreading::Blank(at, _)
+            | Misreading::Fallthrough(at, _) => at,
         }
     }
 }
 
-/// What tree-sitter-bash misread in a file, in order.
-fn misread(source: &[u8], root: Node) -> Vec<Misreading> {
+/// What tree-sitter-bash misread in a file, in order; with `patterns`, the
+/// patterns in its errors too.
+fn misread(source: &[u8], root: Node, patterns: bool) -> Vec<Misreading> {
     let mut found = Vec::new();
+    // The lines errors stand on.
+    let mut errors: Vec<(usize, usize)> = Vec::new();
     let mut cursor = root.walk();
     loop {
         let node = cursor.node();
+        if node.is_error() {
+            // From the start of its first line to the end of its last.
+            let start = source[..node.start_byte()]
+                .iter()
+                .rposition(|&b| b == b'\n')
+                .map_or(0, |at| at + 1);
+            let end = source[node.end_byte()..]
+                .iter()
+                .position(|&b| b == b'\n')
+                .map_or(source.len(), |at| node.end_byte() + at);
+            errors.push((start, end));
+        }
         match node.kind() {
             // Most commands have no prefix: their first child tells.
             "command"
@@ -657,10 +769,501 @@ fn misread(source: &[u8], root: Node) -> Vec<Misreading> {
         }
         while !cursor.goto_next_sibling() {
             if !cursor.goto_parent() {
+                if patterns && !errors.is_empty() {
+                    found.extend(patterned(source).into_iter().filter(|m| {
+                        errors
+                            .iter()
+                            .any(|&(from, to)| from <= m.at() && m.at() < to)
+                    }));
+                }
                 found.sort_unstable_by_key(|m| m.at());
                 found.dedup();
                 return found;
             }
+        }
+    }
+}
+
+/// A token of a Bash file, as [`Lexer`] reads it: a word by its bytes, or an
+/// operator, a newline included, by where it starts.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Token {
+    Word(usize, usize),
+    Op(usize, &'static [u8]),
+}
+
+/// The operators [`Lexer`] tells apart, longest first.
+const OPERATORS: &[&[u8]] = &[
+    b";;&", b"<<<", b"<<-", b";;", b";&", b"&&", b"||", b"|&", b"<<", b";", b"&", b"|", b"(", b")",
+    b"<", b">", b"\n",
+];
+
+/// Reads a Bash file as Bash splits it into tokens: what quotes,
+/// expansions and extglob groups hold is in a word, a comment and a
+/// heredoc's body are left out, and `((..))` is one word.
+struct Lexer<'s> {
+    source: &'s [u8],
+    /// Each `${..}` met, by its braces.
+    expansions: Vec<(usize, usize)>,
+}
+
+impl<'s> Lexer<'s> {
+    /// The file's tokens, or none where a quote or an expansion is not
+    /// closed.
+    fn tokens(&mut self) -> Option<Vec<Token>> {
+        let source = self.source;
+        let mut found = Vec::new();
+        // The delimiters of the heredocs whose bodies start on the next
+        // line, and whether `<<-` strips their tabs.
+        let mut heredocs: Vec<(Vec<u8>, bool)> = Vec::new();
+        let mut i = 0;
+        while i < source.len() {
+            let b = source[i];
+            if b == b'\n' && !heredocs.is_empty() {
+                found.push(Token::Op(i, b"\n"));
+                i += 1;
+                for (delimiter, tabs) in heredocs.drain(..) {
+                    while i < source.len() {
+                        let end = source[i..]
+                            .iter()
+                            .position(|&b| b == b'\n')
+                            .map_or(source.len(), |at| i + at);
+                        let mut line = &source[i..end];
+                        if tabs {
+                            while let [b'\t', rest @ ..] = line {
+                                line = rest;
+                            }
+                        }
+                        i = end + 1;
+                        if line == delimiter.as_slice() {
+                            break;
+                        }
+                    }
+                }
+                continue;
+            }
+            if matches!(b, b' ' | b'\t' | b'\r') {
+                i += 1;
+                continue;
+            }
+            if b == b'\\' && source.get(i + 1) == Some(&b'\n') {
+                i += 2;
+                continue;
+            }
+            if b == b'#' {
+                i = source[i..]
+                    .iter()
+                    .position(|&b| b == b'\n')
+                    .map_or(source.len(), |at| i + at);
+                continue;
+            }
+            if source[i..].starts_with(b"((") {
+                let end = self.closing(i)? + 1;
+                found.push(Token::Word(i, end));
+                i = end;
+                continue;
+            }
+            if let Some(op) = OPERATORS.iter().find(|op| source[i..].starts_with(op))
+                && !matches!(source[i..], [b'<' | b'>', b'(', ..])
+            {
+                found.push(Token::Op(i, op));
+                i += op.len();
+                if *op == b"<<" || *op == b"<<-" {
+                    while matches!(source.get(i), Some(b' ' | b'\t')) {
+                        i += 1;
+                    }
+                    let end = self.word(i, false)?;
+                    let delimiter = source[i..end]
+                        .iter()
+                        .copied()
+                        .filter(|b| !matches!(b, b'\'' | b'"' | b'\\'))
+                        .collect();
+                    heredocs.push((delimiter, *op == b"<<-"));
+                    found.push(Token::Word(i, end));
+                    i = end;
+                }
+                continue;
+            }
+            let regex = matches!(found.last(), Some(&Token::Word(start, end)) if &source[start..end] == b"=~");
+            let end = self.word(i, regex)?;
+            found.push(Token::Word(i, end));
+            i = end;
+        }
+        Some(found)
+    }
+
+    /// Where the word starting at `at` ends. A regular expression, the word
+    /// after `=~`, holds its `(..)` and `|`, as Bash reads it.
+    fn word(&mut self, at: usize, regex: bool) -> Option<usize> {
+        let source = self.source;
+        // How deep in extglob groups, `@(a|b)`, or a regular expression's
+        // groups the word is.
+        let mut depth = 0;
+        let mut i = at;
+        while i < source.len() {
+            let b = source[i];
+            let group = b == b'('
+                && (regex
+                    || (i > at
+                        && matches!(source[i - 1], b'?' | b'*' | b'+' | b'@' | b'!')
+                        && !(i > at + 1 && source[i - 2] == b'$')));
+            if depth == 0
+                && !group
+                && (matches!(b, b' ' | b'\t' | b'\r' | b'\n' | b';' | b'&' | b'(' | b')')
+                    || (b == b'|' && !regex)
+                    || (matches!(b, b'<' | b'>') && source.get(i + 1) != Some(&b'(')))
+            {
+                break;
+            }
+            match b {
+                b'\\' => i += 1,
+                b'\'' => i = self.quoted(i)?,
+                b'"' => i = self.string(i)?,
+                b'`' => i = self.backquoted(i)?,
+                b'$' if matches!(source.get(i + 1), Some(b'{' | b'(')) => {
+                    i = self.closing(i + 1)?
+                }
+                b'<' | b'>' if source.get(i + 1) == Some(&b'(') => i = self.closing(i + 1)?,
+                b'(' => depth += 1,
+                b')' => depth -= 1,
+                _ => {}
+            }
+            i += 1;
+        }
+        Some(i)
+    }
+
+    /// Where the `'` closing one at `at` is.
+    fn quoted(&self, at: usize) -> Option<usize> {
+        Some(at + 1 + self.source[at + 1..].iter().position(|&b| b == b'\'')?)
+    }
+
+    /// Where the `` ` `` closing one at `at` is.
+    fn backquoted(&self, at: usize) -> Option<usize> {
+        Some(at + 1 + self.source[at + 1..].iter().position(|&b| b == b'`')?)
+    }
+
+    /// Where the `"` closing one at `at` is, past the expansions in it.
+    fn string(&mut self, at: usize) -> Option<usize> {
+        let source = self.source;
+        let mut i = at + 1;
+        while i < source.len() {
+            match source[i] {
+                b'\\' => i += 1,
+                b'"' => return Some(i),
+                b'`' => i = self.backquoted(i)?,
+                b'$' if matches!(source.get(i + 1), Some(b'(' | b'{')) => {
+                    i = self.closing(i + 1)?
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        None
+    }
+
+    /// Where the `)` or `}` closing the `(` or `{` at `at` is, past quotes
+    /// and the expansions in it. A `(` in `$(..)` opens a pair, as in
+    /// `$((..))`; a `{` in `${..}` does not, as Bash reads `${x%%[{]*}`.
+    fn closing(&mut self, at: usize) -> Option<usize> {
+        let source = self.source;
+        let close = if source[at] == b'(' { b')' } else { b'}' };
+        let mut depth = 0;
+        let mut i = at + 1;
+        while i < source.len() {
+            match source[i] {
+                b'\\' => i += 1,
+                b'\'' => i = self.quoted(i)?,
+                b'"' => i = self.string(i)?,
+                b'`' => i = self.backquoted(i)?,
+                b'$' if matches!(source.get(i + 1), Some(b'(' | b'{')) => {
+                    i = self.closing(i + 1)?
+                }
+                b'(' if close == b')' => depth += 1,
+                b if b == close => {
+                    if depth == 0 {
+                        if close == b'}' {
+                            self.expansions.push((at, i));
+                        }
+                        return Some(i);
+                    }
+                    depth -= 1;
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        None
+    }
+}
+
+/// Where tree-sitter-bash's scanners may misread a file, with no regard to
+/// whether they did:
+/// - the words of a case item's pattern list, `--dir* | -${o}@([sD]|[hV]*))`,
+///   and those `[[ ]]` matches against, after `==`, `=`, `!=` or `=~`: but a
+///   word of letters, digits and `_` alone, as the scanner reads it, and one
+///   quoted whole;
+/// - the pattern of an expansion that holds a parenthesis or a brace, as an
+///   extglob group does, `${x%@(a|b)}`, or an escaped quote, `${x#\'}`;
+/// - the `;;&` or `;&` the last item of a case statement ends in.
+///
+/// None where a quote or an expansion is not closed.
+fn patterned(source: &[u8]) -> Vec<Misreading> {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Mode {
+        /// Commands.
+        Commands,
+        /// A case statement's pattern list; with the `&` its previous item
+        /// ended in, before the list's first word.
+        Patterns(bool, Option<(usize, u8)>),
+        /// A case item's commands, to its `;;`.
+        Item,
+        /// A `[[ ]]`; true past a matching operator.
+        Test(bool),
+    }
+    let mut lexer = Lexer {
+        source,
+        expansions: Vec::new(),
+    };
+    let Some(tokens) = lexer.tokens() else {
+        return Vec::new();
+    };
+    let text = |start: usize, end: usize| &source[start..end];
+    let mut words = Vec::new();
+    let mut found = Vec::new();
+    let mut modes = vec![Mode::Commands];
+    // Whether a word would name a command; and, past `case`, how many of
+    // its subject and `in` are still to come.
+    let mut command = true;
+    let mut case = 0;
+    for token in tokens {
+        let mode = *modes.last().expect("the file's own mode");
+        match (mode, token) {
+            (Mode::Patterns(first, fallthrough), Token::Word(start, end)) => {
+                if first && text(start, end) == b"esac" {
+                    if let Some((at, byte)) = fallthrough {
+                        found.push(Misreading::Fallthrough(at, byte));
+                    }
+                    modes.pop();
+                    command = false;
+                    continue;
+                }
+                *modes.last_mut().expect("a case") = Mode::Patterns(false, None);
+                words.push((start, end));
+            }
+            (Mode::Patterns(..), Token::Op(_, b")")) => {
+                *modes.last_mut().expect("a case") = Mode::Item;
+                command = true;
+            }
+            (Mode::Patterns(..), Token::Op(..)) => {}
+            (Mode::Test(after), Token::Word(start, end)) => match text(start, end) {
+                b"]]" => {
+                    modes.pop();
+                    command = false;
+                }
+                b"==" | b"=" | b"!=" | b"=~" => {
+                    *modes.last_mut().expect("a test") = Mode::Test(true);
+                }
+                _ => {
+                    if after {
+                        words.push((start, end));
+                    }
+                    *modes.last_mut().expect("a test") = Mode::Test(false);
+                }
+            },
+            (Mode::Test(_), Token::Op(..)) => {
+                *modes.last_mut().expect("a test") = Mode::Test(false)
+            }
+            (Mode::Item, Token::Op(at, op @ (b";;" | b";&" | b";;&"))) => {
+                let fallthrough = match op {
+                    b";;&" => Some((at + 2, b' ')),
+                    b";&" => Some((at + 1, b';')),
+                    _ => None,
+                };
+                *modes.last_mut().expect("a case") = Mode::Patterns(true, fallthrough);
+            }
+            (_, Token::Op(_, b"\n")) if case == 1 => {}
+            (_, Token::Op(_, op)) => {
+                command = !matches!(op, b")" | b"<" | b">" | b"<<" | b"<<-" | b"<<<");
+                case = 0;
+            }
+            (_, Token::Word(start, end)) => {
+                let word = text(start, end);
+                if case == 2 {
+                    case = 1;
+                } else if case == 1 {
+                    case = 0;
+                    if word == b"in" {
+                        modes.push(Mode::Patterns(true, None));
+                        continue;
+                    }
+                } else if command {
+                    match word {
+                        b"case" => case = 2,
+                        b"[[" => modes.push(Mode::Test(false)),
+                        b"esac" if mode == Mode::Item => {
+                            modes.pop();
+                        }
+                        _ => {}
+                    }
+                    command = matches!(
+                        word,
+                        b"then"
+                            | b"do"
+                            | b"else"
+                            | b"elif"
+                            | b"if"
+                            | b"while"
+                            | b"until"
+                            | b"{"
+                            | b"!"
+                            | b"time"
+                            | b"esac"
+                    );
+                }
+            }
+        }
+    }
+    for (start, end) in words {
+        let word = &source[start..end];
+        let plain = word.iter().all(|b| b.is_ascii_alphanumeric() || *b == b'_');
+        let quoted = word[0] == b'"' && lexer.string(start) == Some(end - 1);
+        if !plain && !quoted {
+            found.push(Misreading::Pattern(start, end));
+        }
+    }
+    for (open, close) in std::mem::take(&mut lexer.expansions) {
+        if let Some(pattern) = expansion_pattern(source, open + 1, close) {
+            let held = &source[pattern..close];
+            let paired = held.iter().any(|b| matches!(b, b'(' | b')' | b'{' | b'}'));
+            let escaped = held.windows(2).any(|w| w == b"\\'" || w == b"\\\"");
+            if paired || escaped {
+                found.push(Misreading::Blank(pattern, close));
+            }
+        }
+    }
+    found
+}
+
+/// Where the pattern of an expansion, held from `start` to `end`, starts:
+/// past `x%` in `${x%/*}`, `x//` in `${x//a/b}`. None for an expansion that
+/// matches no pattern, `${x:-1}`.
+fn expansion_pattern(source: &[u8], start: usize, end: usize) -> Option<usize> {
+    let mut i = start;
+    if matches!(source.get(i), Some(b'#' | b'!')) && i + 1 < end {
+        i += 1;
+    }
+    let name = source[i..end]
+        .iter()
+        .position(|b| !(b.is_ascii_alphanumeric() || *b == b'_'))
+        .map_or(end, |at| i + at);
+    i = if name == i
+        && matches!(
+            source.get(i),
+            Some(b'@' | b'*' | b'#' | b'?' | b'-' | b'$' | b'!')
+        ) {
+        i + 1
+    } else {
+        name
+    };
+    if source.get(i) == Some(&b'[') {
+        i += 1 + source[i + 1..end].iter().position(|&b| b == b']')? + 1;
+    }
+    let rest = &source[i..end];
+    let operator = [
+        &b"##"[..],
+        b"#",
+        b"%%",
+        b"%",
+        b"//",
+        b"/#",
+        b"/%",
+        b"/",
+        b"^^",
+        b"^",
+        b",,",
+        b",",
+    ]
+    .into_iter()
+    .find(|op| rest.starts_with(op))?;
+    Some(i + operator.len())
+}
+
+/// What [`unquote`] and [`blank`] write for a byte they take out: no
+/// part of a name, so that `"$a"b` does not become `$axb`, and nothing the
+/// scanners read as more than a byte of a word.
+const FILLER: u8 = b'-';
+
+/// A word's bytes made fit to stand in double quotes: its quotes, what
+/// single quotes hold, and the `$` of `$'..'` and `$"..."` become
+/// [`FILLER`], so that the expansions it holds are still read and nothing
+/// else is.
+fn unquote(word: &mut [u8]) {
+    let mut i = 0;
+    while i < word.len() {
+        match word[i] {
+            b'\\' => i += 1,
+            b'$' if matches!(word.get(i + 1), Some(b'\'' | b'"')) => word[i] = FILLER,
+            b'"' => word[i] = FILLER,
+            b'\'' => {
+                word[i] = FILLER;
+                i += 1;
+                while i < word.len() && word[i] != b'\'' {
+                    word[i] = FILLER;
+                    i += 1;
+                }
+                if i < word.len() {
+                    word[i] = FILLER;
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+}
+
+/// An expansion's pattern blanked: each byte becomes [`FILLER`] but the
+/// expansions and the double-quoted strings it holds, which are still read.
+fn blank(pattern: &mut [u8]) {
+    let copy = pattern.to_vec();
+    let mut lexer = Lexer {
+        source: &copy,
+        expansions: Vec::new(),
+    };
+    let mut kept = Vec::new();
+    let mut i = 0;
+    while i < copy.len() {
+        let end = match copy[i] {
+            b'\\' => {
+                i += 2;
+                continue;
+            }
+            b'"' => lexer.string(i),
+            b'$' if matches!(copy.get(i + 1), Some(b'(' | b'{')) => lexer.closing(i + 1),
+            b'$' if copy
+                .get(i + 1)
+                .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_') =>
+            {
+                copy[i + 1..]
+                    .iter()
+                    .position(|b| !(b.is_ascii_alphanumeric() || *b == b'_'))
+                    .map(|at| i + at)
+                    .or(Some(copy.len() - 1))
+            }
+            _ => {
+                i += 1;
+                continue;
+            }
+        };
+        let Some(end) = end else {
+            break;
+        };
+        kept.push((i, end));
+        i = end + 1;
+    }
+    for (i, byte) in pattern.iter_mut().enumerate() {
+        if !kept.iter().any(|&(start, end)| start <= i && i <= end) {
+            *byte = FILLER;
         }
     }
 }
@@ -2170,6 +2773,103 @@ fi
             !called.iter().any(|name| RESERVED.contains(name)),
             "{called:?}"
         );
+    }
+
+    /// The functions an extraction reads, in order.
+    fn functions(out: &Extraction) -> Vec<&str> {
+        out.symbols
+            .iter()
+            .filter(|s| s.kind == Kind::Function)
+            .map(|s| s.qualified.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn a_pattern_in_a_case_item_loses_no_function_and_keeps_its_expansions() {
+        // tree-sitter-bash 0.25.1's extglob scanner fails on the first two:
+        // with `!(..)` after `--`, f's body is an error that takes g in; with
+        // an expansion before the group, neither is read. The third it reads.
+        for (item, read) in [
+            (
+                "--!(no-*)dir*)",
+                vec![("prev", RefKind::Value, 3, Some("f"))],
+            ),
+            (
+                "-${o}@([sD]|[hV]*))",
+                vec![
+                    ("prev", RefKind::Value, 3, Some("f")),
+                    ("o", RefKind::Value, 4, Some("f")),
+                ],
+            ),
+            ("--dir*)", vec![("prev", RefKind::Value, 3, Some("f"))]),
+            (
+                "--!(no-*)\"$dir\"@(a|b))",
+                vec![
+                    ("prev", RefKind::Value, 3, Some("f")),
+                    ("dir", RefKind::Value, 4, Some("f")),
+                ],
+            ),
+        ] {
+            let source = format!(
+                "f()\n{{\n    case $prev in\n        {item}\n            return\n            ;;\n    esac\n}}\ng() {{ :; }}\n"
+            );
+            let out = extract(source.as_bytes());
+            assert!(!out.syntax_error, "{item}");
+            assert_eq!(functions(&out), vec!["f", "g"], "{item}");
+            assert_eq!(references(&out), read, "{item}");
+        }
+    }
+
+    #[test]
+    fn a_test_an_expansion_or_a_last_item_misread_loses_no_function() {
+        for (source, read) in [
+            // A completion file's first line, before its function.
+            (
+                "[[ $OSTYPE == *@(bsd|darwin)* ]] || return 1\n\nf()\n{\n    :\n}\n",
+                vec!["f"],
+            ),
+            // An extglob group in an expansion's pattern.
+            (
+                "f()\n{\n    host=${host%]?(:+([0-9]))}\n    # a comment\n    if g \"$(sed -ne 's/a\\{1,\\}\\(.*\\)$/\\1/p' \"$x\")\"; then\n        :\n    fi\n}\n\nh() { :; }\n",
+                vec!["f", "h"],
+            ),
+            // An escaped quote in one.
+            (
+                "f()\n{\n    local completer=${cspec#* -C \\'}\n}\n\nh() { :; }\n",
+                vec!["f", "h"],
+            ),
+            // A regular expression.
+            (
+                "f()\n{\n    if [[ $cur == '${'* ]]; then\n        :\n    elif [[ $cur =~ ^(\\$\\{[#!]?)([A-Za-z0-9_]*)\\[([^]]*)$ ]]; then\n        :\n    fi\n}\n\nh() { :; }\n",
+                vec!["f", "h"],
+            ),
+            // A last item falling through to none.
+            (
+                "f()\n{\n    case $x in\n        a) : ;;&\n    esac\n}\ng() { :; }\n",
+                vec!["f", "g"],
+            ),
+        ] {
+            let out = extract(source.as_bytes());
+            assert!(!out.syntax_error, "{source}");
+            assert_eq!(functions(&out), read, "{source}");
+        }
+    }
+
+    #[test]
+    fn a_reading_is_the_better_for_more_functions_then_fewer_lines_in_errors() {
+        let read = |source: &str| {
+            let tree = parser().parse(source, None).expect("a tree");
+            reading(tree.root_node())
+        };
+        let misread =
+            "f()\n{\n case $prev in\n --!(no-*)dir*)\n return\n ;;\n esac\n}\ng() { :; }\n";
+        let mended =
+            "f()\n{\n case $prev in\n \"--!(no-*)dir*\")\n return\n ;;\n esac\n}\ng() { :; }\n";
+        assert_eq!(read(mended), (2, Reverse(0)));
+        assert_eq!(read(misread), (1, Reverse(7)));
+        assert!(read(mended) > read(misread));
+        // Fewer lines in errors read better where the functions are as many.
+        assert!(read("f() { :; }\n[[ x\n") > read("f() { :; }\n[[ x\n[[ y\n"));
     }
 
     #[test]

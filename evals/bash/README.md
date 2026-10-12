@@ -356,3 +356,41 @@ word is no call. Not mended: `[ .. ] \` followed by `&& cmd` swallows the
 statements after it (one nixpkgs file), and a `$((..))` inside a `${x-..}`
 reads as a subshell running a command (ctx's test-hooks.sh:601, the `away`
 bashls.py misses).
+
+### Patterns (task 403, 2026-10-12)
+
+Its scanners misread patterns too, with an error that can take in the
+function around it and the next ones: an extglob pattern in a case item or
+a `[[ ]]` (`--!(no-*)dir*)`, `-${noargopts}@([sD]|[hV]*))`, `*@(bsd|darwin)*`
+at a completion's top), a case pattern mixing an expansion with text
+(`-${noargopts}b)`), a regular expression after `=~`, an expansion's pattern
+holding a group or an escaped quote (`${host%]?(:+([0-9]))}`, `${cspec#* -C
+\'}`, `${option2%%[<{().[]*}`), and a case statement whose last item ends in
+`;;&` or `;&`. Where an error stands, graff reads the file again with each
+pattern on its lines double-quoted (its own quotes blanked, the expansions
+in it kept), each such expansion pattern blanked, and the last `;;&` made
+`;;`, as Bash runs it. What a pattern matches is nothing graff reads. A
+reading so mended is kept only where it reads no fewer functions and no more
+lines in errors: in ctx's src/lib/window.sh the error is `[ "$five" = - ]`,
+no pattern's, and quoting its patterns anyway lost the functions after
+`ctx_window` (`ctx_window_line`, `ctx_window_until` and more).
+
+Counted with examples/extract against main's build (e5480cf): functions
+written `name()` at a line's start that the extraction lacks, and files
+with a syntax error.
+
+| corpus                              | files | lost functions | files with an error | functions read |
+| ----------------------------------- | ----- | -------------- | ------------------- | -------------- |
+| bash-completion 2.18 (git), main    | 1,099 | 32 in 22 files | 79                  | 3,638          |
+| bash-completion 2.18 (git), branch  | 1,099 | 0              | 0                   | 3,670          |
+| nixpkgs .sh and .bash, main         | 1,175 |                | 123                 | 1,260          |
+| nixpkgs .sh and .bash, branch       | 1,175 |                | 118                 | 1,266          |
+| ctx 6a6d80a, main and branch        | 36    |                | 2                   | 219            |
+
+The extraction of every file main read with no error is the same; of the
+79 + 7 that changed, none lost a function, and what they lost is what the
+misreading made up -- case patterns read as calls (`--directory`,
+`drm.edid_firmware`), a comment's backquotes run as a command
+(fetchurl/builder.sh:41), and reads of names the recovered function
+declares local. nixpkgs' 118 files with an error left were not looked at
+here; note 94 found most such files to be templates holding `@subst@`.

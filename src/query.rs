@@ -14,9 +14,11 @@ use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fs;
+use std::io;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
+use serde::Serialize;
 use serde_json::{Value, json};
 
 use crate::extract::{CallKind, Kind, RefKind, Symbol};
@@ -747,22 +749,28 @@ pub fn map(
             let signature = code.signature_in(d, &file);
             // A line in the form the answer is written in, the other left
             // empty: a map's lines are every definition the walk reaches,
-            // and the other form would cost as much as the answer.
-            let (text, item) = if options.json {
-                let item = json!({
-                    "definition": code.json(d), "signature": signature,
-                    "rank": (shares[graph.node(d)] * 1e6).round() / 1e6,
-                });
-                (String::new(), item)
-            } else {
-                let shown = match &signature {
-                    Some(signature) => signature,
-                    None => &format!("{} {}", symbol.kind.name(), symbol.qualified),
+            // and the other form would cost as much as the answer. A JSON
+            // line is only counted: it is built if the budget keeps it.
+            if options.json {
+                let item = MapItem {
+                    definition: code.definition_json(d),
+                    rank: (shares[graph.node(d)] * 1e6).round() / 1e6,
+                    signature,
                 };
-                let text = format!("  {} {shown}", span(symbol.start, symbol.end));
-                (text, Value::Null)
+                lines.push(Line::counted(
+                    String::new(),
+                    item,
+                    rank(5, n),
+                    "definitions",
+                ));
+                continue;
+            }
+            let shown = match &signature {
+                Some(signature) => signature,
+                None => &format!("{} {}", symbol.kind.name(), symbol.qualified),
             };
-            lines.push(Line::new(text, item, rank(5, n), "definitions"));
+            let text = format!("  {} {shown}", span(symbol.start, symbol.end));
+            lines.push(Line::new(text, Value::Null, rank(5, n), "definitions"));
         }
     }
     let asked = if focus.is_empty() {
@@ -1239,15 +1247,25 @@ impl<'s> Code<'s> {
     }
 
     fn json(&self, d: Definition) -> Value {
+        serde_json::to_value(self.definition_json(d)).expect("a definition is serializable")
+    }
+
+    /// A definition as `json` gives it, borrowed, so a map can count its
+    /// bytes without building it.
+    fn definition_json(&self, d: Definition) -> DefinitionJson<'_> {
         let symbol = self.symbol(d);
-        let mut item = json!({
-            "path": self.path(d), "start": symbol.start, "end": symbol.end,
-            "kind": symbol.kind.name(), "qualified": symbol.qualified,
-        });
-        if let Some((path, at)) = self.written(d) {
-            item["written"] = json!({"path": path, "start": at.start, "end": at.end});
+        DefinitionJson {
+            end: symbol.end,
+            kind: symbol.kind.name(),
+            path: self.path(d),
+            qualified: &symbol.qualified,
+            start: symbol.start,
+            written: self.written(d).map(|(path, at)| WrittenJson {
+                end: at.end,
+                path,
+                start: at.start,
+            }),
         }
-        item
     }
 
     /// Where a Nix helper writes a binding it makes where a module calls it.
@@ -2163,10 +2181,90 @@ fn rank(tier: u32, n: usize) -> u32 {
     tier * 100_000 - n.min(99_999) as u32
 }
 
+/// A definition in an answer's JSON. Its fields go in the order
+/// `serde_json::Value` keeps them, by key, so counting its bytes and building
+/// it give the same.
+#[derive(Serialize)]
+struct DefinitionJson<'a> {
+    end: u32,
+    kind: &'static str,
+    path: &'a str,
+    qualified: &'a str,
+    start: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    written: Option<WrittenJson<'a>>,
+}
+
+#[derive(Serialize)]
+struct WrittenJson<'a> {
+    end: u32,
+    path: &'a str,
+    start: u32,
+}
+
+/// A map's definition line in JSON, its fields in the order of `Value`'s keys.
+#[derive(Serialize)]
+struct MapItem<'a> {
+    definition: DefinitionJson<'a>,
+    rank: f64,
+    signature: Option<String>,
+}
+
+impl MapItem<'_> {
+    /// The bytes of the item, as `to_string` of its `Value` writes it.
+    fn size(&self) -> usize {
+        let mut counter = Counter(0);
+        serde_json::to_writer(&mut counter, self).expect("a map item is serializable");
+        counter.0
+    }
+
+    fn value(&self) -> Value {
+        serde_json::to_value(self).expect("a map item is serializable")
+    }
+}
+
+/// Counts the bytes written to it.
+struct Counter(usize);
+
+impl io::Write for Counter {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0 += bytes.len();
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+/// The JSON of a line: built, or counted, to be built only if the line is
+/// kept.
+enum Item<'a> {
+    Built(Value),
+    Counted(MapItem<'a>, usize),
+}
+
+impl Item<'_> {
+    /// The bytes of the JSON, as `to_string` writes it.
+    fn size(&self) -> usize {
+        match self {
+            Item::Built(value) => value.to_string().len(),
+            Item::Counted(_, size) => *size,
+        }
+    }
+
+    fn value(&self) -> Value {
+        match self {
+            Item::Built(value) => value.clone(),
+            Item::Counted(item, _) => item.value(),
+        }
+    }
+}
+
 /// A line of an answer: its text, its JSON, and how much it matters.
-struct Line {
+struct Line<'a> {
     text: String,
-    json: Value,
+    json: Item<'a>,
     /// Lines are kept highest first.
     rank: u32,
     /// What the line is, as a cut names it: `callers`.
@@ -2176,19 +2274,28 @@ struct Line {
     heads: bool,
 }
 
-impl Line {
-    fn new(text: String, json: Value, rank: u32, part: &'static str) -> Line {
+impl<'a> Line<'a> {
+    fn new(text: String, json: Value, rank: u32, part: &'static str) -> Line<'a> {
         Line {
             text,
-            json,
+            json: Item::Built(json),
             rank,
             part,
             heads: false,
         }
     }
 
+    /// A line whose JSON is counted, not built unless the line is kept.
+    fn counted(text: String, item: MapItem<'a>, rank: u32, part: &'static str) -> Line<'a> {
+        let size = item.size();
+        Line {
+            json: Item::Counted(item, size),
+            ..Line::new(text, Value::Null, rank, part)
+        }
+    }
+
     /// A line that heads the lines after it.
-    fn heading(text: String, json: Value, rank: u32, part: &'static str) -> Line {
+    fn heading(text: String, json: Value, rank: u32, part: &'static str) -> Line<'a> {
         Line {
             heads: true,
             ..Line::new(text, json, rank, part)
@@ -2213,7 +2320,7 @@ fn render(query: &str, root: &Path, lines: &[Line], options: &Options) -> String
         .iter()
         .map(|line| {
             1 + if options.json {
-                line.json.to_string().len()
+                line.json.size()
             } else {
                 line.text.len()
             }
@@ -2301,11 +2408,11 @@ fn render(query: &str, root: &Path, lines: &[Line], options: &Options) -> String
         reserve = size;
     };
     if options.json {
-        let results: Vec<&Value> = lines
+        let results: Vec<Value> = lines
             .iter()
             .zip(&kept)
             .filter(|(_, kept)| **kept)
-            .map(|(line, _)| &line.json)
+            .map(|(line, _)| line.json.value())
             .collect();
         let cut = cut.map(|(_, json)| json);
         let answer = json!({"query": query, "root": root.display().to_string(), "results": results, "cut": cut});
@@ -2326,6 +2433,50 @@ fn render(query: &str, root: &Path, lines: &[Line], options: &Options) -> String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_map_item_counts_the_bytes_it_builds() {
+        for (written, signature, rank) in [
+            (None, Some("fn load(\"a\\b\") -> é\n".to_string()), 0.123457),
+            (
+                Some(WrittenJson {
+                    end: 9,
+                    path: "src/\u{1F980}.nix",
+                    start: 7,
+                }),
+                None,
+                1e-6,
+            ),
+            (None, None, f64::NAN),
+        ] {
+            let has_written = written.is_some();
+            let item = MapItem {
+                definition: DefinitionJson {
+                    end: 12,
+                    kind: "function",
+                    path: "src/a.rs",
+                    qualified: "a::load",
+                    start: 3,
+                    written,
+                },
+                rank,
+                signature: signature.clone(),
+            };
+            let mut expected = json!({
+                "definition": {
+                    "path": "src/a.rs", "start": 3, "end": 12,
+                    "kind": "function", "qualified": "a::load",
+                },
+                "signature": signature, "rank": rank,
+            });
+            if has_written {
+                expected["definition"]["written"] =
+                    json!({"path": "src/\u{1F980}.nix", "start": 7, "end": 9});
+            }
+            assert_eq!(item.value().to_string(), expected.to_string());
+            assert_eq!(item.size(), expected.to_string().len());
+        }
+    }
 
     #[test]
     fn a_written_name_names_the_end_of_a_full_one() {
@@ -2565,7 +2716,7 @@ mod tests {
         assert_eq!(uses_text(&[python]), "call 12 (or outside the worktree)");
     }
 
-    fn line(text: &str, rank: u32, part: &'static str) -> Line {
+    fn line(text: &str, rank: u32, part: &'static str) -> Line<'static> {
         Line::new(text.to_string(), json!(text), rank, part)
     }
 

@@ -383,6 +383,7 @@ impl Read {
             typed: None,
             consumed: false,
             value: None,
+            declared: false,
         });
         // A section runs to the next heading of its level or a higher one.
         let mut sections: Vec<(u32, u32, String)> = Vec::new();
@@ -415,6 +416,7 @@ impl Read {
                 typed: None,
                 consumed: false,
                 value: None,
+                declared: false,
             });
         }
         let mut seen: Vec<&str> = Vec::new();
@@ -434,6 +436,7 @@ impl Read {
                 typed: None,
                 consumed: false,
                 value: None,
+                declared: false,
             });
         }
         // A use is in the innermost section around its line.

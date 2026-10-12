@@ -16,10 +16,14 @@
 //! and its submodules; a class's members and, through its bases, theirs
 //! (`glob`). `self.f()` reaches the method of the class it is called in or
 //! of the first class of its method resolution order that has one, C3's,
-//! and `super().f()` that of a class after it there (`receiver`). A method
-//! called on anything else is tied by its name alone, the only method of
-//! that name in the worktree (`unique`), unless a type of Python's library
-//! has a method of that name too: then the worktree's are only candidates.
+//! and `super().f()` that of a class after it there (`receiver`). As
+//! pyright reads a member, the first class there that declares it with a
+//! type -- a def, a class, `pos: int` -- comes before one that only
+//! assigns it: `self.pos = 0` in a subclass reads its base's `pos: int`.
+//! A method called on anything else is tied by its name alone, the only
+//! method of that name in the worktree (`unique`), unless a type of
+//! Python's library has a method of that name too: then the worktree's are
+//! only candidates.
 //! What none of these finds is external: the builtins', the library's, or
 //! a package's.
 //!
@@ -48,7 +52,7 @@ use std::sync::LazyLock;
 
 use tree_sitter::Parser;
 
-use crate::extract::{Call, CallKind, Import, Kind, RefKind, Reference};
+use crate::extract::{Call, CallKind, Import, Kind, RefKind, Reference, Symbol};
 use crate::lang::Language;
 
 use super::nix::{folder, joined};
@@ -111,6 +115,12 @@ enum Reach<'a> {
     Opaque,
 }
 
+/// Whether a member is declared with a type: a def, a class, or a
+/// variable its class annotates, `x: int` or `self.x: int = 0`.
+fn declared(symbol: &Symbol) -> bool {
+    !matches!(symbol.kind, Kind::Variable | Kind::Const) || symbol.declared
+}
+
 struct Index<'a> {
     files: &'a [File<'a>],
     /// Each Python file, by its path.
@@ -132,6 +142,10 @@ struct Index<'a> {
     /// The worktree's methods, by name: of several, those no branch leaves
     /// out on the platform graff runs on, unless each is.
     methods: HashMap<&'a str, Vec<Definition>>,
+    /// The names a member of a class or a function is declared with a type
+    /// by: a def, a class, `x: int`. A class's own member of another name
+    /// is the one it reads, with no need of its bases.
+    declared_names: HashSet<&'a str>,
     /// Each file's definitions that a scope gives a name another has, `f`
     /// and `f#2`, by the first: all of them, in the order they are written,
     /// where a branch holds one.
@@ -162,6 +176,7 @@ impl<'a> Index<'a> {
             bases: vec![HashMap::new(); n],
             roots: vec![Vec::new(); n],
             methods: HashMap::new(),
+            declared_names: HashSet::new(),
             siblings: vec![HashMap::new(); n],
             parents: vec![Vec::new(); n],
             conditions: Vec::with_capacity(n),
@@ -186,6 +201,9 @@ impl<'a> Index<'a> {
                 if symbol.kind == Kind::Method {
                     let d = Definition { file: f, symbol: s };
                     index.methods.entry(&symbol.name).or_default().push(d);
+                }
+                if symbol.qualified.contains('.') && declared(symbol) {
+                    index.declared_names.insert(&symbol.name);
                 }
             }
             for (s, symbol) in file.extraction.symbols.iter().enumerate() {
@@ -656,25 +674,53 @@ impl<'a> Index<'a> {
             .map(|held| (Target::Module(held), Rule::Path))
     }
 
-    /// A class's member of a name: its own, else that of the first class
-    /// of its method resolution order that has one.
+    /// A class's member of a name: of the classes of its method resolution
+    /// order that have one, the first that declares it with a type, else
+    /// the first, its own before a base's.
     fn member(&self, class: Definition, name: &str, depth: usize) -> Option<(Definition, Rule)> {
         if depth > DEPTH {
             return None;
         }
-        if let Some(d) = self.defined(class.file, self.qualified_name(class), name) {
+        let own = self.defined(class.file, self.qualified_name(class), name);
+        if let Some(d) = own
+            && (self.declared(d) || !self.declared_names.contains(name))
+        {
             return Some((d, Rule::Path));
         }
-        self.inherited(class, name, depth).map(|d| (d, Rule::Glob))
+        let found = self.first_member(&self.mro(class, depth), name)?;
+        let rule = if Some(found) == own {
+            Rule::Path
+        } else {
+            Rule::Glob
+        };
+        Some((found, rule))
     }
 
-    /// The member of a name of the first class after a class in its method
-    /// resolution order that has one: what `super().name` reaches.
+    /// The member of a name of the classes after a class in its method
+    /// resolution order, as `member` picks it: what `super().name` reaches.
     fn inherited(&self, class: Definition, name: &str, depth: usize) -> Option<Definition> {
-        self.mro(class, depth)
-            .into_iter()
-            .skip(1)
-            .find_map(|c| self.defined(c.file, self.qualified_name(c), name))
+        self.first_member(&self.mro(class, depth)[1..], name)
+    }
+
+    /// Of the members of a name the classes have, in order, the first
+    /// declared with a type, else the first. pyright reads a member so,
+    /// to give it a type: a subclass that sets `self.pos = 0` reads the
+    /// `pos: int` of its base's body (_pyrepl's Reader).
+    fn first_member(&self, classes: &[Definition], name: &str) -> Option<Definition> {
+        let mut first = None;
+        for &c in classes {
+            if let Some(d) = self.defined(c.file, self.qualified_name(c), name) {
+                if self.declared(d) {
+                    return Some(d);
+                }
+                first.get_or_insert(d);
+            }
+        }
+        first
+    }
+
+    fn declared(&self, d: Definition) -> bool {
+        declared(&self.files[d.file].extraction.symbols[d.symbol])
     }
 
     /// A class's method resolution order among the worktree's classes, as
@@ -1832,6 +1878,203 @@ fetch()
             .iter()
             .map(|(line, name, reached)| (*line, name.to_string(), reached.to_string()))
             .collect();
+        assert_eq!(reached, expected);
+    }
+
+    #[test]
+    fn a_member_a_class_declares_with_a_type_wins_over_one_assigned_before_it() {
+        // Each `# -> Class.name` is where pyright 1.1.414 places the names
+        // of its line (textDocument/definition, 2026-10-12): the first class
+        // of the order that declares the name with a type -- `x: int`,
+        // `self.x: int`, a def, a class -- else the first that has it.
+        let source = br#"from os import sep
+
+
+class BodyTyped:
+    x: int = 0
+
+
+class BodyTypedSub(BodyTyped):
+    def __init__(self):
+        self.x = 1
+
+    def m(self):
+        self.x = 2  # -> BodyTyped.x
+        return self.x  # -> BodyTyped.x
+
+
+class BodyBare:
+    x: int
+
+
+class BodyBareSub(BodyBare):
+    def __init__(self):
+        self.x = 1
+
+    def m(self):
+        return self.x  # -> BodyBare.x
+
+
+class SelfTyped:
+    def __init__(self):
+        self.x: int = 0
+
+
+class SelfTypedSub(SelfTyped):
+    def __init__(self):
+        self.x = 1
+
+    def m(self):
+        return self.x  # -> SelfTyped.x
+
+
+class SelfBare:
+    def __init__(self):
+        self.x: int
+
+
+class SelfBareSub(SelfBare):
+    def __init__(self):
+        self.x = 1
+
+    def m(self):
+        return self.x  # -> SelfBare.x
+
+
+class Method:
+    def hosts(self):
+        pass
+
+    @property
+    def name(self):
+        return ""
+
+    class Inner:
+        pass
+
+
+class MethodSub(Method):
+    def __init__(self):
+        self.hosts = 1
+        self.name = 2
+        self.Inner = 3
+
+    def m(self):
+        return self.hosts  # -> Method.hosts
+
+    def n(self):
+        return self.name  # -> Method.name
+
+    def o(self):
+        return self.Inner  # -> Method.Inner
+
+
+class Plain:
+    x = 0
+
+    def __init__(self, y: int):
+        self.y = y
+        self.z = 0
+
+    __slots__ = ("w",)
+
+
+class PlainSub(Plain):
+    def __init__(self):
+        self.x = 1
+        self.y = 2
+        self.z = 3
+        self.w = 4
+
+    def m(self):
+        return self.x  # -> PlainSub.x
+
+    def n(self):
+        return self.y  # -> PlainSub.y
+
+    def o(self):
+        return self.z  # -> PlainSub.z
+
+    def p(self):
+        return self.w  # -> PlainSub.w
+
+
+class Imported:
+    from os import sep
+
+
+class ImportedSub(Imported):
+    def __init__(self):
+        self.sep = sep
+
+    def m(self):
+        return self.sep  # -> ImportedSub.sep
+
+
+class OwnTyped(BodyTyped):
+    x: int
+
+    def m(self):
+        return self.x  # -> OwnTyped.x
+
+
+class OwnPlain(BodyTyped):
+    x = 1
+
+    def m(self):
+        return self.x  # -> BodyTyped.x
+
+
+class Grand(BodyTypedSub):
+    def m(self):
+        return self.x  # -> BodyTyped.x
+
+    def n(self):
+        return super().x  # -> BodyTyped.x
+
+
+class Both(PlainSub, BodyTyped):
+    def m(self):
+        return self.x  # -> BodyTyped.x
+
+
+def outside(s: BodyTypedSub):
+    return s.x, OwnPlain.x  # -> BodyTyped.x
+"#;
+        let extraction = extract::extract(Language::Python, source);
+        let files = [File {
+            path: "members.py",
+            language: Language::Python,
+            extraction: &extraction,
+        }];
+        let text = std::str::from_utf8(source).unwrap();
+        let mut expected: Vec<(u32, String, String)> = Vec::new();
+        for (i, line) in text.lines().enumerate() {
+            let Some((code, place)) = line.split_once("# -> ") else {
+                continue;
+            };
+            let name = place.rsplit_once('.').unwrap().1;
+            for _ in code.matches(&format!(".{name}")) {
+                expected.push((i as u32 + 1, name.to_string(), place.to_string()));
+            }
+        }
+        let mut reached: Vec<(u32, String, String)> = resolve(&files)
+            .into_iter()
+            .filter(|edge| {
+                expected
+                    .iter()
+                    .any(|(line, name, _)| edge.line == *line && edge.name == *name)
+            })
+            .map(|edge| {
+                let reached = match edge.resolution {
+                    Resolution::Resolved(d, _) => extraction.symbols[d.symbol].qualified.clone(),
+                    other => format!("{other:?}"),
+                };
+                (edge.line, edge.name, reached)
+            })
+            .collect();
+        reached.sort();
+        expected.sort();
         assert_eq!(reached, expected);
     }
 }

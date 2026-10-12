@@ -56,10 +56,12 @@ evaluated from `__file__`, then the importing file's folder and those above
 it, the worktree's `src/`, and those a `sys.path.append` adds, a package's
 module looking in the top and `src/` before its own folder. A path is
 followed through modules and classes; `self.f()` and `super().f()` reach the
-method of the class or of a base, in Python's method resolution order, a
-method called on what a class of the worktree made reaches that class's, and
-one called on anything else, the worktree's only method of that name, unless
-a type of Python's library has one too. Of the definitions a scope gives one
+method of the class or of a base, in Python's method resolution order, where
+a member a class declares with a type, `pos: int` or a def, comes before one
+a class only assigns, as pyright reads it; a method called on what a class of
+the worktree made reaches that class's, and one called on anything else, the
+worktree's only method of that name, unless a type of Python's library has
+one too. Of the definitions a scope gives one
 name and the imports that bind it there, a name reaches the first in no
 branch of an `if` false on the host, as pyright reads `sys.platform` and
 `os.name`, or false where the name is used, an `else`'s for code in the

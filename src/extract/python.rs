@@ -825,6 +825,7 @@ struct Pending {
     doc: Option<String>,
     key: Key,
     typed: Option<String>,
+    declared: bool,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -918,8 +919,25 @@ impl<'s, 't> Reader<'s, 't> {
                 doc,
                 key: Key::Definition(d.node.id(), d.scope),
                 typed,
+                declared: false,
             });
         }
+        // The names a scope declares with a type at any of their
+        // assignments: `x: int` in its body, `self.x: int` in a method.
+        let declared: HashSet<(usize, &str)> = self
+            .scan
+            .sites
+            .iter()
+            .chain(&self.scan.attributes)
+            .filter(|site| {
+                site.at.parent().is_some_and(|p| {
+                    p.kind() == "assignment"
+                        && p.child_by_field_name("left") == Some(site.at)
+                        && p.child_by_field_name("type").is_some()
+                })
+            })
+            .map(|site| (site.scope, site.name.as_str()))
+            .collect();
         // Each name a module's top or a class's body binds to a value, at
         // its first assignment, unless an import or a def binds it there.
         let mut first: HashMap<(usize, &str), usize> = HashMap::new();
@@ -948,6 +966,7 @@ impl<'s, 't> Reader<'s, 't> {
                 doc: self.comments_above(row).or_else(|| self.comment_after(row)),
                 key: Key::Variable(site.scope, site.name.clone()),
                 typed: self.typed(site.scope, &site.name),
+                declared: declared.contains(&(site.scope, site.name.as_str())),
             });
             if site.scope == 0
                 && counts.get(&(0, site.name.as_str())) == Some(&1)
@@ -979,6 +998,7 @@ impl<'s, 't> Reader<'s, 't> {
                 doc: self.comments_above(row).or_else(|| self.comment_after(row)),
                 key: Key::Variable(site.scope, site.name.clone()),
                 typed: self.attribute_type(site.at),
+                declared: declared.contains(&(site.scope, site.name.as_str())),
             });
             self.setting.insert(site.at.id());
         }
@@ -994,6 +1014,7 @@ impl<'s, 't> Reader<'s, 't> {
             typed: None,
             consumed: false,
             value: None,
+            declared: false,
         });
         let mut taken: HashMap<String, usize> = HashMap::new();
         for p in pending {
@@ -1029,6 +1050,7 @@ impl<'s, 't> Reader<'s, 't> {
                 typed: p.typed,
                 consumed: false,
                 value: None,
+                declared: p.declared,
             });
         }
         for (i, site) in self.scan.sites.iter().enumerate() {

@@ -340,6 +340,7 @@ impl<'s> Reader<'s> {
             typed: None,
             consumed: false,
             value: None,
+            declared: false,
         });
         qualified
     }

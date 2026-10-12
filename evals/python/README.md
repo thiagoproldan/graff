@@ -12,7 +12,9 @@ settled: in the folders a `sys.path.insert` adds, evaluated from
 worktree's `src/`, and those a `sys.path.append` adds; a package's module
 looks in the top and `src/` before its own folder. A path is followed
 through modules and classes, `self.f()` and `super().f()` through the
-class and its bases in Python's method resolution order (C3), a method
+class and its bases in Python's method resolution order (C3), where a
+member a class declares with a type, `pos: int` or a def, comes before
+one a class only assigns, as pyright reads it, a method
 called on what a class of the worktree made to that class's, and any
 other method call to the worktree's only method of that name, unless a
 type of Python's library has one too. Of the definitions a scope gives
@@ -41,7 +43,7 @@ f127aae, 31; and Python 3.14.7's library as nixpkgs builds it, the
 python3 of `nix develop`, 775 files, which graff's Python was not written
 against, though some of the fixes below came from what it showed. Each
 report starts with what ran: graff's commit, the corpus's, pyright's
-version and the Python on PATH. The library's report, 948 KB, is not
+version and the Python on PATH. The library's report, 887 KB, is not
 committed; the other three are.
 
 Extraction alone, examples/extract.rs on one thread, three runs each with
@@ -232,3 +234,60 @@ By rule on the library: `file` 3,893 of 3,901, `glob` 920 of 932,
   read either (task 175); `match` statements; and a method found by its
   name alone, which is filtered by the host only, not by where it is
   called.
+
+### Result, 2026-10-12 (task 121)
+
+A member is read as pyright reads it: of the classes of the method
+resolution order that have it, the first that declares it with a type --
+a def, a class, `x: int` in its body or `self.x: int` in a method, with a
+value or without -- else the first, the class's own before a base's. A
+probe of pyright 1.1.414, whose 20 places the test
+`a_member_a_class_declares_with_a_type_wins_over_one_assigned_before_it`
+holds, gives the rest: an import in a base's body, `__slots__` and `self.x
+= x` from a parameter `x: int` declare no type, and a class's own `x = 1`
+in its body yields to a base's `x: int` as `self.x = 1` does.
+
+|                            | kimi tools/, 23 files | graff evals/, 31      | ekko evals/, 19       | Python 3.14.7, 775      |
+| -------------------------- | --------------------- | --------------------- | --------------------- | ----------------------- |
+| names asked                | 3,356                 | 4,079                 | 4,402                 | 138,596                 |
+| answered                   | 2,136                 | 3,663                 | 3,876                 | 126,382                 |
+| broken resolver, precision | 0.000                 | 0.003                 | 0.000                 | 0.008                   |
+| precision                  | 1.000, 820 of 820     | 1.000, 1,369 of 1,369 | 1.000, 1,705 of 1,705 | 0.993, 81,400 of 82,009 |
+| not judged                 | 4                     | 86                    | 132                   | 2,110                   |
+| recall                     | 1.000, 788 of 788     | 1.000, 1,328 of 1,328 | 1.000, 1,602 of 1,602 | 0.938, 80,721 of 86,033 |
+
+By rule on the library: `glob` 938 of 950, `path` 10,553 of 10,856,
+`receiver` 38,628 of 38,843; the others as on 2026-10-10.
+
+- **The three corpora graff's Python was written against**: their reports
+  are as on 2026-10-10, but for the line that says what ran. A run of
+  ekko's evals/ in between had pyright answer 4 names more, 3,880.
+- **On the library, 609 edges are counted wrong**, against 722. The 117
+  gone are the 98 of 2026-10-09 whose base is in the corpus (_pyrepl's
+  Console and Reader, ipaddress.py's `_BaseNetwork.hosts`, a def, and
+  importlib/resources/abc.py's `Traversable.name`, a property); 12
+  `Codec.encode` and `Codec.decode` of the encodings' modules, whose
+  `encode = codecs.ascii_encode` yields to codecs.py's def; 6 in
+  idlelib's test_textview.py, where VW's `grab_set = Func()` and
+  `wait_window = Func()` yield to tkinter's `Misc` methods; and
+  ipaddress.py's `self._address_class`.
+  examples/resolve over a git copy of the library ties 127 of 141,197
+  edges otherwise than e87d5df: 121 to a base's member, and 6 to nothing,
+  `VW.grab_set.called` and its kin, which reach a method now.
+- **4 edges are counted wrong now**: turtledemo/colormixer.py's
+  `self._color`, which ColorTurtle sets and turtle.py's RawTurtle defines
+  as a method. typeshed's stub of turtle.py has no `_color`, so pyright,
+  which reads the stub, sees no base's: out of graff's reach, as the 61
+  of cmd.py are the other way round.
+- **pyright moves from run to run**: a run of the same code before the
+  rebase on e87d5df counted 86,010 names placed in the corpus, not
+  86,033, placing `import time` at calendar.py rather than datetime.py;
+  graff's edges and the wrong ones were the same.
+- **Cost, against e87d5df, alternating runs on the copy, 2026-10-12**,
+  on TLP's balanced profile, the boost off, with other sessions holding
+  the load at 7 to 8: resolution 344 ms against 317 (median of 15);
+  `graff callers Reader.pos`, warm, 249 ms against 243 (median of 9), 23
+  callers against 16; the index 18,362,368 bytes against 18,321,408. A
+  class's own member of a name no class declares with a type is taken
+  without its bases: reading the bases for every such member cost 476 ms
+  against d0e05b7's 327 in a first build.

@@ -150,6 +150,7 @@ pub fn extract(source: &[u8]) -> Extraction {
         typed: None,
         consumed: false,
         value: None,
+        declared: false,
     });
     for child in named_children(root) {
         reader.item(child, 1);
@@ -663,6 +664,7 @@ impl<'s, 't> Reader<'s, 't> {
             typed: None,
             consumed: false,
             value: None,
+            declared: false,
         });
         qualified
     }

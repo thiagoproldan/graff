@@ -904,6 +904,7 @@ impl<'s, 't> Reader<'s, 't> {
             typed: None,
             consumed: false,
             value: None,
+            declared: false,
         });
         let mut taken: HashMap<String, usize> = HashMap::new();
         for p in pending {
@@ -937,6 +938,7 @@ impl<'s, 't> Reader<'s, 't> {
                 typed: None,
                 consumed: false,
                 value: None,
+                declared: false,
             });
         }
     }

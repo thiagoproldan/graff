@@ -464,6 +464,7 @@ impl<'s> Reader<'s> {
             typed: None,
             consumed: false,
             value: None,
+            declared: false,
         });
         let Some(expression) = expression else {
             return;
@@ -526,6 +527,7 @@ impl<'s> Reader<'s> {
                     typed: None,
                     consumed: false,
                     value: None,
+                    declared: false,
                 });
             }
         }
@@ -554,6 +556,7 @@ impl<'s> Reader<'s> {
             typed: None,
             consumed: self.consumed,
             value: None,
+            declared: false,
         });
         qualified
     }

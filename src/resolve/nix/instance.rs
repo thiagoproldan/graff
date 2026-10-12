@@ -269,6 +269,7 @@ pub fn instantiate(files: &[File], read: &dyn Fn(&str) -> Option<Vec<u8>>) -> In
                 typed: None,
                 consumed: symbol.consumed,
                 value: None,
+                declared: false,
             };
             instances.made.push((f, made, None));
         }
@@ -294,6 +295,7 @@ pub fn instantiate(files: &[File], read: &dyn Fn(&str) -> Option<Vec<u8>>) -> In
                 typed: None,
                 consumed: false,
                 value: None,
+                declared: false,
             };
             instances.made.push((f, symbol, written));
         }

@@ -16,7 +16,7 @@ use crate::lang::Language;
 
 /// Bumped whenever what an extractor produces changes, so that results kept
 /// from an older extractor are read again rather than trusted.
-pub const VERSION: u32 = 14;
+pub const VERSION: u32 = 15;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Extraction {
@@ -85,6 +85,12 @@ pub struct Symbol {
     /// macro, and in other languages.
     #[serde(default)]
     pub value: Option<String>,
+    /// Python: whether the class or the module a variable is of declares it
+    /// with a type, `x: int` in its body or `self.x: int = 0` in a method,
+    /// at any of its assignments. pyright reads such a member of a base
+    /// over one a class only assigns. False in other languages.
+    #[serde(default)]
+    pub declared: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]

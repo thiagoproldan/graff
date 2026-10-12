@@ -15,7 +15,11 @@
 //! An item under `#[cfg(..)]`, or a file or module body under `#![cfg(..)]`,
 //! is a branch with its predicate, when a build on some host may leave it
 //! out: `unix`, `target_os = "linux"`, a name rustc does not know; not
-//! `feature = "std"` or `test`, which only a build's picks decide.
+//! `feature = "std"` or `test`, which only a build's picks decide. So is
+//! each block of `cfg_if! { if #[cfg(a)] { .. } else { .. } }`, under the
+//! condition it is compiled under, and the items a macro's arguments hold
+//! under `name!`, for the `cfg` a macro_rules of that name may apply to
+//! them, which its definition's `value` says.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
@@ -178,6 +182,23 @@ fn unspaced(text: &str) -> String {
         .collect()
 }
 
+/// The condition under which a branch is read whose own is `own`, once
+/// none of those before it holds: `all(not(any(a,b)),c)`; none if it is
+/// read on every build.
+fn otherwise(before: &[String], own: Option<&str>) -> Option<String> {
+    let mut parts = match before {
+        [] => Vec::new(),
+        [one] => vec![format!("not({one})")],
+        many => vec![format!("not(any({}))", many.join(","))],
+    };
+    parts.extend(own.map(String::from));
+    match parts.len() {
+        0 => None,
+        1 => parts.pop(),
+        _ => Some(format!("all({})", parts.join(","))),
+    }
+}
+
 /// Text spaced as a path is written: `crate :: ops` reads `crate::ops`.
 fn path_text(text: &str) -> String {
     text.split_whitespace()
@@ -287,10 +308,15 @@ impl<'s> Reader<'s> {
     /// build's picks decide, `feature = "std"` or `test`, is unknown to the
     /// resolver on every host.
     fn under(&mut self, node: Node, condition: String, step: impl FnOnce(&mut Self)) {
+        self.under_lines((line(node), end_line(node)), condition, step);
+    }
+
+    /// `under`, over lines rather than a node's.
+    fn under_lines(&mut self, lines: (u32, u32), condition: String, step: impl FnOnce(&mut Self)) {
         if decidable(&condition) {
             self.out.branches.push(Branch {
-                start: line(node),
-                end: end_line(node),
+                start: lines.0,
+                end: lines.1,
                 condition,
             });
         }
@@ -332,7 +358,12 @@ impl<'s> Reader<'s> {
             "const_item" => self.value_item(node, Kind::Const),
             "static_item" => self.value_item(node, Kind::Static),
             "macro_definition" => {
-                self.define(node, Kind::Macro);
+                if self.define(node, Kind::Macro).is_some() {
+                    let applied = self.applied_cfg(node);
+                    if let Some(symbol) = self.out.symbols.last_mut() {
+                        symbol.value = applied;
+                    }
+                }
             }
             "mod_item" => self.module(node),
             "trait_item" => self.trait_item(node),
@@ -644,7 +675,7 @@ impl<'s> Reader<'s> {
             return;
         }
         // `mod x;`: the module is a file of its own.
-        for path in self.loaded_from(node) {
+        for (path, condition) in self.loaded_from(node) {
             self.out.imports.push(Import {
                 path,
                 alias: None,
@@ -653,15 +684,19 @@ impl<'s> Reader<'s> {
                 line: line(node),
                 from: Some(qualified.clone()),
                 via: Some("mod".to_string()),
+                condition,
             });
         }
     }
 
     /// The files a `mod x;` item is loaded from, as its attributes write
-    /// them: `#[path = "a.rs"]`'s, else none written (""), for `x.rs` or
-    /// `x/mod.rs`; and besides, a `#[cfg_attr(.., path = "b.rs")]`'s, which
-    /// the builds its condition holds for load instead.
-    fn loaded_from(&self, item: Node) -> Vec<String> {
+    /// them, each with the condition under which a build loads it rather
+    /// than another: rustc reads the first `path` attribute, plain or of a
+    /// `cfg_attr` whose condition holds, so a path is loaded when its own
+    /// condition holds and none before it does; with no plain one, the file
+    /// none is written for (""), `x.rs` or `x/mod.rs`, is loaded when no
+    /// `cfg_attr`'s holds. A path written twice is loaded when either holds.
+    fn loaded_from(&self, item: Node) -> Vec<(String, Option<String>)> {
         let mut attributes = Vec::new();
         let mut previous = item.prev_sibling();
         while let Some(node) = previous {
@@ -672,50 +707,96 @@ impl<'s> Reader<'s> {
             }
             previous = node.prev_sibling();
         }
-        let mut plain = None;
-        let mut conditional = Vec::new();
+        // Each path in the order rustc reads them, with its `cfg_attr`'s
+        // condition, none for a plain one.
+        let mut written: Vec<(String, Option<String>)> = Vec::new();
         for attribute in attributes.into_iter().rev() {
             let name = named_children(attribute)
                 .first()
                 .map(|n| self.text(*n))
                 .unwrap_or_default();
             match name {
-                "path" => {
-                    plain = attribute
+                "path" => written.extend(
+                    attribute
                         .child_by_field_name("value")
-                        .and_then(|value| self.literal(value));
-                }
+                        .and_then(|value| self.literal(value))
+                        .map(|path| (path, None)),
+                ),
                 "cfg_attr" => {
                     if let Some(arguments) = attribute.child_by_field_name("arguments") {
-                        self.conditional_paths(arguments, &mut conditional);
+                        self.conditional_paths(arguments, None, &mut written);
                     }
                 }
                 _ => {}
             }
         }
-        let mut found = vec![plain.unwrap_or_default()];
-        for path in conditional {
-            if !found.contains(&path) {
-                found.push(path);
+        if !written.iter().any(|(_, condition)| condition.is_none()) {
+            written.push((String::new(), None));
+        }
+        // Each path with the conditions it is loaded under, none if under
+        // every build.
+        let mut found: Vec<(String, Option<Vec<String>>)> = Vec::new();
+        let mut before: Vec<String> = Vec::new();
+        for (path, own) in written {
+            let condition = otherwise(&before, own.as_deref());
+            match (found.iter_mut().find(|(p, _)| *p == path), condition) {
+                (Some((_, Some(conditions))), Some(condition)) => conditions.push(condition),
+                (Some((_, conditions)), None) => *conditions = None,
+                (Some(_), Some(_)) => {}
+                (None, condition) => found.push((path, condition.map(|c| vec![c]))),
+            }
+            // A plain path is read first when it is reached: none after it is.
+            match own {
+                Some(own) => before.push(own),
+                None => break,
             }
         }
         found
+            .into_iter()
+            .map(|(path, conditions)| {
+                let condition = conditions.map(|conditions| match conditions.len() {
+                    1 => conditions.concat(),
+                    _ => format!("any({})", conditions.join(",")),
+                });
+                (path, condition)
+            })
+            .collect()
     }
 
     /// The paths a `cfg_attr`'s attributes name, past its condition, those
-    /// of a `cfg_attr` it holds included.
-    fn conditional_paths(&self, arguments: Node, found: &mut Vec<String>) {
+    /// of a `cfg_attr` it holds included, each with the condition it holds
+    /// under: its own, in an `all` with that of the `cfg_attr` around it.
+    fn conditional_paths(
+        &self,
+        arguments: Node,
+        around: Option<&str>,
+        found: &mut Vec<(String, Option<String>)>,
+    ) {
         let tokens: Vec<Node> = all_children(arguments)
             .into_iter()
             .filter(|t| !matches!(t.kind(), "(" | ")"))
             .collect();
-        for attribute in tokens.split(|t| t.kind() == ",").skip(1) {
+        let mut attributes = tokens.split(|t| t.kind() == ",");
+        let own: String = attributes
+            .next()
+            .unwrap_or_default()
+            .iter()
+            .map(|t| unspaced(self.text(*t)))
+            .collect();
+        let condition = match around {
+            Some(around) => format!("all({around},{own})"),
+            None => own,
+        };
+        for attribute in attributes {
             match attribute {
                 [name, equals, value] if self.text(*name) == "path" && equals.kind() == "=" => {
-                    found.extend(self.literal(*value));
+                    found.extend(
+                        self.literal(*value)
+                            .map(|path| (path, Some(condition.clone()))),
+                    );
                 }
                 [name, inner] if self.text(*name) == "cfg_attr" && inner.kind() == "token_tree" => {
-                    self.conditional_paths(*inner, found);
+                    self.conditional_paths(*inner, Some(&condition), found);
                 }
                 _ => {}
             }
@@ -837,6 +918,7 @@ impl<'s> Reader<'s> {
             line: line(node),
             from: None,
             via: None,
+            condition: None,
         };
         match node.kind() {
             "identifier" | "crate" | "self" | "super" | "scoped_identifier" | "metavariable" => {
@@ -979,10 +1061,160 @@ impl<'s> Reader<'s> {
             return;
         }
         for child in all_children(node) {
-            if child.kind() == "token_tree" && !self.macro_arguments(node, child) {
+            if child.kind() != "token_tree" {
+                continue;
+            }
+            if last == "cfg_if" && self.cfg_if(child) {
+                continue;
+            }
+            // Items a macro of the crate is given may be under a `cfg` its
+            // body applies, which the resolver reads off its definition:
+            // the branch's condition is the macro's name and a `!`.
+            let at = self.out.branches.len();
+            if name.kind() == "identifier" && last != "cfg_if" {
+                self.out.branches.push(Branch {
+                    start: line(node),
+                    end: end_line(node),
+                    condition: format!("{last}!"),
+                });
+            }
+            if !self.macro_arguments(node, child) {
+                self.out.branches.truncate(at);
                 self.tokens(child);
             }
         }
+    }
+
+    /// The `cfg` a macro_rules macro applies to every item it is given, as
+    /// tokio's `cfg_has_atomic_u64!` does, whose one rule is
+    /// `($($item:item)*) => { $( #[cfg(target_has_atomic = "64")] $item )* }`:
+    /// its predicates, unspaced, several in an `all`.
+    fn applied_cfg(&self, definition: Node) -> Option<String> {
+        let rules: Vec<Node> = named_children(definition)
+            .into_iter()
+            .filter(|child| child.kind() == "macro_rule")
+            .collect();
+        let [rule] = rules[..] else {
+            return None;
+        };
+        let pattern = unspaced(self.text(rule.child_by_field_name("left")?));
+        let item = pattern
+            .get(1..pattern.len().checked_sub(1)?)?
+            .strip_prefix("$($")?
+            .strip_suffix(":item)*")?;
+        fn words(tree: Node) -> Vec<Node> {
+            all_children(tree)
+                .into_iter()
+                .filter(|t| !t.kind().ends_with("comment"))
+                .collect()
+        }
+        let body = words(rule.child_by_field_name("right")?);
+        let [_, repetition, _] = body[..] else {
+            return None;
+        };
+        let repeated = words(repetition);
+        // `$`, `(`, the attributes and the item, `)`, `*`.
+        let (["$", "("], [")", "*"]) = (
+            [repeated.first()?.kind(), repeated.get(1)?.kind()],
+            [
+                repeated.get(repeated.len().checked_sub(2)?)?.kind(),
+                repeated.last()?.kind(),
+            ],
+        ) else {
+            return None;
+        };
+        let inside = &repeated[2..repeated.len() - 2];
+        let (last, attributes) = inside.split_last()?;
+        if unspaced(self.text(*last)) != format!("${item}") || attributes.len() % 2 != 0 {
+            return None;
+        }
+        let mut predicates = Vec::new();
+        for pair in attributes.chunks(2) {
+            if self.text(pair[0]) != "#" {
+                return None;
+            }
+            let attribute = unspaced(self.text(pair[1]));
+            if let Some(predicate) = attribute
+                .strip_prefix("[cfg(")
+                .and_then(|rest| rest.strip_suffix(")]"))
+            {
+                predicates.push(predicate.to_string());
+            }
+        }
+        self.condition(predicates)
+    }
+
+    /// Reads `cfg_if! { if #[cfg(a)] { .. } else if #[cfg(b)] { .. } else
+    /// { .. } }` as the items of its blocks, each under the condition it is
+    /// compiled under: `a`, `all(not(a),b)`, `not(any(a,b))`. Says whether
+    /// the tokens read so; a block that does not parse is read off its
+    /// tokens.
+    fn cfg_if(&mut self, tree: Node) -> bool {
+        let tokens: Vec<Node> = all_children(tree)
+            .into_iter()
+            .filter(|t| !t.kind().ends_with("comment"))
+            .collect();
+        let Some(inside) = tokens.get(1..tokens.len().saturating_sub(1)) else {
+            return false;
+        };
+        // Each block, with its own predicate, none for the `else`.
+        let mut blocks: Vec<(Option<String>, Node)> = Vec::new();
+        let word = |i: usize| inside.get(i).map(|t| self.text(*t));
+        let mut at = 0;
+        loop {
+            let predicate = match (word(at), word(at + 1)) {
+                (Some("if"), Some("#")) => {
+                    let attribute = unspaced(word(at + 2).unwrap_or_default());
+                    let Some(predicate) = attribute
+                        .strip_prefix("[cfg(")
+                        .and_then(|rest| rest.strip_suffix(")]"))
+                    else {
+                        return false;
+                    };
+                    at += 3;
+                    Some(predicate.to_string())
+                }
+                _ if !blocks.is_empty() => None,
+                _ => return false,
+            };
+            let Some(&block) = inside.get(at) else {
+                return false;
+            };
+            if block.kind() != "token_tree" || !self.text(block).starts_with('{') {
+                return false;
+            }
+            at += 1;
+            let last = predicate.is_none();
+            blocks.push((predicate, block));
+            match word(at) {
+                None => break,
+                Some("else") if !last => at += 1,
+                _ => return false,
+            }
+        }
+        let mut before: Vec<String> = Vec::new();
+        for (predicate, block) in blocks {
+            let condition = otherwise(&before, predicate.as_deref());
+            before.extend(predicate);
+            let read = |reader: &mut Self| {
+                let tokens = all_children(block);
+                if !reader.as_rust(block, &tokens) {
+                    reader.tokens(block);
+                }
+            };
+            // The lines inside its braces: `} else {` ends one block and
+            // opens the next.
+            let inside = all_children(block);
+            let lines = match inside.get(1..inside.len().saturating_sub(1)) {
+                Some([first, .., last]) | Some([first @ last]) => (line(*first), end_line(*last)),
+                _ => continue,
+            };
+            match condition {
+                Some(condition) => self.deeper(|reader| reader.under_lines(lines, condition, read)),
+                None => self.deeper(read),
+            }
+        }
+        true
     }
 
     /// Reads a macro's arguments as Rust, if they open with an item or a
@@ -1912,6 +2144,8 @@ fn k() {
                 (11, 11, "windows"),
                 (13, 20, "windows"),
                 (13, 20, "target_env=\"msvc\""),
+                // A macro's own name: the resolver reads the cfg its body applies.
+                (16, 18, "m!"),
                 (22, 25, "any(miri,target_os=\"none\")"),
                 (30, 30, "windows"),
             ]
@@ -1932,9 +2166,15 @@ mod either;
 mod both;
 #[path = "dir"]
 mod inline {}
+#[cfg_attr(unix, path = "u.rs")]
+#[cfg_attr(windows, path = "u.rs")]
+mod twice;
+#[path = "first.rs"]
+#[cfg_attr(unix, path = "never.rs")]
+mod first;
 "#;
         let out = extract(source.as_bytes());
-        let got: Vec<(&str, &str, u32)> = out
+        let got: Vec<(&str, &str, u32, Option<&str>)> = out
             .imports
             .iter()
             .map(|i| {
@@ -1943,21 +2183,135 @@ mod inline {}
                     i.from.as_deref().unwrap_or_default(),
                     i.path.as_str(),
                     i.line,
+                    i.condition.as_deref(),
                 )
             })
+            .collect();
+        // rustc reads the first path attribute a build keeps.
+        assert_eq!(
+            got,
+            [
+                ("plain", "", 1, None),
+                ("written", "gen/a.rs", 3, None),
+                ("either", "fake.rs", 7, Some("any(miri,test)")),
+                (
+                    "either",
+                    "linux.rs",
+                    7,
+                    Some("all(not(any(miri,test)),all(unix,target_os=\"linux\"))")
+                ),
+                (
+                    "either",
+                    "",
+                    7,
+                    Some("not(any(any(miri,test),all(unix,target_os=\"linux\")))")
+                ),
+                ("both", "x.rs", 10, Some("feature=\"x\"")),
+                ("both", "always.rs", 10, Some("not(feature=\"x\")")),
+                (
+                    "twice",
+                    "u.rs",
+                    15,
+                    Some("any(unix,all(not(unix),windows))")
+                ),
+                ("twice", "", 15, Some("not(any(unix,windows))")),
+                ("first", "first.rs", 18, None),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_macro_rules_that_puts_a_cfg_on_every_item_it_is_given_says_so() {
+        let source = r#"macro_rules! cfg_has_atomic_u64 {
+    ($($item:item)*) => {
+        $(
+            #[cfg(target_has_atomic = "64")]
+            #[cfg_attr(docsrs, doc(cfg(target_has_atomic = "64")))]
+            $item
+        )*
+    }
+}
+macro_rules! cfg_two { ($($i:item)*) => { $( #[cfg(unix)] #[cfg(not(miri))] $i )* } }
+macro_rules! cfg_none { ($($item:item)*) => { $( #[doc(hidden)] $item )* } }
+macro_rules! cfg_other { ($($item:item)*) => { $( #[cfg(unix)] $other )* } }
+macro_rules! cfg_rules {
+    ($($item:item)*) => { $( #[cfg(unix)] $item )* };
+    (@x) => {};
+}
+macro_rules! cfg_tt { ($($item:tt)*) => { $( #[cfg(unix)] $item )* } }
+"#;
+        let out = extract(source.as_bytes());
+        let got: Vec<(&str, Option<&str>)> = out
+            .symbols
+            .iter()
+            .map(|s| (s.name.as_str(), s.value.as_deref()))
             .collect();
         assert_eq!(
             got,
             [
-                ("plain", "", 1),
-                ("written", "gen/a.rs", 3),
-                ("either", "", 7),
-                ("either", "fake.rs", 7),
-                ("either", "linux.rs", 7),
-                ("both", "always.rs", 10),
-                ("both", "x.rs", 10),
+                ("cfg_has_atomic_u64", Some("target_has_atomic=\"64\"")),
+                ("cfg_two", Some("all(unix,not(miri))")),
+                ("cfg_none", None),
+                ("cfg_other", None),
+                ("cfg_rules", None),
+                ("cfg_tt", None),
             ]
         );
+    }
+
+    #[test]
+    fn cfg_if_reads_each_block_under_the_condition_it_is_compiled_under() {
+        let source = r#"cfg_if::cfg_if! {
+    if #[cfg(windows)] {
+        mod win;
+        pub use win::*;
+    } else if #[cfg(any(unix, target_os = "wasi"))] {
+        mod unix;
+    } else if #[cfg(feature = "x")] {
+        mod x;
+    } else {
+        mod other;
+    }
+}
+cfg_if! {
+    if #[cfg(unix)] {
+        fn f() {}
+    }
+}
+cfg_if! { if unix { mod no; } }
+"#;
+        let out = extract(source.as_bytes());
+        let got: Vec<(u32, u32, &str)> = out
+            .branches
+            .iter()
+            .map(|b| (b.start, b.end, b.condition.as_str()))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                (3, 4, "windows"),
+                (6, 6, "all(not(windows),any(unix,target_os=\"wasi\"))"),
+                (
+                    8,
+                    8,
+                    "all(not(any(windows,any(unix,target_os=\"wasi\"))),feature=\"x\")"
+                ),
+                (
+                    10,
+                    10,
+                    "not(any(windows,any(unix,target_os=\"wasi\"),feature=\"x\"))"
+                ),
+                (15, 15, "unix"),
+            ]
+        );
+        let modules: Vec<&str> = out
+            .imports
+            .iter()
+            .filter_map(|i| i.from.as_deref())
+            .collect();
+        // Not cfg_if's syntax, the last is read as any macro's arguments.
+        assert_eq!(modules, ["win", "unix", "x", "other", "no"]);
+        assert_eq!(out.imports[1].path, "win");
     }
 
     #[test]

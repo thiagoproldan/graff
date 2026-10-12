@@ -1477,6 +1477,7 @@ impl<'s> Reader<'s> {
                         line: line(at),
                         from: self.from.clone(),
                         via: Some(text.clone()),
+                        condition: None,
                     });
                 }
                 self.out.calls.push(Call {
@@ -1636,6 +1637,7 @@ impl<'s> Reader<'s> {
             line: line(node),
             from: self.from.clone(),
             via,
+            condition: None,
         });
     }
 }

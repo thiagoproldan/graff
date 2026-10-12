@@ -432,25 +432,64 @@ fn libs<'p>(paths: impl Iterator<Item = &'p str>) -> HashSet<String> {
 }
 
 /// Whether the host's build leaves out what each of a file's branches
-/// holds: it or a branch around it is false there.
-fn left_out(branches: &[Branch], parents: &[Option<usize>], scripted: bool) -> Vec<bool> {
+/// holds: it or a branch around it is false there, as `value` reads a
+/// condition.
+fn left_out(
+    branches: &[Branch],
+    parents: &[Option<usize>],
+    value: impl Fn(&str) -> Option<bool>,
+) -> Vec<bool> {
     let mut out: Vec<bool> = Vec::with_capacity(branches.len());
     for (branch, parent) in branches.iter().zip(parents) {
         let around = parent.is_some_and(|p| out[p]);
-        out.push(around || cfg::value(&branch.condition, scripted) == Some(false));
+        out.push(around || value(&branch.condition) == Some(false));
     }
     out
 }
 
+/// The `cfg` each macro_rules macro of a crate applies to the items it is
+/// given, by the crate and its name: none for one that applies none, or
+/// two of a name that differ.
+fn applied<'a>(files: &'a [File], places: &Places) -> HashMap<(String, &'a str), Option<&'a str>> {
+    let mut applied: HashMap<(String, &str), Option<&str>> = HashMap::new();
+    for (f, file) in files.iter().enumerate() {
+        if file.language != Language::Rust {
+            continue;
+        }
+        for symbol in file
+            .extraction
+            .symbols
+            .iter()
+            .filter(|s| s.kind == Kind::Macro)
+        {
+            for (crate_name, _) in places.all(f) {
+                let value = symbol.value.as_deref();
+                applied
+                    .entry((crate_name.clone(), symbol.name.as_str()))
+                    .and_modify(|before| {
+                        if *before != value {
+                            *before = None;
+                        }
+                    })
+                    .or_insert(value);
+            }
+        }
+    }
+    applied
+}
+
 /// Whether the host's build leaves out each file: every `mod` item that
 /// loads it is in code it leaves out, `#[cfg(windows)] mod imp;` on Linux,
-/// or in a file it leaves out. A file no item loads is a crate's root, or
-/// one where Cargo's layout puts it: built.
+/// or in a file it leaves out, or loads it under a `cfg_attr` the host's
+/// build reads false, `#[cfg_attr(windows, path = "windows.rs")]`. A file
+/// no item loads is a crate's root, or one where Cargo's layout puts it:
+/// built.
 fn files_left_out(
     files: &[File],
     places: &Places,
     parents: &[Vec<Option<usize>>],
     left_out: &[Vec<bool>],
+    scripted: &[bool],
 ) -> Vec<bool> {
     fn visit(
         f: usize,
@@ -459,28 +498,29 @@ fn files_left_out(
         places: &Places,
         parents: &[Vec<Option<usize>>],
         left_out: &[Vec<bool>],
+        scripted: &[bool],
     ) -> bool {
         if let Some(known) = out[f] {
             return known;
         }
         // A file that loads itself, in turn, is built.
         out[f] = Some(false);
-        let loaders = places.loaders(f);
-        let mut all = !loaders.is_empty();
-        for d in loaders {
+        let mut all = !places.loaders(f).is_empty();
+        for (d, condition) in places.loads(f) {
             let (g, branches) = (d.file, &files[d.file].extraction.branches);
             let line = files[g].extraction.symbols[d.symbol].start;
             let here = around(branches, &parents[g], line)
                 .next()
-                .is_some_and(|b| left_out[g][b]);
-            all = all && (here || visit(g, out, files, places, parents, left_out));
+                .is_some_and(|b| left_out[g][b])
+                || condition.is_some_and(|c| cfg::value(c, scripted[g]) == Some(false));
+            all = all && (here || visit(g, out, files, places, parents, left_out, scripted));
         }
         out[f] = Some(all);
         all
     }
     let mut out = vec![None; files.len()];
     (0..files.len())
-        .map(|f| visit(f, &mut out, files, places, parents, left_out))
+        .map(|f| visit(f, &mut out, files, places, parents, left_out, scripted))
         .collect()
 }
 
@@ -558,14 +598,17 @@ fn relative(folder: &str, written: &str) -> Option<String> {
 /// or in a `cfg_attr` (each, as builds differ), else `x.rs` or `x/mod.rs` in
 /// its module's folder, and a file several items load is several modules.
 /// A file no item loads -- a crate's root, or one only a macro's tokens
-/// load, as libc's `cfg_if!` does -- is where Cargo's layout puts it
-/// (`place`). A file in another language is its own, with no module.
+/// load -- is where Cargo's layout puts it (`place`). A file in another
+/// language is its own, with no module.
 pub struct Places {
     /// Each file's crates and module paths, first the one its own code is
     /// read from: Cargo's layout's, if an item loads it there.
     scopes: Vec<Vec<Scope>>,
     /// The `mod` items that load each file.
     loaders: Vec<Vec<Definition>>,
+    /// For each of them, the condition under which it loads the file, as
+    /// `Import::condition`.
+    conditions: Vec<Vec<Option<String>>>,
     /// The other files each file is a module with: those a `cfg` or a
     /// `cfg_attr` loads in its stead, never built with it.
     alternatives: Vec<Vec<usize>>,
@@ -576,8 +619,8 @@ pub struct Places {
 type Load = (Definition, Vec<String>, String, usize);
 
 /// A `mod x;` item as its file has it: its symbol, the inline modules it is
-/// in, the paths its attributes write.
-type Declared<'a> = (usize, Vec<String>, Vec<&'a str>);
+/// in, the paths its attributes write, each with its condition.
+type Declared<'a> = (usize, Vec<String>, Vec<(&'a str, Option<&'a str>)>);
 
 impl Places {
     pub fn new(files: &[File]) -> Places {
@@ -619,8 +662,9 @@ impl Places {
                     let Some(s) = module(from) else {
                         continue;
                     };
+                    let path = (import.path.as_str(), import.condition.as_deref());
                     if let Some(item) = items.iter_mut().find(|item| item.0 == s) {
-                        item.2.push(&import.path);
+                        item.2.push(path);
                         continue;
                     }
                     // The inline modules it is in; none for an item in a
@@ -638,7 +682,7 @@ impl Places {
                         })
                         .collect();
                     if let Some(inline) = inline {
-                        items.push((s, inline, vec![&import.path]));
+                        items.push((s, inline, vec![path]));
                     }
                 }
                 items
@@ -653,13 +697,15 @@ impl Places {
                     by_attribute.extend(
                         paths
                             .iter()
-                            .filter(|path| !path.is_empty())
-                            .filter_map(|path| found(relative(folder(f), path))),
+                            .filter(|(path, _)| !path.is_empty())
+                            .filter_map(|(path, _)| found(relative(folder(f), path))),
                     );
                 }
             }
         }
         let mut loads: Vec<Vec<Load>> = vec![Vec::new(); files.len()];
+        // Every item that loads each file, with the condition it does under.
+        let mut loaded_by: Vec<Vec<(Definition, Option<String>)>> = vec![Vec::new(); files.len()];
         for (f, items) in items.into_iter().enumerate() {
             let name = files[f].path.rsplit('/').next().unwrap_or_default();
             let mod_rs = root(files[f].path) || name == "mod.rs" || by_attribute.contains(&f);
@@ -674,7 +720,7 @@ impl Places {
                 for part in &inline {
                     within = format!("{within}/{part}");
                 }
-                for path in paths {
+                for (path, condition) in paths {
                     let loaded = if path.is_empty() {
                         found(relative(&within, &format!("{module}.rs")))
                             .or_else(|| found(relative(&within, &format!("{module}/mod.rs"))))
@@ -683,22 +729,36 @@ impl Places {
                     } else {
                         found(relative(&within, path))
                     };
+                    let Some(loaded) = loaded else {
+                        continue;
+                    };
+                    let item = Definition { file: f, symbol: s };
+                    // Written twice, it loads the file when either holds.
+                    match loaded_by[loaded].iter_mut().find(|(d, _)| *d == item) {
+                        Some((_, before)) => {
+                            *before = match (before.take(), condition) {
+                                (Some(before), Some(condition)) => {
+                                    Some(format!("any({before},{condition})"))
+                                }
+                                _ => None,
+                            }
+                        }
+                        None => loaded_by[loaded].push((item, condition.map(String::from))),
+                    }
                     // Declared again under another cfg, it is the same module.
-                    if let Some(loaded) = loaded
-                        && !loads[f]
-                            .iter()
-                            .any(|load| load.3 == loaded && load.1 == inline && load.2 == module)
+                    if !loads[f]
+                        .iter()
+                        .any(|load| load.3 == loaded && load.1 == inline && load.2 == module)
                     {
-                        let item = Definition { file: f, symbol: s };
                         loads[f].push((item, inline.clone(), module.clone(), loaded));
                     }
                 }
             }
         }
-        let mut loaders: Vec<Vec<Definition>> = vec![Vec::new(); files.len()];
-        for load in loads.iter().flatten() {
-            loaders[load.3].push(load.0);
-        }
+        let (loaders, conditions): (Vec<Vec<_>>, Vec<Vec<_>>) = loaded_by
+            .into_iter()
+            .map(|items| items.into_iter().unzip())
+            .unzip();
         // From every crate's root at once, then from each file no item
         // loads, then from what is left, which a cycle loads.
         let mut scopes: Vec<Vec<Scope>> = files.iter().map(|_| Vec::new()).collect();
@@ -750,6 +810,7 @@ impl Places {
         Places {
             scopes,
             loaders,
+            conditions,
             alternatives,
         }
     }
@@ -794,6 +855,15 @@ impl Places {
     /// The `mod` items that load a file: none for a crate's root.
     pub fn loaders(&self, file: usize) -> &[Definition] {
         &self.loaders[file]
+    }
+
+    /// The `mod` items that load a file, each with the condition under
+    /// which it does, if not every build that reaches it.
+    pub fn loads(&self, file: usize) -> impl Iterator<Item = (Definition, Option<&str>)> {
+        self.loaders[file]
+            .iter()
+            .copied()
+            .zip(self.conditions[file].iter().map(Option::as_deref))
     }
 
     /// The files a file is a module with, which a build never holds with it.
@@ -862,6 +932,9 @@ struct Index<'a> {
     left_out: Vec<Vec<bool>>,
     /// Whether the host's build leaves out each file.
     file_left_out: Vec<bool>,
+    /// Whether the host's build leaves out each file for another it is a
+    /// module with: what it defines is not the module's there.
+    superseded: Vec<bool>,
     /// Whether the lookups under way are of code the host's build leaves
     /// out, which another build compiles: every use item counts there.
     elsewhere: Cell<bool>,
@@ -923,6 +996,7 @@ impl<'a> Index<'a> {
             parents: Vec::new(),
             left_out: Vec::new(),
             file_left_out: Vec::new(),
+            superseded: Vec::new(),
             elsewhere: Cell::new(false),
             touched: Cell::new(false),
         };
@@ -930,13 +1004,40 @@ impl<'a> Index<'a> {
             .iter()
             .map(|f| nesting(&f.extraction.branches))
             .collect();
-        index.left_out = files
-            .iter()
-            .zip(&index.parents)
-            .zip(scripted(files))
-            .map(|((f, parents), scripted)| left_out(&f.extraction.branches, parents, scripted))
+        let scripted = scripted(files);
+        let applied = applied(files, &index.places);
+        index.left_out = (0..files.len())
+            .map(|f| {
+                let crate_name = &index.places.of(f).0;
+                let rust = files[f].language == Language::Rust;
+                // `name!`: the items a macro of the crate is given.
+                let value = |condition: &str| match condition.strip_suffix('!').filter(|_| rust) {
+                    Some(name) => {
+                        let applied = applied.get(&(crate_name.clone(), name))?;
+                        cfg::value(applied.as_ref()?, scripted[f])
+                    }
+                    None => cfg::value(condition, scripted[f]),
+                };
+                left_out(&files[f].extraction.branches, &index.parents[f], value)
+            })
             .collect();
-        index.file_left_out = files_left_out(files, &index.places, &index.parents, &index.left_out);
+        index.file_left_out = files_left_out(
+            files,
+            &index.places,
+            &index.parents,
+            &index.left_out,
+            &scripted,
+        );
+        index.superseded = (0..files.len())
+            .map(|f| {
+                index.file_left_out[f]
+                    && index
+                        .places
+                        .alternatives(f)
+                        .iter()
+                        .any(|&g| !index.file_left_out[g])
+            })
+            .collect();
         let mut waiting = Vec::new();
         for (f, file) in files.iter().enumerate() {
             let inline: HashMap<String, &Symbol> = file
@@ -1326,6 +1427,24 @@ impl<'a> Index<'a> {
             .collect()
     }
 
+    /// Of a module's definitions, those the build the lookups are read
+    /// under compiles: for the host's, none of a file it leaves out for
+    /// another the module is, as `#[cfg_attr(windows, path = "windows.rs")]`
+    /// leaves windows.rs out on Linux.
+    fn built(&self, found: Vec<Definition>) -> Vec<Definition> {
+        if found.iter().all(|d| !self.superseded[d.file]) {
+            return found;
+        }
+        self.touched.set(true);
+        if self.elsewhere.get() {
+            return found;
+        }
+        found
+            .into_iter()
+            .filter(|d| !self.superseded[d.file])
+            .collect()
+    }
+
     /// A name as the code in `from` sees it: the items of the functions it
     /// is in, then its module's.
     fn visible(
@@ -1349,7 +1468,7 @@ impl<'a> Index<'a> {
     /// A name as a module sees it: its items, its use items, its globs.
     fn in_module(&self, file: usize, scope: &Scope, name: &str, depth: usize) -> Found {
         if let Some(found) = self.items.get(scope).and_then(|items| items.get(name)) {
-            let found = self.own(file, found);
+            let found = self.built(self.own(file, found));
             if !found.is_empty() {
                 return Some((found, Rule::Module));
             }
@@ -2360,7 +2479,7 @@ fn render() {}
             [
                 "src/lib.rs | by ",
                 // Declared again under another cfg, it is the same module.
-                "src/real.rs |real by src/lib.rs:real",
+                "src/real.rs |real by src/lib.rs:real src/lib.rs:real#2",
                 "src/fake.rs |real by src/lib.rs:real",
                 "tests/a.rs :tests/a| by ",
                 "tests/b.rs :tests/b| by ",
@@ -2409,11 +2528,15 @@ fn render() {}
             ),
             ("tests/common/mod.rs", "pub fn helper() {}\n"),
         ]);
-        // From outside, which file the module is hangs on the build.
-        assert_eq!(
-            reaches(&edges, "src/lib.rs:8", "open", "call path"),
+        // From outside, the module is the file the host's build loads.
+        let live = if cfg!(unix) {
+            "src/unix.rs open (path)"
+        } else if cfg!(windows) {
+            "src/windows.rs open (path)"
+        } else {
             "ambiguous, 2"
-        );
+        };
+        assert_eq!(reaches(&edges, "src/lib.rs:8", "open", "call path"), live);
         assert_eq!(
             reaches(&edges, "src/unix.rs:2", "close", "call free"),
             "src/unix.rs close (module)"
@@ -2530,6 +2653,101 @@ fn render() {}
         assert_eq!(
             reaches(&edges, "src/imp/deeper.rs:2", "open", "call path"),
             "src/win.rs open (path)"
+        );
+    }
+
+    #[test]
+    fn a_file_a_cfg_attr_path_loads_is_not_the_module_where_the_host_loads_another() {
+        // mio: `selector` is epoll.rs on Linux, poll.rs elsewhere, and only
+        // poll.rs defines `Waker`, which epoll.rs brings in.
+        let live = if cfg!(windows) {
+            "src/sys/selector/poll.rs"
+        } else {
+            "src/sys/waker.rs"
+        };
+        let waker = "pub struct Waker;\nimpl Waker {\n    pub fn new() -> Waker {\n        Waker\n    }\n}\n";
+        let edges = edges_of(&[
+            (
+                "src/lib.rs",
+                "mod sys;\npub fn f() -> sys::Waker {\n    sys::Waker::new()\n}\npub fn g() {\n    sys::only::h();\n}\n",
+            ),
+            (
+                "src/sys/mod.rs",
+                "#[cfg_attr(unix, path = \"selector/epoll.rs\")]\n#[cfg_attr(windows, path = \"selector/poll.rs\")]\nmod selector;\npub use self::selector::*;\nmod waker;\n#[cfg_attr(target_os = \"none\", path = \"only/a.rs\")]\npub mod only;\n",
+            ),
+            (
+                "src/sys/selector/epoll.rs",
+                "pub use crate::sys::waker::Waker;\n",
+            ),
+            ("src/sys/selector/poll.rs", waker),
+            ("src/sys/waker.rs", waker),
+            ("src/sys/only/a.rs", "pub fn h() {}\n"),
+        ]);
+        assert_eq!(
+            reaches(&edges, "src/lib.rs:2", "Waker", "reference type"),
+            format!("{live} Waker (path)")
+        );
+        // A module every path of which the host leaves out is still the one
+        // file a build may load.
+        assert_eq!(
+            reaches(&edges, "src/lib.rs:6", "h", "call path"),
+            "src/sys/only/a.rs h (path)"
+        );
+    }
+
+    #[test]
+    fn items_a_crates_macro_puts_under_a_cfg_are_branches_of_it() {
+        // tokio: `cfg_has_atomic_u64! { mod imp; }` loads the native file
+        // where the target has 64-bit atomics, the one with a mutex elsewhere.
+        let live = if cfg!(unix) {
+            "src/real.rs"
+        } else {
+            "src/mutex.rs"
+        };
+        let edges = edges_of(&[
+            (
+                "src/lib.rs",
+                "#[macro_use]\nmod macros;\nmod atomic;\nmod real;\npub fn f(b: atomic::Big) {}\n",
+            ),
+            (
+                "src/macros.rs",
+                "macro_rules! cfg_unix {\n    ($($item:item)*) => {\n        $(\n            #[cfg(unix)]\n            $item\n        )*\n    }\n}\nmacro_rules! cfg_not_unix {\n    ($($item:item)*) => { $( #[cfg(not(unix))] $item )* }\n}\n",
+            ),
+            (
+                "src/atomic.rs",
+                "cfg_unix! {\n    #[path = \"native.rs\"]\n    mod imp;\n}\ncfg_not_unix! {\n    #[path = \"mutex.rs\"]\n    mod imp;\n}\npub use imp::Big;\n",
+            ),
+            ("src/native.rs", "pub use crate::real::Big;\n"),
+            ("src/mutex.rs", "pub struct Big;\n"),
+            ("src/real.rs", "pub struct Big;\n"),
+        ]);
+        assert!(
+            reaches(&edges, "src/lib.rs:5", "Big", "reference type").starts_with(live),
+            "{edges:?}"
+        );
+    }
+
+    #[test]
+    fn cfg_if_loads_the_module_of_the_block_the_host_compiles() {
+        let live = if cfg!(windows) {
+            "src/win.rs"
+        } else if cfg!(unix) {
+            "src/unix.rs"
+        } else {
+            "src/other.rs"
+        };
+        let edges = edges_of(&[
+            (
+                "src/lib.rs",
+                "cfg_if::cfg_if! {\n    if #[cfg(windows)] {\n        mod win;\n        pub use win::*;\n    } else if #[cfg(unix)] {\n        mod unix;\n        pub use unix::*;\n    } else {\n        mod other;\n        pub use other::*;\n    }\n}\npub fn f() {\n    open();\n}\n",
+            ),
+            ("src/win.rs", "pub fn open() {}\n"),
+            ("src/unix.rs", "pub fn open() {}\n"),
+            ("src/other.rs", "pub fn open() {}\n"),
+        ]);
+        assert_eq!(
+            reaches(&edges, "src/lib.rs:14", "open", "call free"),
+            format!("{live} open (glob)")
         );
     }
 

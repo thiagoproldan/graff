@@ -27,7 +27,7 @@ use crate::lang::Language;
 
 /// Bumped whenever the tables change: an index of another version is dropped
 /// and built again, as a cache may be.
-const SCHEMA: i64 = 10;
+const SCHEMA: i64 = 11;
 
 /// A file written this close before graff saw it may be written again within
 /// the same tick of the file system's clock and keep its stat, so it is hashed
@@ -100,7 +100,8 @@ const TABLES: &str = "
         public INTEGER NOT NULL,
         line INTEGER NOT NULL,
         importer TEXT,
-        via TEXT
+        via TEXT,
+        condition TEXT
     );
     CREATE INDEX imports_by_content ON imports (content);
     CREATE TABLE branches (
@@ -683,7 +684,7 @@ impl Store {
             }
         }
         let mut query = self.connection.prepare(
-            "SELECT content, path, alias, glob, public, line, importer, via FROM imports
+            "SELECT content, path, alias, glob, public, line, importer, via, condition FROM imports
              WHERE content IN (SELECT content FROM files WHERE worktree = ?1) ORDER BY rowid",
         )?;
         let mut rows = query.query([id])?;
@@ -696,6 +697,7 @@ impl Store {
                 line: row.get(5)?,
                 from: row.get(6)?,
                 via: row.get(7)?,
+                condition: row.get(8)?,
             };
             for &f in holders.get(&row.get(0)?).into_iter().flatten() {
                 worktree.files[f].1.imports.push(import.clone());
@@ -1008,7 +1010,7 @@ impl<'t> Inserts<'t> {
             reference: transaction
                 .prepare("INSERT INTO refs VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)")?,
             import: transaction
-                .prepare("INSERT INTO imports VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)")?,
+                .prepare("INSERT INTO imports VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)")?,
             branch: transaction.prepare("INSERT INTO branches VALUES (?1, ?2, ?3, ?4)")?,
         })
     }
@@ -1072,7 +1074,15 @@ impl<'t> Inserts<'t> {
         }
         for i in &extraction.imports {
             self.import.execute(params![
-                id, i.path, i.alias, i.glob, i.public, i.line, i.from, i.via
+                id,
+                i.path,
+                i.alias,
+                i.glob,
+                i.public,
+                i.line,
+                i.from,
+                i.via,
+                i.condition
             ])?;
         }
         for b in &extraction.branches {

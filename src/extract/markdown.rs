@@ -455,6 +455,7 @@ impl Read {
             line,
             from: from(line),
             via: Some(via.to_string()),
+            condition: None,
         };
         for (line, destination) in &self.links {
             out.imports.push(import(*line, destination, "link"));

@@ -1107,6 +1107,7 @@ impl<'s, 't> Reader<'s, 't> {
             line: line(node),
             from: None,
             via: Some(via.to_string()),
+            condition: None,
         });
     }
 

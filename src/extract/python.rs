@@ -1646,6 +1646,7 @@ impl<'s, 't> Reader<'s, 't> {
                 line: line(argument),
                 from: self.from(),
                 via: Some("class".to_string()),
+                condition: None,
             });
         }
     }
@@ -1879,6 +1880,7 @@ impl<'s, 't> Reader<'s, 't> {
                 line: line(argument),
                 from: self.from(),
                 via: Some(via.to_string()),
+                condition: None,
             });
         }
     }
@@ -2132,6 +2134,7 @@ impl<'s, 't> Reader<'s, 't> {
                         line: line(child),
                         from: from.clone(),
                         via: Some("from".to_string()),
+                        condition: None,
                     });
                     continue;
                 }
@@ -2152,6 +2155,7 @@ impl<'s, 't> Reader<'s, 't> {
                 line: line(child),
                 from: from.clone(),
                 via: Some(via.to_string()),
+                condition: None,
             });
         }
         self.out.imports.extend(imports);

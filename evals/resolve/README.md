@@ -108,8 +108,8 @@ the next definition in its file, and stops unless that scores differently.
   their modules, a test's `mod common;` in each test; a file loaded in
   another's stead under another cfg, `unix.rs` and `windows.rs` for one
   `mod imp;`, sees none of the other's definitions. A file no item loads, a
-  crate's root or one only a macro's tokens declare (libc's `cfg_if!`), is
-  where Cargo's layout puts it.
+  crate's root or one only a macro's tokens declare, is where Cargo's
+  layout puts it.
 - A use item under a `#[cfg(..)]` the build leaves out brings in nothing,
   nor one in an item or a module body under one, `#![cfg(..)]` included
   (task 170): a named import the build drops no longer shadows the glob
@@ -125,9 +125,23 @@ the next definition in its file, and stops unless that scores differently.
   `#[cfg(windows)] fn f() { .. }` on Linux, or a file only such code
   loads (`#[cfg(windows)] mod imp;`, a crate whose root is under
   `#![cfg(windows)]`), every use item counts, as before: graff does not
-  tell which build compiles it. A
-  `cfg` that a macro's expansion applies, as tokio's
-  `cfg_has_atomic_u64! { .. }`, is not read, nor `cfg_if!`'s conditions.
+  tell which build compiles it.
+- Of the files that are one module, those the host's build loads are it
+  (tasks 205 and 240): a definition of a file the host's build leaves out
+  is not the module's where it loads another, as mio's
+  `#[cfg_attr(target_os = "linux", path = "selector/epoll.rs")]` on
+  Linux leaves poll.rs, kqueue.rs and event_ports.rs out of `selector`.
+  rustc reads a `mod` item's first `path` attribute a build keeps, so a
+  `cfg_attr`'s path is loaded when its condition holds and none before it
+  does. Where the host's build leaves out every file, each is the module,
+  as before.
+- A `cfg` a macro of the crate applies is read (task 240): a
+  `macro_rules!` whose one rule is `($($item:item)*) => { $( #[cfg(P)]
+  $item )* }`, tokio's `cfg_has_atomic_u64!`, puts what its invocations
+  hold under P. `cfg_if! { if #[cfg(a)] { .. } else if #[cfg(b)] { .. }
+  else { .. } }` holds its blocks' items under `a`, `all(not(a),b)` and
+  `not(any(a,b))`, its `mod` items loading their files as any other's
+  (libc's).
 
 ## What the first run found
 
@@ -290,3 +304,65 @@ registry.txt):
   Extraction of tokio's 555 files by d0e05b7's build and this one, 1,441
   against 1,475 ms. Branches kept: rustix 2,545 (119 KB of conditions),
   tokio 876, windows-sys 0.61.2 1,038, glam 69, semver 5.
+
+## The files the host's build loads, and the cfgs macros apply (tasks 205 and 240)
+
+Task 170 left two kinds of cfg unread: which of a `mod` item's
+`cfg_attr` paths a build loads, and a cfg a macro puts on what it is
+given. The extractor now keeps each `mod` item's path with the condition
+it is loaded under (`Import::condition`; rustc reads the first `path`
+attribute a build keeps), a macro_rules' applied cfg in its symbol's
+`value`, a branch `name!` over each macro call whose arguments are read
+as items, and each `cfg_if!` block as a branch under the condition it is
+compiled under, its items read as items. The resolver reads `name!` as
+the crate's macro of that name applies, and a file the host's build
+leaves out, while it loads another file of the same module, is not that
+module's: its definitions are not found there. registry.py, 23eb682's
+build against this one, on the fourteen crates and libc 0.2.190:
+
+| crate         | precision, 23eb682 | recall | precision, tasks 205/240 | recall | wrong only in tasks 205/240 |
+| ------------- | ------------------ | ------ | ------------------------ | ------ | --------------------------- |
+| libc 0.2.190  | 0.514              | 0.432  | 0.974                    | 0.804  | 2                           |
+| tokio 1.53.1  | 0.932              | 0.801  | 0.934                    | 0.801  | 0                           |
+| mio 1.2.2     | 0.981              | 0.796  | 0.882                    | 0.796  | 33                          |
+| the other 12  | the same           |        | the same                 |        | 0                           |
+
+- **libc**: its modules are loaded by `mod` items inside `cfg_if!`, which
+  graff did not read: every file was where Cargo's layout puts it, and
+  `crate::uid_t` reached any of the platforms' definitions. Now the
+  Linux build's modules are the crate's on Linux: 1,497 more right
+  edges. The 2 new wrong ones are `statvfs` in src/unix/mod.rs:1674 and
+  :1677, which reach src/new/glibc/io/sys/statvfs.rs where rust-analyzer
+  has src/new/glibc/sysdeps/unix/linux/bits/statvfs.rs.
+- **tokio's 2** wrong `AtomicU64` edges of task 134 are right:
+  `cfg_not_has_atomic_u64!` puts `not(target_has_atomic = "64")` on its
+  `mod imp;`, so on x86_64 atomic_u64_as_mutex.rs is not `imp`, and the
+  name is std's, which atomic_u64_native.rs brings in.
+- **mio's 33** went from ambiguous to src/sys/unix/selector/epoll.rs's,
+  as task 205 asks: on Linux epoll.rs is `selector`. rust-analyzer has
+  src/sys/shell/selector.rs's, as mio's default features leave `os-poll`
+  off; graff does not read features, and `pub use self::unix::*;`, under
+  `cfg_os_poll!`, is the first glob of src/sys/mod.rs. The same edges
+  are right for a build with `os-poll` on Linux. (rust-analyzer's
+  `--config-path` with `cargo.features` set to `all` still gave the
+  shell's: offline, `cargo metadata` fails on mio's dev-dependencies and
+  rust-analyzer falls back to `--no-deps`.)
+- **Every crate of the registry**, 725, examples/resolve over each one's
+  .rs and .md files: 688 the same byte for byte, ekko's and graff's too.
+  In 37 crates 8,232 sites changed: 5,340 resolved to another definition
+  (libc's four versions 5,302), 1,798 resolved to external (rustix's
+  three versions 1,519, `c::c_int` and its kin no longer tied to the
+  WinSock types of src/backend/libc/winsock_c.rs; socket2 155, its
+  src/sys/windows.rs's), 527 ambiguous to resolved, 299 resolved to
+  ambiguous (libc 291, as `crate::uid_t`, tied before to the one of
+  src/fuchsia/mod.rs and now among the 2 or 3 files left), 136
+  external to resolved (tokio 107: Windows-only code under
+  `cfg_windows!`, which the host leaves out, now reads every use item,
+  as task 170 reads such code), and 67 sites another extraction of
+  `cfg_if!` read or left.
+- **Cost**, the builds interleaved, seven runs each, on AC under the
+  balanced profile (EPP balance_power, boost off, load 15): resolution
+  of libc, median 1,513 against 1,388 ms; rustix 257 against 261 ms;
+  tokio 246 against 249 ms. Extraction, five runs each at load 6:
+  tokio 1,450 against 1,449 ms; libc's runs spread from 1.7 to 4.6 s on
+  both builds, the load of other sessions.

@@ -16,7 +16,7 @@ use crate::lang::Language;
 
 /// Bumped whenever what an extractor produces changes, so that results kept
 /// from an older extractor are read again rather than trusted.
-pub const VERSION: u32 = 18;
+pub const VERSION: u32 = 19;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Extraction {
@@ -84,7 +84,10 @@ pub struct Symbol {
     /// `64` for `#define TS_PTR_SIZE 64`, `(A + 1)`. None for any other
     /// macro. Python: the name or the path a variable of a module or a class
     /// is assigned, where that is the one value its scope gives it: `Turtle`
-    /// for `Pen = Turtle`, `tur.Turtle`. None in other languages.
+    /// for `Pen = Turtle`, `tur.Turtle`. Rust: the `cfg` predicate a
+    /// macro_rules puts on every item it is given, unspaced,
+    /// `target_has_atomic="64"` for tokio's `cfg_has_atomic_u64!`. None in
+    /// other languages.
     #[serde(default)]
     pub value: Option<String>,
     /// Python: whether the class or the module a variable is of declares it
@@ -270,18 +273,27 @@ pub struct Import {
     /// its own file; `mention` for a path a code span or the prose writes,
     /// with a `:line` or a `:Name` after it.
     pub via: Option<String>,
+    /// Rust: for a file a `mod x;` item loads, the `cfg` predicate under
+    /// which a build loads it rather than the item's other paths, unspaced
+    /// as a branch's: a `cfg_attr`'s, once none before it holds,
+    /// `all(not(unix),windows)`; none if every build that reaches it does.
+    /// None in other languages.
+    #[serde(default)]
+    pub condition: Option<String>,
 }
 
 /// A branch of a C conditional: `#if`, `#ifdef`, `#ifndef`, `#elif`,
 /// `#elifdef`, `#elifndef` or `#else`, to the next directive of its
 /// conditional. In Python, the block of an `if`, an `elif` or an `else`.
 /// In Rust, an item under `#[cfg(..)]`, or the file or module body under
-/// `#![cfg(..)]`, where a build on some host may leave it out.
+/// `#![cfg(..)]`, where a build on some host may leave it out, a `cfg_if!`
+/// block, or a macro call whose arguments are read as items.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Branch {
     /// First and last line, 1-based and inclusive: past its directive's
     /// lines, to the line before the next directive of its conditional; in
-    /// Python, its block's; in Rust, the item's, past its attributes.
+    /// Python, its block's; in Rust, the item's, past its attributes, and a
+    /// `cfg_if!` block's inside its braces.
     pub start: u32,
     pub end: u32,
     /// The condition under which a compiler reads it, as the directives
@@ -291,7 +303,10 @@ pub struct Branch {
     /// it runs, on one line: `not (os.name == "nt") and (os.name == "posix")`
     /// for the `elif os.name == "posix":` after an `if os.name == "nt":`.
     /// In Rust, the `cfg` predicate without spaces outside its strings, an
-    /// item's several in an `all`: `all(unix,not(target_os="linux"))`.
+    /// item's several in an `all`: `all(unix,not(target_os="linux"))`; for
+    /// a `cfg_if!` block, past those before it, `all(not(unix),windows)`;
+    /// for what a macro call's arguments hold, the macro's name and a `!`,
+    /// `cfg_rt!`, whose definition's `value` is the predicate.
     pub condition: String,
 }
 

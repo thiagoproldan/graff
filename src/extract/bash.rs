@@ -1058,6 +1058,7 @@ impl<'s, 't> Reader<'s, 't> {
             line: line(node),
             from: self.from(node),
             via: via.map(String::from),
+            condition: None,
         });
     }
 

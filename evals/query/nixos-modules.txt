@@ -1,5 +1,4 @@
-graff d0e05b7-dirty, nm nixpkgs-c59305b, 2630 files graff reads, 108 of them Markdown; 34 it does not
+graff 2d6054b-dirty, nm nixpkgs-c59305b, 2630 files graff reads, 108 of them Markdown; 34 it does not
 sample: 300 of 33725 definitions, seed 1
 control, each answer against the next definition's edges: 0 of 300 the same
-299 of 300 definitions with the same edges, 1167 edges, 0 of them from Markdown; 1 different, 0 refused
-different modules/tasks/network-interfaces-scripted.nix parseAddr.ipv4 only full: [('modules/tasks/network-interfaces-scripted.nix', 'call', 78), ('modules/tasks/network-interfaces-scripted.nix', 'call', 79)] only graff: []
+300 of 300 definitions with the same edges, 1167 edges, 0 of them from Markdown; 0 different, 0 refused

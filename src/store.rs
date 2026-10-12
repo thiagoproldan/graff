@@ -374,7 +374,8 @@ pub struct Worktree {
 /// Which calls and references `Store::sites` reads.
 pub enum Sites<'a> {
     /// Those named one of these names, or whose path goes through one: the
-    /// uses of definitions so named.
+    /// uses of definitions so named. Those a Nix name interpolated, as
+    /// `parseAddr.${v}` is, come with them: `${v}` may stand for any name.
     Named(&'a [&'a str]),
     /// Those in the definition of this qualified name, in this file.
     In { path: &'a str, from: &'a str },
@@ -751,7 +752,7 @@ impl Store {
                 );
                 (
                     format!(
-                        "content IN (SELECT content FROM files WHERE worktree = ?1) AND (name IN ({listed}) OR through(path))"
+                        "content IN (SELECT content FROM files WHERE worktree = ?1) AND (name IN ({listed}) OR through(path) OR instr(name, '${{') > 0 OR instr(path, '${{') > 0)"
                     ),
                     values,
                 )

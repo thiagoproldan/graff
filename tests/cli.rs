@@ -850,6 +850,20 @@ flake.nix:2 input inputs.nixpkgs: 2 callers, 0 possible
 }
 
 #[test]
+fn nix_callers_of_a_let_bound_members_include_a_read_through_an_interpolated_name() {
+    let demo = Demo::of(
+        "nix-through",
+        &[(
+            "net.nix",
+            "{ lib, ... }:\nlet\n  parseAddr.ipv4 = a: a;\n  parseAddr.ipv6 = a: a;\n  inSubnet = v: addr: parseAddr.${v} addr;\nin\n{\n  options.net.addr = lib.mkOption { };\n}\n",
+        )],
+    );
+    let out = demo.ask(&["callers", "net.nix:3"]);
+    assert!(out.contains("net.nix:5"), "{out}");
+    assert!(!out.contains("0 callers, 0 possible"), "{out}");
+}
+
+#[test]
 fn nix_outline_callees_and_impact() {
     let demo = Demo::of("nix-outline", NIX_DEMO);
     assert_eq!(

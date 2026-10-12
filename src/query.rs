@@ -722,20 +722,24 @@ pub fn map(
         for (n, d) in held {
             let symbol = code.symbol(d);
             let signature = code.signature_in(d, &file);
-            let shown = match &signature {
-                Some(signature) => signature.clone(),
-                None => format!("{} {}", symbol.kind.name(), symbol.qualified),
+            // A line in the form the answer is written in, the other left
+            // empty: a map's lines are every definition the walk reaches,
+            // and the other form would cost as much as the answer.
+            let (text, item) = if options.json {
+                let item = json!({
+                    "definition": code.json(d), "signature": signature,
+                    "rank": (shares[graph.node(d)] * 1e6).round() / 1e6,
+                });
+                (String::new(), item)
+            } else {
+                let shown = match &signature {
+                    Some(signature) => signature,
+                    None => &format!("{} {}", symbol.kind.name(), symbol.qualified),
+                };
+                let text = format!("  {} {shown}", span(symbol.start, symbol.end));
+                (text, Value::Null)
             };
-            let item = json!({
-                "definition": code.json(d), "signature": signature,
-                "rank": (shares[graph.node(d)] * 1e6).round() / 1e6,
-            });
-            lines.push(Line::new(
-                format!("  {} {shown}", span(symbol.start, symbol.end)),
-                item,
-                rank(5, n),
-                "definitions",
-            ));
+            lines.push(Line::new(text, item, rank(5, n), "definitions"));
         }
     }
     let asked = if focus.is_empty() {

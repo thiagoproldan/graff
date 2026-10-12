@@ -21,7 +21,7 @@ use serde_json::{Value, json};
 
 use crate::extract::{CallKind, Kind, RefKind, Symbol};
 use crate::lang::Language;
-use crate::resolve::nix::Instances;
+use crate::resolve::nix::{Instances, Placement};
 use crate::resolve::{self, Definition, Edge, File, Library, Resolution, Use};
 use crate::search;
 use crate::store::{self, Sites, Store, Worktree};
@@ -637,7 +637,10 @@ struct Code<'s> {
     written: HashMap<Definition, resolve::nix::Written>,
     /// Where the Nix options are, found from the uses that place them, which
     /// a question's sites may leave out: once, before the first edges.
-    placement: Option<resolve::nix::Placement>,
+    placement: Option<Placement>,
+    /// What the instances and the placement are kept under: the build and
+    /// the Nix files.
+    key: Option<String>,
 }
 
 /// The build of graff that runs, by its executable's path, size and time of
@@ -782,6 +785,7 @@ impl<'s> Code<'s> {
             places,
             written,
             placement: None,
+            key,
         })
     }
 
@@ -789,8 +793,7 @@ impl<'s> Code<'s> {
     /// item, and of the types their paths go through.
     fn edges(&mut self, which: Sites) -> Result<Vec<Edge>, Error> {
         if self.placement.is_none() && self.worktree.languages.contains(&Language::Nix) {
-            self.store.sites(&mut self.worktree, Sites::Bound)?;
-            self.placement = Some(resolve::nix::place(&files(&self.worktree)));
+            self.placement = Some(self.place()?);
         }
         self.store.sites(&mut self.worktree, which)?;
         let files = files(&self.worktree);
@@ -804,6 +807,33 @@ impl<'s> Code<'s> {
             &libraries,
             self.placement.as_ref(),
         ))
+    }
+
+    /// Where the Nix options are: as the index kept it with the instances,
+    /// else placed from the uses that place them, and kept.
+    fn place(&mut self) -> Result<Placement, Error> {
+        let kept = match &self.key {
+            Some(key) => self.store.placement(&self.worktree, key)?,
+            None => None,
+        };
+        let paths: Vec<&str> = self
+            .worktree
+            .files
+            .iter()
+            .map(|(p, _)| p.as_str())
+            .collect();
+        if let Some(placement) = kept.and_then(|kept| Placement::from_kept(&kept, &paths)) {
+            return Ok(placement);
+        }
+        self.store.sites(&mut self.worktree, Sites::Bound)?;
+        let files = files(&self.worktree);
+        let placement = resolve::nix::place(&files);
+        if let Some(key) = &self.key {
+            let paths: Vec<&str> = files.iter().map(|file| file.path).collect();
+            self.store
+                .keep_placement(&self.worktree, key, &placement.kept(&paths))?;
+        }
+        Ok(placement)
     }
 
     /// The edges that may reach some definitions: those of the uses named

@@ -27,7 +27,7 @@ use crate::lang::Language;
 
 /// Bumped whenever the tables change: an index of another version is dropped
 /// and built again, as a cache may be.
-const SCHEMA: i64 = 9;
+const SCHEMA: i64 = 10;
 
 /// A file written this close before graff saw it may be written again within
 /// the same tick of the file system's clock and keep its stat, so it is hashed
@@ -129,11 +129,13 @@ const TABLES: &str = "
     ) WITHOUT ROWID;
     CREATE INDEX files_by_content ON files (content);
     -- What instantiating a worktree's Nix helpers made, kept under a key
-    -- that says what it was made from.
+    -- that says what it was made from, and where the options are once a
+    -- question has placed them from it.
     CREATE TABLE instances (
         worktree INTEGER PRIMARY KEY REFERENCES worktrees (id) ON DELETE CASCADE,
         key TEXT NOT NULL,
-        made TEXT NOT NULL
+        made TEXT NOT NULL,
+        placement TEXT
     );
 ";
 
@@ -844,7 +846,8 @@ impl Store {
     }
 
     /// Keeps what instantiating the worktree's Nix helpers made, under a key
-    /// that says what it was made from, in place of what was kept before.
+    /// that says what it was made from, in place of what was kept before,
+    /// the placement of its options with it.
     pub fn keep_instances(&self, worktree: &Worktree, key: &str, made: &str) -> Result<(), Error> {
         // A worktree no check has recorded holds no file graff reads.
         if worktree.id < 0 {
@@ -852,8 +855,37 @@ impl Store {
         }
         self.connection.execute(
             "INSERT INTO instances (worktree, key, made) VALUES (?1, ?2, ?3)
-             ON CONFLICT (worktree) DO UPDATE SET key = excluded.key, made = excluded.made",
+             ON CONFLICT (worktree) DO UPDATE SET key = excluded.key, made = excluded.made, placement = NULL",
             params![worktree.id, key, made],
+        )?;
+        Ok(())
+    }
+
+    /// Where the worktree's Nix options are, as `keep_placement` kept it,
+    /// when it was kept under this key.
+    pub fn placement(&self, worktree: &Worktree, key: &str) -> Result<Option<String>, Error> {
+        Ok(self
+            .connection
+            .query_row(
+                "SELECT placement FROM instances WHERE worktree = ?1 AND key = ?2",
+                params![worktree.id, key],
+                |row| row.get(0),
+            )
+            .optional()?
+            .flatten())
+    }
+
+    /// Keeps where the worktree's Nix options are with the instances kept
+    /// under this key, which it was placed from; under another, nowhere.
+    pub fn keep_placement(
+        &self,
+        worktree: &Worktree,
+        key: &str,
+        placed: &str,
+    ) -> Result<(), Error> {
+        self.connection.execute(
+            "UPDATE instances SET placement = ?3 WHERE worktree = ?1 AND key = ?2",
+            params![worktree.id, key, placed],
         )?;
         Ok(())
     }
@@ -1280,6 +1312,41 @@ mod tests {
         fs::remove_dir_all(&first).unwrap();
         store.check(&second).unwrap();
         assert_eq!(count(&store, "SELECT count(*) FROM instances"), 0);
+    }
+
+    #[test]
+    fn a_placement_is_kept_with_the_instances_of_its_key_and_goes_with_them() {
+        let folder = Folder::new();
+        let root = repository(folder.0.join("repo"));
+        let mut store = Store::open(&folder.0.join("index.db")).unwrap();
+        store.check(&root).unwrap();
+        let worktree = store.read(&root).unwrap();
+        // Nothing to keep it with.
+        store.keep_placement(&worktree, "one", "placed").unwrap();
+        assert_eq!(store.placement(&worktree, "one").unwrap(), None);
+        store.keep_instances(&worktree, "one", "made").unwrap();
+        assert_eq!(store.placement(&worktree, "one").unwrap(), None);
+        store.keep_placement(&worktree, "one", "placed").unwrap();
+        assert_eq!(
+            store.placement(&worktree, "one").unwrap().as_deref(),
+            Some("placed")
+        );
+        assert_eq!(store.placement(&worktree, "two").unwrap(), None);
+        // Under another key, it is not kept.
+        store
+            .keep_placement(&worktree, "two", "placed again")
+            .unwrap();
+        assert_eq!(
+            store.placement(&worktree, "one").unwrap().as_deref(),
+            Some("placed")
+        );
+        // Instances made again, from other files, take it with them.
+        store
+            .keep_instances(&worktree, "two", "made again")
+            .unwrap();
+        assert_eq!(store.placement(&worktree, "two").unwrap(), None);
+        store.keep_instances(&worktree, "one", "made").unwrap();
+        assert_eq!(store.placement(&worktree, "one").unwrap(), None);
     }
 
     #[test]

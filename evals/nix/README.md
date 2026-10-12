@@ -253,6 +253,18 @@ their first two lines.
   reaches it), and the 4 on `sops.secrets."${name}-password".neededForUsers`
   gain a possible caller, a Markdown mention of `neededForUsers` that may
   be one of 3, as it would for a name with no `${`.
+- **The index keeps where the options are** (task 164), with the
+  instances, under the same key: the build and the Nix files' digest. The
+  first question after a Nix file changes places them and keeps them; the
+  next reads them back. On nixos/modules the placement holds 27,652
+  options in 2.9 MB of JSON; reading it back takes 35-60 ms, against
+  280-515 ms to place them and 40-120 ms more to keep them, timed inside
+  graff (2026-10-12, on AC under TLP's balanced profile, boost off, load
+  12-13 from other sessions). `graff callers config/users-groups.nix:225`
+  there takes 794-1,007 ms against 1,017-1,270 at d0e05b7 (seven
+  alternating runs, the same conditions, load 15-20): the gap is what
+  placing cost. The balanced profile about doubles every timing on this
+  machine, so these are not comparable with task 162's figures above.
 - **What counts as wrong, read by hand**: 6 settings at each step. 3 at
   step 1 and 4 at step 2 sit under a `mkIf` the host's configuration makes
   false, which step 2 does not evaluate: it decides a condition on the

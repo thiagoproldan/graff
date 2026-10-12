@@ -1033,6 +1033,52 @@ modules/audio.nix:2-7 option options.sys.audio.on, written at lib/mkSys.nix:5
     );
 }
 
+#[test]
+fn nix_options_are_placed_once_and_read_back_until_a_file_changes() {
+    let demo = Demo::of("nix-placed", NIX_DEMO);
+    let video = "callers sys.video.enable in ROOT
+modules/video.nix:2-5 option options.sys.video.enable, written at lib/mkSys.nix:5: 1 caller, 0 possible
+  hosts/box/default.nix:4-6 attribute sys.video: set 5
+";
+    assert_eq!(
+        demo.ask(&["callers", "sys.video.enable"]),
+        demo.rooted(video)
+    );
+    // The second question reads where the first placed the options: a
+    // placement that holds none, written over the kept one, places none.
+    let index = rusqlite::Connection::open(demo.top.join("cache/graff/index.db")).unwrap();
+    let placed: String = index
+        .query_row("SELECT placement FROM instances", [], |row| row.get(0))
+        .unwrap();
+    assert!(placed.contains("modules/video.nix"), "{placed}");
+    index
+        .execute("UPDATE instances SET placement = '[]'", [])
+        .unwrap();
+    assert_eq!(
+        demo.ask(&["callers", "sys.video.enable"]),
+        demo.rooted(
+            "callers sys.video.enable in ROOT
+modules/video.nix:2-5 option options.sys.video.enable, written at lib/mkSys.nix:5: 0 callers, 0 possible
+"
+        )
+    );
+    // A Nix file changed, they are placed again.
+    let host = demo.repo.join("hosts/box/default.nix");
+    let text = fs::read_to_string(&host).unwrap();
+    fs::write(
+        &host,
+        text.replace("true;\n  sys.video", "true;\n\n  sys.video"),
+    )
+    .unwrap();
+    assert_eq!(
+        demo.ask(&["callers", "sys.video.enable"]),
+        demo.rooted(&video.replace(
+            "4-6 attribute sys.video: set 5",
+            "5-7 attribute sys.video: set 6"
+        ))
+    );
+}
+
 /// Scripts as ctx writes them: hooks and bins with no extension, told by
 /// their shebang, a library they source, and a test that runs a hook.
 const BASH_DEMO: &[(&str, &str)] = &[

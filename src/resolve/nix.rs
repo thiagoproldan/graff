@@ -242,6 +242,7 @@ type Filed = (Definition, Option<(usize, String)>, Vec<Option<String>>);
 /// makes of a binding of its file, as `type = submodule userOpts;` does. A
 /// question reads only some of the sites, from which no option could be
 /// placed: it resolves them against this, which `place` found from all.
+#[derive(Debug, PartialEq)]
 pub struct Placement(Vec<Filed>);
 
 /// The names of a qualified name after its last `options`: `server` of
@@ -956,6 +957,53 @@ pub fn place(files: &[File]) -> Placement {
             .collect(),
     )
 }
+
+impl Placement {
+    /// This as the index keeps it, each file named by its path: `paths` are
+    /// the files' paths, in the order `place` was given them.
+    pub fn kept(&self, paths: &[&str]) -> String {
+        let kept: Vec<KeptPlace> = self
+            .0
+            .iter()
+            .map(|(d, context, path)| {
+                let context = context
+                    .as_ref()
+                    .map(|(file, prefix)| (paths[*file].to_string(), prefix.clone()));
+                (paths[d.file].to_string(), d.symbol, context, path.clone())
+            })
+            .collect();
+        serde_json::to_string(&kept).expect("a placement serializes")
+    }
+
+    /// The placement the index kept, for files of these paths; none when
+    /// what it kept names a file not among them, or does not read back.
+    pub fn from_kept(kept: &str, paths: &[&str]) -> Option<Placement> {
+        let kept: Vec<KeptPlace> = serde_json::from_str(kept).ok()?;
+        let at: HashMap<&str, usize> = paths.iter().enumerate().map(|(f, &p)| (p, f)).collect();
+        let file = |path: &str| at.get(path).copied();
+        kept.into_iter()
+            .map(|(path, symbol, context, names)| {
+                let context = match context {
+                    Some((path, prefix)) => Some((file(&path)?, prefix)),
+                    None => None,
+                };
+                Some((
+                    Definition {
+                        file: file(&path)?,
+                        symbol,
+                    },
+                    context,
+                    names,
+                ))
+            })
+            .collect::<Option<_>>()
+            .map(Placement)
+    }
+}
+
+/// An option of a placement as the index keeps it: its file's path and its
+/// symbol, its context's file's path and prefix, its path's names.
+type KeptPlace = (String, usize, Option<(String, String)>, Vec<Option<String>>);
 
 /// What `resolve` does, for files that hold only some of the worktree's
 /// sites: the options where `placement`, found from the same files with
@@ -1700,6 +1748,16 @@ a
             let wanted = all.iter().filter(|edge| !site(edge) || own(edge)).collect();
             assert_eq!(shown(found.iter().collect()), shown(wanted), "{kept:?}");
         }
+        // As the index keeps it, it reads back as itself, for the same files,
+        // and not for files one of its options is not in.
+        let paths: Vec<&str> = sources.iter().map(|(path, _)| *path).collect();
+        let kept = placement.kept(&paths);
+        assert_eq!(
+            Placement::from_kept(&kept, &paths),
+            Some(place(&nix_files(&sources, &extractions)))
+        );
+        assert_eq!(Placement::from_kept(&kept, &paths[..2]), None);
+        assert_eq!(Placement::from_kept("made", &paths), None);
     }
 
     #[test]

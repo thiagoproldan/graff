@@ -31,7 +31,8 @@ the worktree a module calls,
 `myLib.mkSys { name = "x"; .. }`, is followed into and evaluated as far as a
 module's shape goes, so what it declares and sets stands in the calling
 file, as the module system files it (`src/resolve/nix/instance.rs`); the
-index keeps what that makes until a Nix file or graff's build changes. In
+index keeps what that makes, and where the options it and the files declare
+are, until a Nix file or graff's build changes. In
 Bash, a file with no extension is told by its shebang or, with none, by the
 Emacs mode or the shellcheck directive at its top; a script's functions, the
 variables it assigns, one at the first assignment of each name (an

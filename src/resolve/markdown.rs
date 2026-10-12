@@ -14,7 +14,9 @@
 //! - A name written as code reaches the definitions of the worktree's code
 //!   whose full name -- a Rust module's path, a Python module's, then the
 //!   qualified name -- ends as it is written (`unique`). A test's
-//!   definitions are left out: a document never means them by name.
+//!   definitions are left out: a document never means them by name, and
+//!   so is a module with an item of its name inside it, which the text
+//!   means.
 //!
 //! What names several is ambiguous; what names none, external: a file graff
 //! does not read, a folder, or code from outside the worktree.
@@ -259,6 +261,19 @@ impl<'a> Index<'a> {
         if found.iter().any(|d| kind(d) != Kind::Declaration) {
             found.retain(|d| kind(d) != Kind::Declaration);
         }
+        // A module and the item of its name in it are one thing, as tokio's
+        // `mod copy_buf;` and `fn copy_buf` in copy_buf.rs: the text means
+        // the item. A module stays where nothing named so is inside it.
+        let fulls: Vec<Vec<&str>> = found.iter().map(|&d| self.full(d)).collect();
+        let mut at = 0;
+        found.retain(|d| {
+            at += 1;
+            let full = &fulls[at - 1];
+            kind(d) != Kind::Module
+                || !fulls
+                    .iter()
+                    .any(|other| other.len() > full.len() && other.starts_with(full))
+        });
         one(found, Rule::Unique)
     }
 }
@@ -413,7 +428,7 @@ mod tests {
              \n\
              `Storage::load`, `store::Storage`, `run_all()`, `run.run_all`, `K3_MAX`, \
              `k3_matmul`, `CTX_LIMIT`, `GOLDEN_DAY`, `fixture_path`, `self.helper()`, \
-             `Twice::new`, `std::fs::write`, `run::run_all`, `Storage.load`, \
+             `Twice::new`, `copy_buf`, `util()`, `std::fs::write`, `run::run_all`, `Storage.load`, \
              `length_bytes()`.\n",
         ),
         (
@@ -429,10 +444,12 @@ mod tests {
         ("docs/my notes.md", "# Notes\n"),
         (
             "src/main.rs",
-            "mod store;\n#[path = \"gen/made.rs\"]\nmod made;\n\
+            "mod store;\nmod copy_buf;\nmod util;\n#[path = \"gen/made.rs\"]\nmod made;\n\
              #[cfg(unix)]\n#[path = \"gen/twice.rs\"]\nmod one;\n\
              #[cfg(windows)]\n#[path = \"gen/twice.rs\"]\nmod two;\n\nfn main() {}\n",
         ),
+        ("src/copy_buf.rs", "pub fn copy_buf() {}\n"),
+        ("src/util.rs", "pub fn pad_left() {}\n"),
         ("src/gen/made.rs", "pub fn make() {}\n"),
         ("src/gen/twice.rs", "pub fn twice() {}\n"),
         (
@@ -443,7 +460,7 @@ mod tests {
         ),
         (
             "src/other.rs",
-            "pub struct Twice;\nimpl Twice { pub fn new() {} }\n",
+            "pub struct Twice;\nimpl Twice { pub fn new() {} }\npub fn util() {}\n",
         ),
         (
             "tools/run.py",
@@ -610,6 +627,10 @@ mod tests {
             ("k3_matmul", "src/k3.c:k3_matmul function (unique)"),
             ("self.helper", "tools/run.py:helper function (unique)"),
             ("Twice::new", "ambiguous, 2"),
+            // A module and the item of its name in it are the item; a module
+            // and an item of its name elsewhere are two.
+            ("copy_buf", "src/copy_buf.rs:copy_buf function (unique)"),
+            ("util", "ambiguous, 2"),
             // A test's names: a Bash test's export, a Rust `mod tests`, a
             // Python test file.
             ("CTX_LIMIT", "external"),

@@ -32,6 +32,8 @@ Four checks hold it against what knows more:
   rules written apart from graff's, and against marksman.
 - **mentions.py**: whether a name graff ties means that definition, as a
   model reads a sample of them in their paragraphs.
+- **modules.py**: of every name graff called ambiguous, those a module and
+  the item of its name in it make, and whether a model picks the item.
 
 ```
 nix develop -c python3 evals/markdown/parse.py ekko /projects/ekko --at a69258f        # parse-ekko.txt
@@ -43,6 +45,10 @@ nix develop -c python3 evals/markdown/mentions.py dev --seed 16 --size 200 --jud
     /projects/ekko@a69258f /projects/ctx@6a6d80a ~/.local/share/graff/repos/kimi-k3-in-c.git@ac1584a /projects/graff@e33d74c
 nix develop -c python3 evals/markdown/mentions.py registry --seed 16 --size 200 --judged evals/markdown/judged-registry.jsonl \
     --crates ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f
+nix develop -c python3 evals/markdown/modules.py registry --judged evals/markdown/judged-modules.jsonl \
+    --crates ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f
+nix develop -c python3 evals/markdown/modules.py dev --judged evals/markdown/judged-modules.jsonl \
+    /projects/ekko@a69258f /projects/ctx@6a6d80a ~/.local/share/graff/repos/kimi-k3-in-c.git@ac1584a /projects/graff@e33d74c
 nix develop -c python3 evals/markdown/test_parse.py
 nix develop -c python3 evals/markdown/test_links.py
 nix develop -c python3 evals/markdown/test_mentions.py
@@ -297,7 +303,7 @@ picked, and of the judge's picks, how many graff tied:
   complete and streaming twins (`be_u24`), glam's SIMD backends (`Quat`),
   a method several types have (`get_disjoint_mut`); `graff callers` lists
   them as possible. 2 would be one, a module and the item of its name in
-  it, tokio's `copy_buf` (task 137).
+  it, tokio's `copy_buf`: modules.py below (task 137).
 - **Bare lower-case words**: the judge picked a candidate for 95 of the
   dev sample's 136. Of 25 drawn from those, 18 picked, 9 are right to my
   reading (ekko's MCP tools in its readme, `prime` to agent::prime), 8
@@ -322,3 +328,56 @@ f6aabd6's (167 of them a mention graff ties), resolved on the registry as
 it is now; ctx and kimi hold no Rust, and ekko's and graff's edges are the
 same byte for byte. The reports were not run again, as the registry has
 grown since (610 crates with a README, against 485).
+
+## modules.py
+
+A Rust module named for the item it holds makes two definitions whose full
+names end alike, tokio's `mod copy_buf;` in src/io/util/mod.rs and `fn
+copy_buf` in copy_buf.rs, and a mention of the name was called ambiguous
+where the text means the function. The rule (task 137): of a name's
+candidates outside test code, drop a module when another candidate is
+inside it, its full name going on from the module's. A module stays where
+nothing of its name is in it (`mod util;` and a `fn util` in another file
+are still two).
+
+Task 16's sample (200 spans) held 3 such pairs, 2 the rule would tie, so
+the check counts every span instead: all of the registry's code spans
+that name a definition (16,044 at 2026-10-12, 725 crates now in the
+registry, 485 when mentions.py ran) and the dev corpora's (366), whatever
+graff calls them. judged-modules.jsonl keeps the judge's answers (the
+prompt is mentions.py's, in each report), modules-registry.txt is the
+check against the build without the rule, modules-registry-rule.txt the
+same run with it, modules-dev.txt the dev corpora's.
+
+|                                      | without the rule | with the rule |
+| ------------------------------------ | ---------------- | ------------- |
+| spans tied to one definition         | 8,426            | 8,523         |
+| spans called ambiguous               | 4,002            | 3,905         |
+| ambiguous spans the rule would tie   | 97               | 0             |
+| of those 97, the judge picked the tie | 91             |               |
+
+- **The rule ties 97 of the registry's 4,002 ambiguous spans (2.4%)**, in
+  11 crates (15 versions): objc2's macros (`extern_methods!`,
+  `extern_class!`, `extern_protocol!`, 35 spans, each a module in macros/mod.rs and the
+  macro in a file of its name), static_assertions' and memoffset's macros,
+  tokio's functions (`copy_buf`, `copy_bidirectional`), petgraph's
+  (`tarjan_scc`, `bellman_ford`), nix's (`socket()`, `statfs()`), glam's
+  `bvec2` to `bvec4` and hashbrown's `raw_entry`. The graff of main and
+  of this branch differ in exactly those 97 spans: 8,426 + 97 = 8,523 tied,
+  4,002 - 97 = 3,905 ambiguous.
+- **The judge picked the rule's tie for 91 of 97 (93.8%)**, where its
+  picks of the ties graff made already were 93.9% (mentions.py's
+  registry), and 93 of 97 in a first run of the same items, which showed
+  the judge six candidates cut before the rule's own: its errors move
+  between runs. The 6 it did not pick, read one by one (my reading):
+  objc2's `extern_protocol!` in 4 changelog lines, where the text lists
+  the macro beside `extern_methods!`, nix's `pivot_root()` ("still exposed
+  as separate functions") and petgraph's `kosaraju_scc` ("`scc` was renamed
+  to"), the item in each; the judge chose the module.
+- **The dev corpora**: 11 of 366 spans are ambiguous, the rule ties 2,
+  ekko's `move_to` among them, both picked.
+- **The rule does not touch** a name several definitions end with
+  outside a module: the 37 of task 16's 40 (libc's constants, nom's
+  twins, glam's backends). Where a module's item has a twin elsewhere
+  (task 16's libm `fminimum_num`) the rule leaves two, and the name stays
+  ambiguous.

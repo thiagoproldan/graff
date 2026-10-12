@@ -1,0 +1,15 @@
+graff graff 454ee4d; dev: ekko, ctx, kimi-k3-in-c.git, graff
+366 spans name a definition by the end of its name, whatever its form; graff calls 11 of them ambiguous
+the rule (drop a module when another candidate is inside it) would tie 2 of the 11; judge: claude-haiku-5-5
+    the judge picked the rule's tie: 2
+each span the rule would tie:
+    ekko/readme.md:269 move_to: the judge picked the rule's tie; the rule leaves src/move_to.rs:102 function, drops src/main.rs:23 module
+    ekko/readme.md:769 move_to: the judge picked the rule's tie; the rule leaves src/move_to.rs:102 function, drops src/main.rs:23 module
+the prompt:
+    You judge whether a code span in a Markdown document refers to a definition in the code of the same repository.
+    
+    Each item gives: the document's path, the heading and paragraph the span is in, the span as written, and numbered candidate definitions, each with its file, kind, qualified name, doc and first lines of code.
+    
+    Answer with the number of the candidate the span refers to, or 0 if it refers to none of them: for example an English word, a parameter, field or option name, a command or flag, a value, or code from outside these candidates. If the span refers to a definition of that name but you cannot tell which of several candidates, answer the one that fits best. Judge only from what is shown.
+    
+    Write one line per item, in the form `ITEM_ID: NUMBER`, and nothing else.

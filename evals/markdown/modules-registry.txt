@@ -1,0 +1,111 @@
+graff graff 454ee4d with uncommitted changes; registry: index.crates.io-1949cf8c6b5b557f
+16044 spans name a definition by the end of its name, whatever its form; graff ties 8426 to one definition and calls 4002 of them ambiguous
+the rule (drop a module when another candidate is inside it) would tie 97 of the 4002; judge: claude-haiku-5-5
+    the judge picked the rule's tie: 91
+    the judge picked another: 6
+each span the rule would tie:
+    index.crates.io-1949cf8c6b5b557f/base64-0.22.1/README.md:31 read(): the judge picked the rule's tie; the rule leaves src/read/decoder.rs:232 method, drops src/lib.rs:249 module
+    index.crates.io-1949cf8c6b5b557f/bytemuck-1.25.0/changelog.md:325 offset_of!: the judge picked the rule's tie; the rule leaves src/offset_of.rs:115 macro, drops src/lib.rs:219 module
+    index.crates.io-1949cf8c6b5b557f/bytemuck-1.25.0/changelog.md:348 offset_of!: the judge picked the rule's tie; the rule leaves src/offset_of.rs:115 macro, drops src/lib.rs:219 module
+    index.crates.io-1949cf8c6b5b557f/bytemuck-1.25.0/changelog.md:367 offset_of!: the judge picked the rule's tie; the rule leaves src/offset_of.rs:115 macro, drops src/lib.rs:219 module
+    index.crates.io-1949cf8c6b5b557f/bytemuck-1.25.2/changelog.md:334 offset_of!: the judge picked the rule's tie; the rule leaves src/offset_of.rs:115 macro, drops src/lib.rs:219 module
+    index.crates.io-1949cf8c6b5b557f/bytemuck-1.25.2/changelog.md:357 offset_of!: the judge picked the rule's tie; the rule leaves src/offset_of.rs:115 macro, drops src/lib.rs:219 module
+    index.crates.io-1949cf8c6b5b557f/bytemuck-1.25.2/changelog.md:376 offset_of!: the judge picked the rule's tie; the rule leaves src/offset_of.rs:115 macro, drops src/lib.rs:219 module
+    index.crates.io-1949cf8c6b5b557f/glam-0.31.0/CHANGELOG.md:268 bvec2: the judge picked the rule's tie; the rule leaves src/bool/bvec2.rs:9 function, drops src/bool.rs:1 module
+    index.crates.io-1949cf8c6b5b557f/glam-0.31.0/CHANGELOG.md:268 bvec3: the judge picked the rule's tie; the rule leaves src/bool/bvec3.rs:9 function, drops src/bool.rs:2 module
+    index.crates.io-1949cf8c6b5b557f/glam-0.31.0/CHANGELOG.md:268 bvec4: the judge picked the rule's tie; the rule leaves src/bool/bvec4.rs:9 function, drops src/bool.rs:3 module
+    index.crates.io-1949cf8c6b5b557f/glam-0.33.11/CHANGELOG.md:512 bvec2: the judge picked the rule's tie; the rule leaves src/bool/bvec2.rs:9 function, drops src/bool.rs:1 module
+    index.crates.io-1949cf8c6b5b557f/glam-0.33.11/CHANGELOG.md:512 bvec3: the judge picked the rule's tie; the rule leaves src/bool/bvec3.rs:9 function, drops src/bool.rs:2 module
+    index.crates.io-1949cf8c6b5b557f/glam-0.33.11/CHANGELOG.md:512 bvec4: the judge picked the rule's tie; the rule leaves src/bool/bvec4.rs:9 function, drops src/bool.rs:3 module
+    index.crates.io-1949cf8c6b5b557f/hashbrown-0.15.5/CHANGELOG.md:412 raw_entry: the judge picked the rule's tie; the rule leaves src/raw_entry.rs:156 method, drops src/lib.rs:80 module
+    index.crates.io-1949cf8c6b5b557f/hashbrown-0.15.5/CHANGELOG.md:520 raw_entry: the judge picked the rule's tie; the rule leaves src/raw_entry.rs:156 method, drops src/lib.rs:80 module
+    index.crates.io-1949cf8c6b5b557f/hashbrown-0.16.1/CHANGELOG.md:437 raw_entry: the judge picked the rule's tie; the rule leaves src/raw_entry.rs:156 method, drops src/lib.rs:78 module
+    index.crates.io-1949cf8c6b5b557f/hashbrown-0.16.1/CHANGELOG.md:545 raw_entry: the judge picked the rule's tie; the rule leaves src/raw_entry.rs:156 method, drops src/lib.rs:78 module
+    index.crates.io-1949cf8c6b5b557f/hashbrown-0.17.1/CHANGELOG.md:468 raw_entry: the judge picked the rule's tie; the rule leaves src/raw_entry.rs:157 method, drops src/lib.rs:61 module
+    index.crates.io-1949cf8c6b5b557f/hashbrown-0.17.1/CHANGELOG.md:576 raw_entry: the judge picked the rule's tie; the rule leaves src/raw_entry.rs:157 method, drops src/lib.rs:61 module
+    index.crates.io-1949cf8c6b5b557f/libm-0.2.16/CHANGELOG.md:17 expm1f: the judge picked the rule's tie; the rule leaves src/math/expm1f.rs:35 function, drops src/math/mod.rs:159 module
+    index.crates.io-1949cf8c6b5b557f/memoffset-0.9.1/README.md:5 offset_of: the judge picked the rule's tie; the rule leaves src/offset_of.rs:119 macro, drops src/lib.rs:84 module
+    index.crates.io-1949cf8c6b5b557f/memoffset-0.9.1/README.md:8 offset_of!: the judge picked the rule's tie; the rule leaves src/offset_of.rs:119 macro, drops src/lib.rs:84 module
+    index.crates.io-1949cf8c6b5b557f/memoffset-0.9.1/README.md:11 span_of!: the judge picked the rule's tie; the rule leaves src/span_of.rs:93 macro, drops src/lib.rs:86 module
+    index.crates.io-1949cf8c6b5b557f/memoffset-0.9.1/README.md:52 offset_of!: the judge picked the rule's tie; the rule leaves src/offset_of.rs:119 macro, drops src/lib.rs:84 module
+    index.crates.io-1949cf8c6b5b557f/nix-0.29.0/CHANGELOG.md:171 reboot(2): the judge picked the rule's tie; the rule leaves src/sys/reboot.rs:38 function, drops src/sys/mod.rs:85 module
+    index.crates.io-1949cf8c6b5b557f/nix-0.29.0/CHANGELOG.md:770 posix_fadvise: the judge picked the rule's tie; the rule leaves src/fcntl.rs:1387 function, drops src/fcntl.rs:1352 module
+    index.crates.io-1949cf8c6b5b557f/nix-0.29.0/CHANGELOG.md:824 if_nameindex: the judge picked the rule's tie; the rule leaves src/net/if_.rs:387 function, drops src/net/if_.rs:274 module
+    index.crates.io-1949cf8c6b5b557f/nix-0.29.0/CHANGELOG.md:1219 posix_fadvise: the judge picked the rule's tie; the rule leaves src/fcntl.rs:1387 function, drops src/fcntl.rs:1352 module
+    index.crates.io-1949cf8c6b5b557f/nix-0.29.0/CHANGELOG.md:1234 statfs(): the judge picked the rule's tie; the rule leaves src/sys/statfs.rs:650 function, drops src/sys/mod.rs:134 module
+    index.crates.io-1949cf8c6b5b557f/nix-0.29.0/CHANGELOG.md:1507 socket(): the judge picked the rule's tie; the rule leaves src/sys/socket/mod.rs:1958 function, drops src/sys/mod.rs:122 module
+    index.crates.io-1949cf8c6b5b557f/nix-0.29.0/CHANGELOG.md:1597 socket(): the judge picked the rule's tie; the rule leaves src/sys/socket/mod.rs:1958 function, drops src/sys/mod.rs:122 module
+    index.crates.io-1949cf8c6b5b557f/nix-0.29.0/CHANGELOG.md:1651 pivot_root(): the judge picked another; the rule leaves src/unistd.rs:2885 function, drops src/unistd.rs:2878 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:47 extern_conformance!: the judge picked the rule's tie; the rule leaves src/macros/extern_conformance.rs:35 macro, drops src/macros/mod.rs:10 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:88 extern_methods!: the judge picked the rule's tie; the rule leaves src/macros/extern_methods.rs:213 macro, drops src/macros/mod.rs:11 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:89 extern_protocol!: the judge picked the rule's tie; the rule leaves src/macros/extern_protocol.rs:156 macro, drops src/macros/mod.rs:12 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:156 extern_class!: the judge picked the rule's tie; the rule leaves src/macros/extern_class.rs:175 macro, drops src/macros/mod.rs:9 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:186 extern_protocol!: the judge picked the rule's tie; the rule leaves src/macros/extern_protocol.rs:156 macro, drops src/macros/mod.rs:12 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:207 extern_methods!: the judge picked the rule's tie; the rule leaves src/macros/extern_methods.rs:213 macro, drops src/macros/mod.rs:11 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:264 extern_methods!: the judge picked the rule's tie; the rule leaves src/macros/extern_methods.rs:213 macro, drops src/macros/mod.rs:11 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:265 extern_protocol!: the judge picked the rule's tie; the rule leaves src/macros/extern_protocol.rs:156 macro, drops src/macros/mod.rs:12 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:307 extern_class!: the judge picked the rule's tie; the rule leaves src/macros/extern_class.rs:175 macro, drops src/macros/mod.rs:9 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:349 extern_class!: the judge picked the rule's tie; the rule leaves src/macros/extern_class.rs:175 macro, drops src/macros/mod.rs:9 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:624 extern_methods!: the judge picked the rule's tie; the rule leaves src/macros/extern_methods.rs:213 macro, drops src/macros/mod.rs:11 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:693 extern_protocol!: the judge picked another; the rule leaves src/macros/extern_protocol.rs:156 macro, drops src/macros/mod.rs:12 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:693 extern_methods!: the judge picked the rule's tie; the rule leaves src/macros/extern_methods.rs:213 macro, drops src/macros/mod.rs:11 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:694 extern_class!: the judge picked the rule's tie; the rule leaves src/macros/extern_class.rs:175 macro, drops src/macros/mod.rs:9 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:695 extern_protocol!: the judge picked another; the rule leaves src/macros/extern_protocol.rs:156 macro, drops src/macros/mod.rs:12 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:766 extern_class!: the judge picked the rule's tie; the rule leaves src/macros/extern_class.rs:175 macro, drops src/macros/mod.rs:9 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:768 extern_class!: the judge picked the rule's tie; the rule leaves src/macros/extern_class.rs:175 macro, drops src/macros/mod.rs:9 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:768 extern_protocol!: the judge picked another; the rule leaves src/macros/extern_protocol.rs:156 macro, drops src/macros/mod.rs:12 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:770 extern_methods!: the judge picked the rule's tie; the rule leaves src/macros/extern_methods.rs:213 macro, drops src/macros/mod.rs:11 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:780 extern_methods!: the judge picked the rule's tie; the rule leaves src/macros/extern_methods.rs:213 macro, drops src/macros/mod.rs:11 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:784 extern_methods!: the judge picked the rule's tie; the rule leaves src/macros/extern_methods.rs:213 macro, drops src/macros/mod.rs:11 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:887 extern_methods!: the judge picked the rule's tie; the rule leaves src/macros/extern_methods.rs:213 macro, drops src/macros/mod.rs:11 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:896 extern_class!: the judge picked the rule's tie; the rule leaves src/macros/extern_class.rs:175 macro, drops src/macros/mod.rs:9 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:916 extern_methods!: the judge picked the rule's tie; the rule leaves src/macros/extern_methods.rs:213 macro, drops src/macros/mod.rs:11 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:918 extern_methods!: the judge picked the rule's tie; the rule leaves src/macros/extern_methods.rs:213 macro, drops src/macros/mod.rs:11 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:921 extern_protocol!: the judge picked another; the rule leaves src/macros/extern_protocol.rs:156 macro, drops src/macros/mod.rs:12 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:938 extern_methods: the judge picked the rule's tie; the rule leaves src/macros/extern_methods.rs:213 macro, drops src/macros/mod.rs:11 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:940 extern_methods!: the judge picked the rule's tie; the rule leaves src/macros/extern_methods.rs:213 macro, drops src/macros/mod.rs:11 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:956 extern_methods!: the judge picked the rule's tie; the rule leaves src/macros/extern_methods.rs:213 macro, drops src/macros/mod.rs:11 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:991 extern_class!: the judge picked the rule's tie; the rule leaves src/macros/extern_class.rs:175 macro, drops src/macros/mod.rs:9 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:995 extern_class!: the judge picked the rule's tie; the rule leaves src/macros/extern_class.rs:175 macro, drops src/macros/mod.rs:9 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:999 extern_methods!: the judge picked the rule's tie; the rule leaves src/macros/extern_methods.rs:213 macro, drops src/macros/mod.rs:11 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:1003 extern_methods!: the judge picked the rule's tie; the rule leaves src/macros/extern_methods.rs:213 macro, drops src/macros/mod.rs:11 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/CHANGELOG.md:1027 extern_class!: the judge picked the rule's tie; the rule leaves src/macros/extern_class.rs:175 macro, drops src/macros/mod.rs:9 module
+    index.crates.io-1949cf8c6b5b557f/objc2-0.6.4/src/topics/about_generated/CHANGELOG.md:1005 extern_class!: the judge picked the rule's tie; the rule leaves src/macros/extern_class.rs:175 macro, drops src/macros/mod.rs:9 module
+    index.crates.io-1949cf8c6b5b557f/petgraph-0.8.3/CHANGELOG.md:251 tarjan_scc: the judge picked the rule's tie; the rule leaves src/algo/scc/tarjan_scc.rs:267 function, drops src/algo/scc/mod.rs:2 module
+    index.crates.io-1949cf8c6b5b557f/petgraph-0.8.3/CHANGELOG.md:252 tarjan_scc: the judge picked the rule's tie; the rule leaves src/algo/scc/tarjan_scc.rs:267 function, drops src/algo/scc/mod.rs:2 module
+    index.crates.io-1949cf8c6b5b557f/petgraph-0.8.3/CHANGELOG.md:270 tarjan_scc: the judge picked the rule's tie; the rule leaves src/algo/scc/tarjan_scc.rs:267 function, drops src/algo/scc/mod.rs:2 module
+    index.crates.io-1949cf8c6b5b557f/petgraph-0.8.3/CHANGELOG.md:330 bellman_ford: the judge picked the rule's tie; the rule leaves src/algo/bellman_ford.rs:94 function, drops src/algo/mod.rs:16 module
+    index.crates.io-1949cf8c6b5b557f/petgraph-0.8.3/CHANGELOG.md:424 kosaraju_scc: the judge picked another; the rule leaves src/algo/scc/kosaraju_scc.rs:96 function, drops src/algo/scc/mod.rs:1 module
+    index.crates.io-1949cf8c6b5b557f/petgraph-0.8.3/CHANGELOG.md:425 min_spanning_tree: the judge picked the rule's tie; the rule leaves src/algo/min_spanning_tree.rs:90 function, drops src/algo/mod.rs:30 module
+    index.crates.io-1949cf8c6b5b557f/petgraph-0.8.3/CHANGELOG.md:483 tarjan_scc: the judge picked the rule's tie; the rule leaves src/algo/scc/tarjan_scc.rs:267 function, drops src/algo/scc/mod.rs:2 module
+    index.crates.io-1949cf8c6b5b557f/petgraph-0.8.3/assets/guide/algodocs.md:40 bellman_ford: the judge picked the rule's tie; the rule leaves src/algo/bellman_ford.rs:94 function, drops src/algo/mod.rs:16 module
+    index.crates.io-1949cf8c6b5b557f/static_assertions-1.1.0/CHANGELOG.md:27 assert_eq_align!: the judge picked the rule's tie; the rule leaves src/assert_eq_align.rs:36 macro, drops src/lib.rs:90 module
+    index.crates.io-1949cf8c6b5b557f/static_assertions-1.1.0/CHANGELOG.md:35 assert_fields!: the judge picked the rule's tie; the rule leaves src/assert_fields.rs:53 macro, drops src/lib.rs:92 module
+    index.crates.io-1949cf8c6b5b557f/static_assertions-1.1.0/CHANGELOG.md:38 const_assert!: the judge picked the rule's tie; the rule leaves src/const_assert.rs:52 macro, drops src/lib.rs:97 module
+    index.crates.io-1949cf8c6b5b557f/static_assertions-1.1.0/CHANGELOG.md:74 const_assert!: the judge picked the rule's tie; the rule leaves src/const_assert.rs:52 macro, drops src/lib.rs:97 module
+    index.crates.io-1949cf8c6b5b557f/static_assertions-1.1.0/CHANGELOG.md:97 assert_fields: the judge picked the rule's tie; the rule leaves src/assert_fields.rs:53 macro, drops src/lib.rs:92 module
+    index.crates.io-1949cf8c6b5b557f/static_assertions-1.1.0/CHANGELOG.md:112 assert_cfg: the judge picked the rule's tie; the rule leaves src/assert_cfg.rs:39 macro, drops src/lib.rs:89 module
+    index.crates.io-1949cf8c6b5b557f/static_assertions-1.1.0/CHANGELOG.md:113 assert_fields: the judge picked the rule's tie; the rule leaves src/assert_fields.rs:53 macro, drops src/lib.rs:92 module
+    index.crates.io-1949cf8c6b5b557f/static_assertions-1.1.0/CHANGELOG.md:132 assert_obj_safe: the judge picked the rule's tie; the rule leaves src/assert_obj_safe.rs:72 macro, drops src/lib.rs:94 module
+    index.crates.io-1949cf8c6b5b557f/static_assertions-1.1.0/CHANGELOG.md:139 assert_eq_size: the judge picked the rule's tie; the rule leaves src/assert_eq_size.rs:34 macro, drops src/lib.rs:91 module
+    index.crates.io-1949cf8c6b5b557f/static_assertions-1.1.0/CHANGELOG.md:139 const_assert: the judge picked the rule's tie; the rule leaves src/const_assert.rs:52 macro, drops src/lib.rs:97 module
+    index.crates.io-1949cf8c6b5b557f/static_assertions-1.1.0/CHANGELOG.md:143 assert_eq_size: the judge picked the rule's tie; the rule leaves src/assert_eq_size.rs:34 macro, drops src/lib.rs:91 module
+    index.crates.io-1949cf8c6b5b557f/tokio-1.53.1/CHANGELOG.md:60 create_dir_all: the judge picked the rule's tie; the rule leaves src/fs/create_dir_all.rs:51 function, drops src/fs/mod.rs:223 module
+    index.crates.io-1949cf8c6b5b557f/tokio-1.53.1/CHANGELOG.md:381 copy_buf: the judge picked the rule's tie; the rule leaves src/io/util/copy_buf.rs:69 function, drops src/io/util/mod.rs:34 module
+    index.crates.io-1949cf8c6b5b557f/tokio-1.53.1/CHANGELOG.md:1125 consume_budget: the judge picked the rule's tie; the rule leaves src/task/coop/consume_budget.rs:25 function, drops src/task/coop/mod.rs:62 module
+    index.crates.io-1949cf8c6b5b557f/tokio-1.53.1/CHANGELOG.md:1130 copy_bidirectional: the judge picked the rule's tie; the rule leaves src/io/util/copy_bidirectional.rs:75 function, drops src/io/util/mod.rs:31 module
+    index.crates.io-1949cf8c6b5b557f/tokio-1.53.1/CHANGELOG.md:1915 copy_bidirectional: the judge picked the rule's tie; the rule leaves src/io/util/copy_bidirectional.rs:75 function, drops src/io/util/mod.rs:31 module
+    index.crates.io-1949cf8c6b5b557f/tokio-1.53.1/CHANGELOG.md:2047 read_dir(): the judge picked the rule's tie; the rule leaves src/fs/read_dir.rs:32 function, drops src/fs/mod.rs:244 module
+    index.crates.io-1949cf8c6b5b557f/tokio-1.53.1/CHANGELOG.md:2479 consume_budget: the judge picked the rule's tie; the rule leaves src/task/coop/consume_budget.rs:25 function, drops src/task/coop/mod.rs:62 module
+    index.crates.io-1949cf8c6b5b557f/tokio-1.53.1/CHANGELOG.md:2847 copy_bidirectional: the judge picked the rule's tie; the rule leaves src/io/util/copy_bidirectional.rs:75 function, drops src/io/util/mod.rs:31 module
+    index.crates.io-1949cf8c6b5b557f/tokio-1.53.1/CHANGELOG.md:3247 copy_bidirectional: the judge picked the rule's tie; the rule leaves src/io/util/copy_bidirectional.rs:75 function, drops src/io/util/mod.rs:31 module
+    index.crates.io-1949cf8c6b5b557f/tokio-1.53.1/CHANGELOG.md:3335 timeout(Duration::MAX): the judge picked the rule's tie; the rule leaves src/time/timeout.rs:86 function, drops src/time/mod.rs:104 module
+    index.crates.io-1949cf8c6b5b557f/tokio-1.53.1/CHANGELOG.md:3681 copy_buf(): the judge picked the rule's tie; the rule leaves src/io/util/copy_buf.rs:69 function, drops src/io/util/mod.rs:34 module
+the prompt:
+    You judge whether a code span in a Markdown document refers to a definition in the code of the same repository.
+    
+    Each item gives: the document's path, the heading and paragraph the span is in, the span as written, and numbered candidate definitions, each with its file, kind, qualified name, doc and first lines of code.
+    
+    Answer with the number of the candidate the span refers to, or 0 if it refers to none of them: for example an English word, a parameter, field or option name, a command or flag, a value, or code from outside these candidates. If the span refers to a definition of that name but you cannot tell which of several candidates, answer the one that fits best. Judge only from what is shown.
+    
+    Write one line per item, in the form `ITEM_ID: NUMBER`, and nothing else.

@@ -1,0 +1,13 @@
+graff graff 454ee4d with uncommitted changes; registry: index.crates.io-1949cf8c6b5b557f
+16044 spans name a definition by the end of its name, whatever its form; graff ties 8523 to one definition and calls 3905 of them ambiguous
+the rule (drop a module when another candidate is inside it) would tie 0 of the 3905; judge: claude-haiku-5-5
+each span the rule would tie:
+
+the prompt:
+    You judge whether a code span in a Markdown document refers to a definition in the code of the same repository.
+    
+    Each item gives: the document's path, the heading and paragraph the span is in, the span as written, and numbered candidate definitions, each with its file, kind, qualified name, doc and first lines of code.
+    
+    Answer with the number of the candidate the span refers to, or 0 if it refers to none of them: for example an English word, a parameter, field or option name, a command or flag, a value, or code from outside these candidates. If the span refers to a definition of that name but you cannot tell which of several candidates, answer the one that fits best. Judge only from what is shown.
+    
+    Write one line per item, in the form `ITEM_ID: NUMBER`, and nothing else.

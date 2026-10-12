@@ -261,6 +261,9 @@ pub enum Rule {
     /// C: the only function the worktree gives to a struct's field of the
     /// name a call goes through.
     Field,
+    /// Bash: the only function whose name fits a command's that only the
+    /// run knows, `"_comp_compgen_$1"`.
+    Computed,
     /// Markdown: what a link's fragment names, a section by its anchor or
     /// code by its line, or a path's `:line` or `:Name`.
     Anchor,
@@ -286,6 +289,7 @@ impl Rule {
             Rule::Caller => "caller",
             Rule::Include => "include",
             Rule::Field => "field",
+            Rule::Computed => "computed",
             Rule::Anchor => "anchor",
         }
     }

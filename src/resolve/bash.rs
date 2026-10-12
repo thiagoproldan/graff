@@ -7,12 +7,16 @@
 //! - in the files loaded with it (`source`);
 //! - a function, as the only one of that name in the worktree's scripts, as
 //!   bash-completion's are, which the shell loads before them (`unique`);
+//! - a function a command runs by a name only the run knows,
+//!   `"${_generator[@]}"`, among those of the worktree whose names fit the
+//!   glob extraction gives, `_comp_compgen_*` (`computed`);
 //! - a variable, among those another script exports to the commands it
 //!   runs, `export X=..` or `X=.. cmd` (`environment`).
 //!
 //! A variable a function uses with no local of its own is, by Bash's
 //! dynamic scope, the local of the nearest function that calls it, through
-//! the calls tied to one function, that declares it local (`caller`); the
+//! the calls tied to one function or made by a computed name, which may
+//! run each function it fits, that declares it local (`caller`); the
 //! file's own only where a path of callers reaches top-level code, or a
 //! function nothing calls, without passing one.
 //!
@@ -203,6 +207,19 @@ impl<'a> Index<'a> {
         }
     }
 
+    /// The functions of the worktree whose names fit a glob, as a command
+    /// named by no plain word may run them.
+    fn computed(&self, glob: &str) -> Vec<Definition> {
+        let mut found: Vec<Definition> = self
+            .named
+            .iter()
+            .filter(|(name, _)| fits(glob, name))
+            .flat_map(|(_, all)| all.iter().copied())
+            .collect();
+        found.sort();
+        found
+    }
+
     /// What a variable's read or set reaches; `loaded` is what its script
     /// runs with.
     fn variable(&self, file: usize, loaded: &[usize], name: &str) -> Resolution {
@@ -260,6 +277,26 @@ impl<'a> Index<'a> {
             .position(|s| s.kind == Kind::File)?;
         Some(Definition { file, symbol: s })
     }
+}
+
+/// Whether a name fits a glob whose `*` stands for any text.
+fn fits(glob: &str, name: &str) -> bool {
+    let mut parts = glob.split('*');
+    let first = parts.next().unwrap_or("");
+    let Some(mut rest) = name.strip_prefix(first) else {
+        return false;
+    };
+    let parts: Vec<&str> = parts.collect();
+    let Some((last, middle)) = parts.split_last() else {
+        return rest.is_empty();
+    };
+    for part in middle {
+        match rest.find(part) {
+            Some(at) => rest = &rest[at + part.len()..],
+            None => return false,
+        }
+    }
+    rest.len() >= last.len() && rest.ends_with(last)
 }
 
 /// A local's function and name, from its qualified name, `F.x`: a script's
@@ -369,8 +406,27 @@ pub fn resolve(files: &[File]) -> Vec<Edge> {
             continue;
         }
         for call in &file.extraction.calls {
-            let resolution = index.function(f, &loaded[&f], &call.name);
-            if let Resolution::Resolved(d, _) = resolution {
+            // A computed name, `"${_generator[@]}"`, may run any function
+            // it fits: each has the caller as one of its callers.
+            let resolution = if call.path.is_some() {
+                let found = index.computed(&call.name);
+                for &d in &found {
+                    callers
+                        .entry(d)
+                        .or_default()
+                        .push(function_of(f, &call.from));
+                }
+                match found.as_slice() {
+                    [] => Resolution::External,
+                    [d] => Resolution::Resolved(*d, Rule::Computed),
+                    _ => Resolution::Ambiguous(found),
+                }
+            } else {
+                index.function(f, &loaded[&f], &call.name)
+            };
+            if call.path.is_none()
+                && let Resolution::Resolved(d, _) = resolution
+            {
                 callers
                     .entry(d)
                     .or_default()
@@ -788,6 +844,93 @@ _set() { level=1; }
                 // A function's first assignment defines the file's variable
                 // and sets it, where no caller declares it.
                 edge(7, "level", "lib/split.sh level (scope)"),
+            ]
+        );
+    }
+
+    /// A library whose dispatcher runs a generator by a name only the run
+    /// knows, as bash-completion's `_comp_compgen__call_generator` does, and
+    /// a completion that defines a generator of its own.
+    const COMPUTED: &[(&str, &str)] = &[
+        (
+            "lib/compgen",
+            r#"_compgen() {
+  local -a _generator
+  if [[ $1 == -x ]]; then
+    _generator=(_xfunc "$2")
+  else
+    _generator=("_compgen_$1")
+  fi
+  _call_generator
+}
+_call_generator() {
+  local cur=$1
+  "${_generator[@]}"
+}
+_compgen_words() { echo "$cur"; }
+_compgen_files() { echo "$cur"; }
+_xfunc() { "_xfunc_$1"; }
+"#,
+        ),
+        ("completions/tool", "_xfunc_tool() { :; }\n"),
+    ];
+
+    #[test]
+    fn a_command_named_by_an_expansion_may_run_each_function_its_glob_fits() {
+        let extractions: Vec<Extraction> = COMPUTED
+            .iter()
+            .map(|(_, source)| extract::extract(Language::Bash, source.as_bytes()))
+            .collect();
+        let files: Vec<File> = COMPUTED
+            .iter()
+            .zip(&extractions)
+            .map(|((path, _), extraction)| File {
+                path,
+                language: Language::Bash,
+                extraction,
+            })
+            .collect();
+        let named = |d: &Definition| {
+            format!(
+                "{} {}",
+                files[d.file].path, files[d.file].extraction.symbols[d.symbol].qualified
+            )
+        };
+        let mut found: Vec<(u32, String, String)> = resolve(&files)
+            .into_iter()
+            .filter(|e| e.file == 0 && (e.line == 12 || e.line == 16 || e.name == "cur"))
+            .map(|e| {
+                let reached = match &e.resolution {
+                    Resolution::Resolved(d, rule) => format!("{} ({})", named(d), rule.name()),
+                    Resolution::Ambiguous(all) => {
+                        all.iter().map(named).collect::<Vec<_>>().join(" or ")
+                    }
+                    Resolution::External => "external".to_string(),
+                };
+                (e.line, e.name, reached)
+            })
+            .collect();
+        found.sort();
+        let edge = |line, name: &str, reached: &str| (line, name.to_string(), reached.to_string());
+        assert_eq!(
+            found,
+            vec![
+                // The array's first words: a plain one is a call as any is;
+                // `"_compgen_$1"` fits the two generators.
+                edge(
+                    12,
+                    "_compgen_*",
+                    "lib/compgen _compgen_words or lib/compgen _compgen_files"
+                ),
+                // The array, _compgen's local.
+                edge(12, "_generator", "lib/compgen _compgen._generator (caller)"),
+                edge(12, "_xfunc", "lib/compgen _xfunc (scope)"),
+                // Each generator's cur is the dispatcher's local, which it
+                // runs them under.
+                edge(14, "cur", "lib/compgen _call_generator.cur (caller)"),
+                edge(15, "cur", "lib/compgen _call_generator.cur (caller)"),
+                // One fits: tied to it.
+                edge(16, "_xfunc_*", "completions/tool _xfunc_tool (computed)"),
             ]
         );
     }

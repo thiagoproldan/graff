@@ -205,6 +205,7 @@ pub fn extract(source: &[u8]) -> Extraction {
         parents: HashMap::new(),
         sources: false,
         commands: Vec::new(),
+        given: HashMap::new(),
         stack: Vec::new(),
         too_deep: false,
     };
@@ -264,6 +265,10 @@ struct Scan<'s, 't> {
     /// Each command a function runs, by the innermost one's node id: its
     /// name, or none for one only the run knows, `"${generator[@]}"`.
     commands: Vec<(Option<&'s str>, usize)>,
+    /// Each value each variable is given, in a function or not, `local`
+    /// included, in the order written: what a command named by the
+    /// variable may run.
+    given: HashMap<&'s str, Vec<Node<'t>>>,
     /// The functions the walk is in, by node id.
     stack: Vec<usize>,
     too_deep: bool,
@@ -403,6 +408,12 @@ impl<'s, 't> Scan<'s, 't> {
                 }
             }
             "variable_assignment" => {
+                if node.parent().is_none_or(|p| p.kind() != "command")
+                    && let Some(name) = assigned(self.source, node)
+                    && let Some(value) = node.child_by_field_name("value")
+                {
+                    self.given.entry(name).or_default().push(value);
+                }
                 // One in a command's prefix or a declaration is that command's.
                 if !matches!(
                     node.parent().map(|p| p.kind()),
@@ -1331,6 +1342,52 @@ fn arithmetic(name: Node) -> bool {
     })
 }
 
+/// The variable a word is an expansion of and nothing else: `f` in `$f`,
+/// `"${f}"` and `"${f[@]}"`; none for `${f:-g}` or `"$f"x`.
+fn variable_of<'s>(source: &'s [u8], word: Node) -> Option<&'s str> {
+    let expansion = if word.kind() == "string" {
+        match named_children(word).as_slice() {
+            [only] => *only,
+            _ => return None,
+        }
+    } else {
+        word
+    };
+    let text = std::str::from_utf8(&source[expansion.byte_range()]).ok()?;
+    let inner = match expansion.kind() {
+        "simple_expansion" => text.strip_prefix('$')?,
+        "expansion" => text.strip_prefix("${")?.strip_suffix('}')?,
+        _ => return None,
+    };
+    let name = ["[@]", "[*]", "[0]"]
+        .into_iter()
+        .find_map(|index| inner.strip_suffix(index))
+        .unwrap_or(inner);
+    is_name(name).then_some(name)
+}
+
+/// Writes onto `out` the glob a word gives: its text, each expansion in it a
+/// `*`. False for a word of a kind it does not read.
+fn glob(source: &[u8], word: Node, out: &mut String) -> bool {
+    let text = std::str::from_utf8(&source[word.byte_range()]).unwrap_or("");
+    match word.kind() {
+        "word" | "number" | "string_content" => out.push_str(text),
+        "raw_string" => out.push_str(text.trim_matches('\'')),
+        "expansion" | "simple_expansion" | "command_substitution" | "arithmetic_expansion" => {
+            if !out.ends_with('*') {
+                out.push('*');
+            }
+        }
+        "string" | "concatenation" => {
+            return named_children(word)
+                .into_iter()
+                .all(|part| glob(source, part, out));
+        }
+        _ => return false,
+    }
+    true
+}
+
 /// The variable an expansion reads: `x` in `${x:-1}`, `${#x}`, `${x[@]}`.
 fn expanded(expansion: Node) -> Option<Node> {
     for child in named_children(expansion) {
@@ -2023,6 +2080,24 @@ impl<'s, 't> Reader<'s, 't> {
                     self.run(word, &arguments);
                 }
                 _ => {
+                    // A function by a name only the run knows.
+                    for glob in self.computed(name) {
+                        let plain = !glob.contains('*');
+                        self.out.calls.push(Call {
+                            path: (!plain).then(|| self.text(name).to_string()),
+                            kind: CallKind::Free,
+                            line: line(name),
+                            from: self.from(name),
+                            receiver: None,
+                            local: if plain {
+                                self.function_names.get(&glob).cloned()
+                            } else {
+                                None
+                            },
+                            typed: None,
+                            name: glob,
+                        });
+                    }
                     // A script run by its path: `"$HOOKS/handoff"`, `./build.sh`.
                     if let Some(path) = self
                         .evaluate(name.named_child(0).unwrap_or(name), &mut Vec::new())
@@ -2048,6 +2123,51 @@ impl<'s, 't> Reader<'s, 't> {
                 self.visit(child, depth + 1);
             }
         }
+    }
+
+    /// The names a command named by no plain word may run, as globs whose
+    /// `*` stands for what an expansion gives: `_comp_compgen_*` for
+    /// `"_comp_compgen_$1"`; for `"${generator[@]}"` or `"$f"`, those of
+    /// each value the file gives the variable, an array's first word, as
+    /// `generator=("_comp_compgen_$1")`. A name that starts with no fixed
+    /// part, `$2` or `"${1%cargo}rustup"`, gives none, nor does a path.
+    fn computed(&self, name: Node<'t>) -> Vec<String> {
+        let mut found: Vec<String> = Vec::new();
+        let written = match named_children(name).as_slice() {
+            [only] => *only,
+            _ => return found,
+        };
+        let values: Vec<Node<'t>> = match variable_of(self.source, written) {
+            Some(variable) => self
+                .scan
+                .given
+                .get(variable)
+                .into_iter()
+                .flatten()
+                .map(|&value| {
+                    if value.kind() == "array" {
+                        named_children(value)
+                            .into_iter()
+                            .find(|c| c.kind() != "comment")
+                            .unwrap_or(value)
+                    } else {
+                        value
+                    }
+                })
+                .collect(),
+            None => vec![written],
+        };
+        for value in values {
+            let mut text = String::new();
+            if glob(self.source, value, &mut text)
+                && !text.starts_with('*')
+                && !text.contains('/')
+                && !found.contains(&text)
+            {
+                found.push(text);
+            }
+        }
+        found
     }
 
     /// `env`'s assignments and `-u`: sets of what the command runs with.
@@ -2870,6 +2990,42 @@ fi
         assert!(read(mended) > read(misread));
         // Fewer lines in errors read better where the functions are as many.
         assert!(read("f() { :; }\n[[ x\n") > read("f() { :; }\n[[ x\n[[ y\n"));
+    }
+
+    #[test]
+    fn a_command_named_by_an_expansion_is_a_call_by_a_glob_where_its_name_starts_fixed() {
+        let out = extract(
+            br#"g() {
+  local -a gen
+  gen=("pre_$1")
+  gen=(plain "$2")
+  "${gen[@]}" x
+}
+h() { "mid_${1}_end"; }
+k() { local name=$2; "$name"; }
+r() { local tool="${1%cargo}rustup"; "$tool"; "$dir/run" x; }
+"#,
+        );
+        let computed: Vec<(&str, u32, Option<&str>, Option<&str>)> = out
+            .calls
+            .iter()
+            .map(|c| {
+                (
+                    c.name.as_str(),
+                    c.line,
+                    c.from.as_deref(),
+                    c.path.as_deref(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            computed,
+            vec![
+                ("pre_*", 5, Some("g"), Some("\"${gen[@]}\"")),
+                ("plain", 5, Some("g"), None),
+                ("mid_*_end", 7, Some("h"), Some("\"mid_${1}_end\"")),
+            ]
+        );
     }
 
     #[test]

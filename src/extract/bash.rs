@@ -55,7 +55,7 @@ use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 
-use tree_sitter::{Node, Parser};
+use tree_sitter::{InputEdit, Node, Parser, Point, Tree};
 
 use super::{
     Call, CallKind, Extraction, Import, Kind, MAX_DEPTH, RefKind, Reference, Symbol, end_line, line,
@@ -176,8 +176,8 @@ pub fn extract(source: &[u8]) -> Extraction {
         if misreadings.is_empty() {
             break;
         }
-        let mut mended = mend(&source, &misreadings);
-        let mut reread = parser.parse(&mended, None).expect("a tree");
+        let (mut mended, mut edits) = mend(&source, &misreadings);
+        let mut reread = reparse(&mut parser, &tree, &mended, &edits);
         if misreadings.iter().any(|m| m.pattern())
             && reading(reread.root_node()) < reading(tree.root_node())
         {
@@ -186,8 +186,8 @@ pub fn extract(source: &[u8]) -> Extraction {
             if misreadings.is_empty() {
                 break;
             }
-            mended = mend(&source, &misreadings);
-            reread = parser.parse(&mended, None).expect("a tree");
+            (mended, edits) = mend(&source, &misreadings);
+            reread = reparse(&mut parser, &tree, &mended, &edits);
         }
         tree = reread;
         source = Cow::Owned(mended);
@@ -633,12 +633,34 @@ fn prefixes<'t>(source: &[u8], command: Node<'t>) -> Vec<Prefix<'t>> {
         .collect()
 }
 
-/// A file's source with its misreadings mended. Every line keeps its
+/// A file's source with its misreadings mended, and the edits that make it
+/// of the source, as a tree's `edit` takes them. Every line keeps its
 /// number: a `;` goes on the assignments' own line, a blank stands for the
 /// `!`, and a pattern's quotes go on its own line.
-fn mend(source: &[u8], misreadings: &[Misreading]) -> Vec<u8> {
+fn mend(source: &[u8], misreadings: &[Misreading]) -> (Vec<u8>, Vec<InputEdit>) {
     let mut mended = source.to_vec();
+    let mut edits = Vec::with_capacity(misreadings.len());
+    let mut lines = vec![0];
+    lines.extend(
+        source
+            .iter()
+            .enumerate()
+            .filter(|&(_, &b)| b == b'\n')
+            .map(|(at, _)| at + 1),
+    );
+    let point = |at: usize| {
+        let row = lines.partition_point(|&line| line <= at) - 1;
+        Point::new(row, at - lines[row])
+    };
+    // Each misreading lies before the one after it, so that mending from the
+    // last leaves the earlier ones where the source has them.
     for misreading in misreadings.iter().rev() {
+        let (start, old_end) = match *misreading {
+            Misreading::Prefix(end) => (end, end),
+            Misreading::Negation(at) | Misreading::Fallthrough(at, _) => (at, at + 1),
+            Misreading::Pattern(start, end) | Misreading::Blank(start, end) => (start, end),
+        };
+        let before = mended.len();
         match *misreading {
             Misreading::Prefix(end) => mended.insert(end, b';'),
             Misreading::Negation(at) => mended[at] = b' ',
@@ -650,8 +672,39 @@ fn mend(source: &[u8], misreadings: &[Misreading]) -> Vec<u8> {
             Misreading::Blank(start, end) => blank(&mut mended[start..end]),
             Misreading::Fallthrough(at, byte) => mended[at] = byte,
         }
+        let new_end = old_end + (mended.len() - before);
+        let from = point(start);
+        edits.push(InputEdit {
+            start_byte: start,
+            old_end_byte: old_end,
+            new_end_byte: new_end,
+            start_position: from,
+            old_end_position: point(old_end),
+            new_end_position: advance(from, &mended[start..new_end]),
+        });
     }
-    mended
+    (mended, edits)
+}
+
+/// Where text ends that starts at a point.
+fn advance(from: Point, text: &[u8]) -> Point {
+    match text.iter().rposition(|&b| b == b'\n') {
+        None => Point::new(from.row, from.column + text.len()),
+        Some(last) => Point::new(
+            from.row + text.iter().filter(|&&b| b == b'\n').count(),
+            text.len() - last - 1,
+        ),
+    }
+}
+
+/// A file's tree again after its source was mended: tree-sitter reads only
+/// what the edits changed, the old tree standing for the rest.
+fn reparse(parser: &mut Parser, tree: &Tree, mended: &[u8], edits: &[InputEdit]) -> Tree {
+    let mut old = tree.clone();
+    for edit in edits {
+        old.edit(edit);
+    }
+    parser.parse(mended, Some(&old)).expect("a tree")
 }
 
 /// How well a tree reads its file, the better the greater: the functions
@@ -2973,6 +3026,28 @@ fi
             assert!(!out.syntax_error, "{source}");
             assert_eq!(functions(&out), read, "{source}");
         }
+    }
+
+    #[test]
+    fn a_tree_read_again_after_its_mends_is_the_tree_of_the_mended_source() {
+        // Every kind of misreading, with an earlier one on the line of a later
+        // one, a pattern across lines, and ones after a multibyte character.
+        let source = concat!(
+            "# é\n",
+            "if ! { got=$(probe) && holds \"$got\"; }; then\n  stop\nfi\n",
+            "a=1 b=2\n\n",
+            "f()\n{\n    host=${host%]?(:+([0-9]))}\n    case $x in\n        a) : ;;&\n    esac\n}\n",
+            "g()\n{\n case $prev in\n --!(no-*)dir*) return ;;\n --!(no-*)\"$dir\"@(a|b)) return ;;\n esac\n}\n",
+            "h() { :; }\n",
+        );
+        let mut parser = parser();
+        let tree = parser.parse(source, None).expect("a tree");
+        let misreadings = misread(source.as_bytes(), tree.root_node(), true);
+        assert!(misreadings.len() >= 5, "{}", misreadings.len());
+        let (mended, edits) = mend(source.as_bytes(), &misreadings);
+        let again = reparse(&mut parser, &tree, &mended, &edits);
+        let whole = parser.parse(&mended, None).expect("a tree");
+        assert_eq!(again.root_node().to_sexp(), whole.root_node().to_sexp());
     }
 
     #[test]

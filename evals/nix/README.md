@@ -265,6 +265,42 @@ their first two lines.
   alternating runs, the same conditions, load 15-20): the gap is what
   placing cost. The balanced profile about doubles every timing on this
   machine, so these are not comparable with task 162's figures above.
+- **An option declared under a `with`, a `let` or a helper of the file's
+  is one** (task 160). graff told a declaration by a call of mkOption,
+  mkEnableOption or mkPackageOption seen through parentheses and `//`
+  alone: `allowedPatterns = with lib.types; mkOption { .. }`, `logLevel =
+  let .. in mkOption { .. }` and a call of a file's own helper,
+  prometheus' `mkOpt type ".."`, vwifi's `mkOptionalPort ".."`, tor's
+  `optionPath ".."`, were attributes, and the options their types hold
+  went nowhere. The extractor now sees through `with` and `let .. in`, and
+  takes for a declaration a call of a function a `let` or a `rec` set of
+  the file binds, when the function's body declares one and the call
+  gives it all its parameters, through another such helper too
+  (`mkDefOpt`), or a helper given some of them (`optionalInt =
+  optionalType types.int;`). Two rules came with it, each measured apart:
+  a submodule's `options` in an option's type keeps a binding that names
+  an option of the file, `port = optionPort;` or `inherit (templates)
+  i2cp;`, so the option goes under its name and not on the declaration
+  around it, which pgbackrest's `settings` and i2pd's tunnels then met
+  twice; and what the `type` of a helper's mkOption names goes under a
+  gap, as a type's own `options` do (tor's `TransPort.port`). On nixpkgs'
+  nixos/modules at c59305b, 21,646 options against 21,134, and
+  examples/resolve changes 136 edges: 90 reads external before are tied to
+  an option (syncthing's `configDir`, `networking.bonds`,
+  `allowedPatterns.zluda.onFeatures`), 16 settings to one where they met
+  none (tor's `settings`), 22 reads and settings to a deeper option or
+  another (`services.picom.settings` met kernel_config's `settings`), 8
+  to one where they met several. The 30 changes not from none read by
+  hand are all right, and so are 22 of the other 106 (seed 160). On lib/
+  and the flake, no edge changes. The flake's 795 questions get the same
+  answers; of nixos/modules' 122, two outlines change, authelia's
+  `instances` and grav's `package` now options. options.py and nil.py:
+  the same reports past the header. Resolution on nixos/modules takes
+  688-714 ms against 668-693 (five alternating runs, 2026-10-12, TLP's
+  balanced profile, a load of 8 to 15 from other sessions); extracting
+  every .nix file of nixpkgs, 38-44 s against 36-53 s, within that noise.
+  Step 2 (instance.rs) sees through `with` and `let` too but follows no
+  helper of a file's own; ~/NixOS at 428b233 has none.
 - **What counts as wrong, read by hand**: 6 settings at each step. 3 at
   step 1 and 4 at step 2 sit under a `mkIf` the host's configuration makes
   false, which step 2 does not evaluate: it decides a condition on the

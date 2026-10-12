@@ -1508,7 +1508,9 @@ impl<'i, 't> Walk<'i, 't> {
     }
 
     /// The kind of definition a binding is, by its value, as the extractor
-    /// tells; any other node is an attribute.
+    /// tells, but for a call of a helper of the file's own that declares an
+    /// option, which the extractor follows and this does not; any other node
+    /// is an attribute.
     fn kind_of(&self, at: At<'t>) -> Kind {
         if at.node.kind() != "binding" {
             return Kind::Attribute;

@@ -333,7 +333,9 @@ impl<'a> Index<'a> {
     /// its own: `options.services.foo.instances.type.options.name` is
     /// `services.foo.instances`, a gap, `name`; so is one in the type of
     /// what is an option's declaration, `settingsOption.type.options.mode`
-    /// with `mkOption settingsOption`.
+    /// with `mkOption settingsOption`, and what that type names, a gap
+    /// after `mkPorts` for `mkPorts = name: mkOption { type = listOf
+    /// portSub; };`.
     fn relative(&self, file: usize, qualified: &'a str, k: usize) -> (Pattern<'a>, bool) {
         if qualified.is_empty() {
             return (Vec::new(), false);
@@ -356,7 +358,11 @@ impl<'a> Index<'a> {
         while i < names.len() {
             let typed = option(i) || (k > 0 && i == k);
             let inner = (names[i] == "type" && typed)
-                .then(|| (i + 1..names.len()).find(|&j| names[j] == "options"))
+                .then(|| {
+                    (i + 1..names.len())
+                        .find(|&j| names[j] == "options")
+                        .or((i + 1 == names.len()).then_some(i))
+                })
                 .flatten();
             match inner {
                 Some(j) => {
@@ -1611,6 +1617,46 @@ a
                     6,
                     "tree.children.a.children.b.value",
                     "prom.nix node.options.value"
+                ),
+            ])
+        );
+    }
+
+    #[test]
+    fn an_option_a_with_a_let_or_a_helper_of_the_files_declares_holds_what_its_type_names() {
+        let sources = [
+            (
+                "tor.nix",
+                "{ lib, ... }:\nlet\n  Pattern = with lib.types; submodule { options.onFeatures = lib.mkOption { }; };\n  optionPort = lib.mkOption { };\n  portSub = lib.types.submodule { options = { port = optionPort; }; };\n  mkPorts = name: lib.mkOption { type = lib.types.either portSub (lib.types.listOf portSub); };\n  mkOpt = type: description: lib.mkOption { inherit type description; };\n  optional = type: x: lib.mkOption (x // { type = lib.types.nullOr type; });\n  optionalInt = optional lib.types.int;\nin\n{\n  options.services.tor = {\n    patterns = with lib.types; lib.mkOption { type = attrsOf Pattern; };\n    ExtORPort = lib.mkOption { type = lib.types.submodule { options = { port = optionPort; }; }; };\n    TransPort = mkPorts \"TransPort\";\n    GeoIPFile = mkOpt lib.types.path \"The GeoIP file.\";\n    retention = optionalInt { };\n  };\n}\n",
+            ),
+            (
+                "host.nix",
+                "{ ... }:\n{\n  services.tor.patterns.zluda.onFeatures = [ ];\n  services.tor.ExtORPort.port = 1;\n  services.tor.TransPort.port = 9040;\n  services.tor.GeoIPFile = ./geoip;\n  services.tor.retention = 5;\n  services.tor = { };\n}\n",
+            ),
+        ];
+        // A submodule a declaration under a `with` names; an option a
+        // submodule's `options` names as its own; one a helper's mkOption
+        // names in its type; and options helpers declare, one given some of
+        // its arguments.
+        assert_eq!(
+            set(&sources, "host.nix"),
+            lines(&[
+                (
+                    3,
+                    "services.tor.patterns.zluda.onFeatures",
+                    "tor.nix Pattern.options.onFeatures"
+                ),
+                (4, "services.tor.ExtORPort.port", "tor.nix optionPort"),
+                (5, "services.tor.TransPort.port", "tor.nix optionPort"),
+                (
+                    6,
+                    "services.tor.GeoIPFile",
+                    "tor.nix options.services.tor.GeoIPFile"
+                ),
+                (
+                    7,
+                    "services.tor.retention",
+                    "tor.nix options.services.tor.retention"
                 ),
             ])
         );

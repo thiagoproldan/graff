@@ -2,7 +2,10 @@
 //! `rec` attrset or a `let` -- is a definition with its lines, named by the
 //! bindings it is in: `config.services.openssh.enable`, `cfg` for a `let` at
 //! the top. A binding whose value calls mkOption, mkEnableOption or
-//! mkPackageOption declares an option; a flake's `inputs` are its inputs; and
+//! mkPackageOption declares an option, under a `with` or a `let` too, and so
+//! does one that calls a helper of the file's own that does with all its
+//! arguments, `mkOpt types.str ".."` with `mkOpt = type: description:
+//! mkOption { .. };`; a flake's `inputs` are its inputs; and
 //! the file as a whole is a definition too, which a path imports. A binding
 //! in what a function that makes a package, a file or a string of it is
 //! given -- `pkgs.writeText`'s, `builtins.toJSON`'s, `mkOption`'s -- is
@@ -231,8 +234,14 @@ pub fn segments(path: &str) -> Vec<&str> {
 enum Bound {
     /// By a `let` or a `rec` attrset: the qualified name of the binding, and
     /// the paths from outside the file its value stands for, as `cfg`'s in
-    /// `cfg = config.services.foo;`.
-    Local { qualified: String, alias: Vec<Path> },
+    /// `cfg = config.services.foo;`; and, for a helper that declares an
+    /// option, how many arguments it wants to: two for `mkOpt = type:
+    /// description: mkOption { .. };`.
+    Local {
+        qualified: String,
+        alias: Vec<Path>,
+        maker: Option<usize>,
+    },
     /// By the file's own function, or by a flake's `outputs`: how a path
     /// from it is written for resolution, `inputs.nixpkgs` for `nixpkgs`
     /// there; empty for `args` in `{ ... }@args`, whose `args.config` is the
@@ -264,6 +273,10 @@ enum Set {
     Rec,
     Let,
 }
+
+/// Each name a `let` or a `rec` set binds, and how many arguments it wants
+/// to declare an option, if it is a helper that does.
+type Makers = HashMap<String, Option<usize>>;
 
 /// A binding of a set, as the first pass over the set leaves it for the
 /// second.
@@ -357,21 +370,29 @@ pub(crate) fn function_name<'t>(source: &'t [u8], function: Node) -> Option<&'t 
     name.and_then(|name| name.utf8_text(source).ok())
 }
 
-/// Whether a value declares an option: `lib.mkOption { .. }`, or
-/// `mkEnableOption ".." // { default = true; }`.
-pub(crate) fn declares_option(source: &[u8], value: Node) -> bool {
+/// The call a value is, seen through what leaves the call its value:
+/// parentheses, the left of `//`, a `with` and a `let .. in`, as in
+/// `with lib.types; mkOption { .. }`.
+pub(crate) fn value_call(value: Node) -> Option<Node> {
     let mut value = unwrapped(value);
-    while value.kind() == "binary_expression" {
-        match value.child_by_field_name("left") {
-            Some(left) => value = unwrapped(left),
-            None => return false,
-        }
+    loop {
+        let inner = match value.kind() {
+            "binary_expression" => value.child_by_field_name("left")?,
+            "with_expression" | "let_expression" => value.child_by_field_name("body")?,
+            _ => break,
+        };
+        value = unwrapped(inner);
     }
-    if value.kind() != "apply_expression" {
-        return false;
-    }
-    let (function, _) = applied(value);
-    function_name(source, function).is_some_and(|name| OPTION_MAKERS.contains(&name))
+    (value.kind() == "apply_expression").then_some(value)
+}
+
+/// Whether a value declares an option: `lib.mkOption { .. }`,
+/// `mkEnableOption ".." // { default = true; }`, or either under a `with`
+/// or a `let`.
+pub(crate) fn declares_option(source: &[u8], value: Node) -> bool {
+    value_call(value).is_some_and(|call| {
+        function_name(source, applied(call).0).is_some_and(|name| OPTION_MAKERS.contains(&name))
+    })
 }
 
 /// Whether a name may stand unquoted in a path.
@@ -631,10 +652,11 @@ impl<'s> Reader<'s> {
         }
     }
 
-    /// The kind of definition a binding is, by its value.
-    fn kind_of(&self, value: Node, set: Set) -> Kind {
+    /// The kind of definition a binding is, by its value; `own` is what
+    /// the set it is in binds, as `makers` gives it.
+    fn kind_of(&self, value: Node, set: Set, own: &Makers) -> Kind {
         let value = unwrapped(value);
-        if declares_option(self.source, value) {
+        if self.declares(value, own) {
             Kind::Option
         } else if value.kind() == "function_expression" {
             Kind::Function
@@ -645,14 +667,120 @@ impl<'s> Reader<'s> {
         }
     }
 
-    /// What an option's declaration says of it: the `description` in
-    /// mkOption's attrset, or mkEnableOption's argument.
-    fn description(&self, value: Node) -> Option<String> {
-        let mut value = unwrapped(value);
-        while value.kind() == "binary_expression" {
-            value = unwrapped(value.child_by_field_name("left")?);
+    /// Whether a value declares an option: calls mkOption or the like, or
+    /// a helper of the file's that does with all its arguments, as `mkOpt`
+    /// in `mkOpt types.str ".."` with `mkOpt = type: description: mkOption
+    /// { .. };`.
+    fn declares(&self, value: Node, own: &Makers) -> bool {
+        self.wanting(value, own) == Some(0)
+    }
+
+    /// How many arguments a value wants more before it declares an option:
+    /// none for a call of mkOption or the like, two for `type: description:
+    /// mkOption { .. }`, one for `mkOpt types.str` with `mkOpt` that; no
+    /// count for a value no arguments make one. A helper is a name the set
+    /// being read binds, `own`, or a `let` or a `rec` set around.
+    fn wanting(&self, value: Node, own: &Makers) -> Option<usize> {
+        let value = unwrapped(value);
+        if value.kind() == "function_expression" {
+            let mut parameters = 0;
+            let mut body = value;
+            while body.kind() == "function_expression" {
+                parameters += 1;
+                body = unwrapped(body.child_by_field_name("body")?);
+            }
+            return self.wanting(body, own).map(|more| parameters + more);
         }
-        let (_, arguments) = applied(value);
+        let (function, given) = match value_call(value) {
+            Some(call) => {
+                let (function, arguments) = applied(call);
+                if function_name(self.source, function)
+                    .is_some_and(|name| OPTION_MAKERS.contains(&name))
+                {
+                    return Some(0);
+                }
+                (function, arguments.len())
+            }
+            None => (value, 0),
+        };
+        if function.kind() != "variable_expression" {
+            return None;
+        }
+        let name = self.text(function.child_by_field_name("name")?);
+        let wants = match own.get(name) {
+            Some(&wants) => wants,
+            None => self.frames.iter().rev().find_map(|frame| match frame {
+                Frame::Names(names) => names.get(name).map(|bound| match bound {
+                    Bound::Local { maker, .. } => *maker,
+                    _ => None,
+                }),
+                Frame::With(_) => None,
+            })?,
+        };
+        wants.map(|wants| wants.saturating_sub(given))
+    }
+
+    /// Each name a `let` or a `rec` set binds, and how many arguments it
+    /// wants to declare an option, if it is a helper that does: a function
+    /// whose body declares one, through mkOption or the like or another
+    /// such helper, or such a helper given some of its arguments.
+    fn makers(&self, bindings: &[Node]) -> Makers {
+        let mut own: Makers = HashMap::new();
+        let mut values = Vec::new();
+        for binding in bindings {
+            match binding.kind() {
+                "binding" => {
+                    let Some(attrpath) = binding.child_by_field_name("attrpath") else {
+                        continue;
+                    };
+                    let attrs = self.attrs(attrpath);
+                    let Some(first) = attrs.first() else {
+                        continue;
+                    };
+                    own.insert(first.clone(), None);
+                    if let [name] = &attrs[..]
+                        && let Some(value) = binding.child_by_field_name("expression")
+                    {
+                        values.push((name.clone(), value));
+                    }
+                }
+                "inherit" | "inherit_from" => {
+                    for attr in binding
+                        .child_by_field_name("attrs")
+                        .map(named_children)
+                        .unwrap_or_default()
+                    {
+                        own.insert(self.text(attr).to_string(), None);
+                    }
+                }
+                _ => {}
+            }
+        }
+        // A helper may call one bound after it.
+        loop {
+            let found: Vec<(String, usize)> = values
+                .iter()
+                .filter(|(name, _)| own[name].is_none())
+                .filter_map(|(name, value)| {
+                    let wants = self.wanting(*value, &own).filter(|&wants| wants > 0)?;
+                    Some((name.clone(), wants))
+                })
+                .collect();
+            if found.is_empty() {
+                break;
+            }
+            for (name, wants) in found {
+                own.insert(name, Some(wants));
+            }
+        }
+        own
+    }
+
+    /// What an option's declaration says of it: the `description` in
+    /// mkOption's attrset, or the first string a call is given, as
+    /// mkEnableOption's.
+    fn description(&self, value: Node) -> Option<String> {
+        let (_, arguments) = applied(value_call(value)?);
         for argument in arguments.into_iter().map(unwrapped) {
             match argument.kind() {
                 "string_expression" | "indented_string_expression" => {
@@ -711,6 +839,11 @@ impl<'s> Reader<'s> {
                 || set
                     .and_then(|set| set.parent())
                     .is_some_and(|attrs| self.passed(attrs)));
+        let own = if of == Set::Attrs {
+            HashMap::new()
+        } else {
+            self.makers(&bindings)
+        };
         let mut entries: Vec<Entry> = Vec::new();
         // What `inherit x;` brings in, bound outside the set, and what it stands for there.
         let mut inherited: Vec<(String, Vec<Path>)> = Vec::new();
@@ -725,17 +858,23 @@ impl<'s> Reader<'s> {
                     };
                     let mut path = self.prefix.clone();
                     path.extend(self.attrs(attrpath));
-                    let kind = self.kind_of(value, of);
+                    let kind = self.kind_of(value, of, &own);
                     // An option's declaration holds the option's fields, but a
-                    // `let` in it binds names all the same.
-                    let qualified = if self.quiet && kind != Kind::Option && of == Set::Attrs {
-                        None
-                    } else {
-                        let doc = self
-                            .doc(*binding)
-                            .or_else(|| (kind == Kind::Option).then(|| self.description(value))?);
-                        Some(self.symbol(*binding, &path, kind, doc))
-                    };
+                    // `let` in it binds names all the same, and a submodule's
+                    // `options` in its type the options it names of the file's,
+                    // `port = optionPort;`.
+                    let naming = path.len() >= 2
+                        && path[path.len() - 2] == "options"
+                        && self.paths_of(value).iter().any(|path| path.local.is_some());
+                    let qualified =
+                        if self.quiet && kind != Kind::Option && of == Set::Attrs && !naming {
+                            None
+                        } else {
+                            let doc = self.doc(*binding).or_else(|| {
+                                (kind == Kind::Option).then(|| self.description(value))?
+                            });
+                            Some(self.symbol(*binding, &path, kind, doc))
+                        };
                     entries.push(Entry {
                         node: *binding,
                         path,
@@ -759,7 +898,18 @@ impl<'s> Reader<'s> {
                         } else {
                             Kind::Attribute
                         };
-                        let qualified = (!passes).then(|| self.symbol(*binding, &path, kind, None));
+                        // `inherit (ports) tcp;` in a submodule's `options` in an
+                        // option's type names an option, as `tcp = ports.tcp;` does.
+                        let local =
+                            |paths: Vec<Path>| paths.iter().any(|path| path.local.is_some());
+                        let naming = self.quiet
+                            && self.prefix.last().is_some_and(|last| last == "options")
+                            && match binding.child_by_field_name("expression") {
+                                Some(source) => local(self.paths_of(source)),
+                                None => local(self.bases(&name).0),
+                            };
+                        let qualified =
+                            (!passes || naming).then(|| self.symbol(*binding, &path, kind, None));
                         // `inherit x;` takes the `x` outside the set, even in a `let` or a `rec` set.
                         if binding.kind() == "inherit" {
                             let within = qualified.clone().or_else(|| self.from.clone());
@@ -808,6 +958,7 @@ impl<'s> Reader<'s> {
                 names.entry(first.clone()).or_insert(Bound::Local {
                     qualified,
                     alias: Vec::new(),
+                    maker: own.get(first).copied().flatten(),
                 });
             }
             self.frames.push(Frame::Names(names));
@@ -1037,7 +1188,9 @@ impl<'s> Reader<'s> {
                 && let Some(bound) = names.get(name)
             {
                 return match bound {
-                    Bound::Local { qualified, alias } => {
+                    Bound::Local {
+                        qualified, alias, ..
+                    } => {
                         let mut paths = vec![Path {
                             text: name.to_string(),
                             local: Some(qualified.clone()),
@@ -1611,6 +1764,99 @@ in
         }
         // What a consumed attrset inherits it passes along.
         assert!(!out.symbols.iter().any(|s| s.qualified == "l.m.n"));
+    }
+
+    #[test]
+    fn a_with_a_let_or_a_helper_of_the_files_around_mk_option_declares_an_option() {
+        let out = extract(
+            br#"{ lib, ... }:
+let
+  mkOpt = type: description: lib.mkOption { inherit type description; };
+  mkDefOpt = type: default: description: mkOpt type description // { inherit default; };
+  optional = type: x: lib.mkOption (x // { type = lib.types.nullOr type; });
+  optionalInt = optional lib.types.int;
+in
+{
+  options.x = {
+    a = with lib.types; lib.mkOption { type = str; };
+    b = let t = lib.types.str; in lib.mkOption { type = t; };
+    c = mkOpt lib.types.str "The c.";
+    d = mkDefOpt lib.types.int 1 "The d.";
+    e = optionalInt { description = "The e."; };
+    f = mkOpt lib.types.str;
+    g = let mkOpt = x: x; in { h = mkOpt 1; };
+  };
+}
+"#,
+        );
+        for (qualified, kind) in [
+            ("mkOpt", Kind::Function),
+            ("mkDefOpt", Kind::Function),
+            ("optionalInt", Kind::Variable),
+            ("options.x.a", Kind::Option),
+            ("options.x.b", Kind::Option),
+            ("options.x.c", Kind::Option),
+            ("options.x.d", Kind::Option),
+            ("options.x.e", Kind::Option),
+            // Short of an argument, a function still; one a `let` shadows, no helper.
+            ("options.x.f", Kind::Attribute),
+            ("options.x.g.h", Kind::Attribute),
+        ] {
+            assert_eq!(symbol(&out, qualified).kind, kind, "{qualified}");
+        }
+        let doc = |qualified| symbol(&out, qualified).doc.as_deref();
+        assert_eq!(doc("options.x.c"), Some("The c."));
+        assert_eq!(doc("options.x.d"), Some("The d."));
+        assert_eq!(doc("options.x.e"), Some("The e."));
+        // What an option's declaration holds is the option's.
+        assert!(
+            !out.symbols
+                .iter()
+                .any(|s| s.qualified == "options.x.e.description")
+        );
+    }
+
+    #[test]
+    fn a_submodules_options_in_an_options_type_keep_the_names_they_give_options_of_the_file() {
+        let out = extract(
+            br#"{ lib, ... }:
+let
+  port = lib.mkOption { };
+  ports.tcp = lib.mkOption { };
+in
+{
+  options.x = lib.mkOption {
+    type = lib.types.submodule {
+      options = {
+        inherit port;
+        inherit (ports) tcp;
+        udp = ports.tcp;
+        id = lib.id;
+        inherit (lib) mkIf;
+      };
+    };
+  };
+}
+"#,
+        );
+        let qualified: Vec<&str> = out.symbols.iter().map(|s| s.qualified.as_str()).collect();
+        for named in ["port", "tcp", "udp"] {
+            let named = format!("options.x.type.options.{named}");
+            assert_eq!(symbol(&out, &named).kind, Kind::Attribute, "{named}");
+        }
+        for field in ["id", "mkIf"] {
+            let field = format!("options.x.type.options.{field}");
+            assert!(
+                !qualified.contains(&field.as_str()),
+                "{field} in {qualified:?}"
+            );
+        }
+        assert!(references(&out).contains(&(
+            "ports.tcp".to_string(),
+            12,
+            Some("options.x.type.options.udp"),
+            Some("ports")
+        )));
     }
 
     #[test]

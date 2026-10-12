@@ -1124,7 +1124,7 @@ impl<'a> Index<'a> {
                 };
                 // In each module the file is, as its definitions are.
                 for place in index.places.all(f).to_vec() {
-                    let scope = index.scope_in(f, place, import.line);
+                    let scope = index.scope_named(place, import.from.as_deref());
                     let imports = index.imports.entry(scope).or_default();
                     if import.glob {
                         imports.globs.push(imported);
@@ -1298,7 +1298,6 @@ impl<'a> Index<'a> {
 
     /// The module a line of a file is in, the file being the module `place`.
     fn scope_in(&self, file: usize, place: Scope, line: u32) -> Scope {
-        let (crate_name, mut module) = place;
         let mut best: Option<&String> = None;
         for (qualified, symbol) in &self.inline[file] {
             if symbol.start < line
@@ -1308,7 +1307,14 @@ impl<'a> Index<'a> {
                 best = Some(qualified);
             }
         }
-        if let Some(qualified) = best {
+        self.scope_named(place, best.map(String::as_str))
+    }
+
+    /// The module `place` is, and in it the inline module `inline` names, a
+    /// qualified name, if any.
+    fn scope_named(&self, place: Scope, inline: Option<&str>) -> Scope {
+        let (crate_name, mut module) = place;
+        if let Some(qualified) = inline {
             module.extend(
                 segments(qualified)
                     .iter()
@@ -2991,6 +2997,45 @@ fn render() {}
         assert!(
             reaches(&edges, "src/debug.rs:4", "debug", "call method").starts_with("src/debug.rs"),
             "{edges:?}"
+        );
+    }
+
+    #[test]
+    fn a_use_item_in_a_one_line_module_is_the_modules_as_in_a_multi_line_one() {
+        // A line holds the module's own first line, so the module is found
+        // by what holds the use item, not by its line.
+        let one = edges_of(&[
+            (
+                "src/lib.rs",
+                "mod user;\nmod posix { pub struct Fd; }\nmod fd { pub use crate::posix::*; }\n",
+            ),
+            ("src/user.rs", "use crate::fd::Fd;\npub fn f(x: Fd) {}\n"),
+        ]);
+        let many = edges_of(&[
+            (
+                "src/lib.rs",
+                "mod user;\nmod posix { pub struct Fd; }\nmod fd {\n    pub use crate::posix::*;\n}\n",
+            ),
+            ("src/user.rs", "use crate::fd::Fd;\npub fn f(x: Fd) {}\n"),
+        ]);
+        let host = "src/lib.rs posix::Fd";
+        assert!(
+            reaches(&many, "src/user.rs:2", "Fd", "reference type").starts_with(host),
+            "{many:?}"
+        );
+        assert_eq!(
+            reaches(&one, "src/user.rs:2", "Fd", "reference type"),
+            reaches(&many, "src/user.rs:2", "Fd", "reference type"),
+            "{one:?}"
+        );
+        // And a use item after a one-line module on its line is the file's.
+        let after = edges_of(&[(
+            "src/lib.rs",
+            "mod posix { pub struct Fd; }\nmod a { pub fn g() {} } use posix::Fd;\npub fn f(x: Fd) {}\n",
+        )]);
+        assert!(
+            reaches(&after, "src/lib.rs:3", "Fd", "reference type").starts_with(host),
+            "{after:?}"
         );
     }
 

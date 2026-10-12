@@ -16,7 +16,7 @@ use crate::lang::Language;
 
 /// Bumped whenever what an extractor produces changes, so that results kept
 /// from an older extractor are read again rather than trusted.
-pub const VERSION: u32 = 25;
+pub const VERSION: u32 = 26;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Extraction {
@@ -262,7 +262,8 @@ pub struct Import {
     pub public: bool,
     pub line: u32,
     /// Nix, Python: the qualified name of the definition the path is in.
-    /// Rust: the `mod` item's, for a file it is loaded from.
+    /// Rust: the `mod` item's, for a file it is loaded from; for a use item,
+    /// the innermost inline module it is in, none at the file's own level.
     pub from: Option<String>,
     /// Rust: `mod` for a file a `mod x;` item is loaded from, the path its
     /// `path` attribute writes, plain or in a `cfg_attr`, or "" for `x.rs`

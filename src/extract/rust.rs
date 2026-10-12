@@ -573,6 +573,14 @@ impl<'s> Reader<'s> {
         self.generics.iter().any(|names| names.contains(name))
     }
 
+    /// The qualified name of the innermost module the walk is in, none at the
+    /// file's own level.
+    fn module_qualified(&self) -> Option<String> {
+        let at = self.scope.iter().rposition(|(_, s)| *s == Scope::Module)?;
+        let segments: Vec<&str> = self.scope[..=at].iter().map(|(s, _)| s.as_str()).collect();
+        Some(segments.join("::"))
+    }
+
     /// The last segment of a qualified name, to stand for it in the scope.
     fn segment(qualified: &str) -> String {
         qualified
@@ -910,13 +918,14 @@ impl<'s> Reader<'s> {
                 join(&segment)
             }
         };
+        let module = self.module_qualified();
         let import = |path: String, alias: Option<String>, glob: bool| Import {
             path,
             alias,
             glob,
             public,
             line: line(node),
-            from: None,
+            from: module.clone(),
             via: None,
             condition: None,
         };
@@ -2150,6 +2159,27 @@ fn k() {
                 (16, 18, "m!"),
                 (22, 25, "any(miri,target_os=\"none\")"),
                 (30, 30, "windows"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_use_item_names_the_inline_module_it_is_in() {
+        let source = "use a::A;\nmod one { use b::B; }\nmod two {\n    use c::C;\n    mod inner { use d::D; }\n    fn f() {\n        use e::E;\n    }\n}\n";
+        let out = extract(source.as_bytes());
+        let got: Vec<(&str, Option<&str>)> = out
+            .imports
+            .iter()
+            .map(|i| (i.path.as_str(), i.from.as_deref()))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("a::A", None),
+                ("b::B", Some("one")),
+                ("c::C", Some("two")),
+                ("d::D", Some("two::inner")),
+                ("e::E", Some("two")),
             ]
         );
     }

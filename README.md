@@ -43,7 +43,10 @@ script, which a `.` sources and a command runs. A call is tied to a function
 of its own file, else of the files it runs with by `.` (what it sources and,
 for a library, the scripts that source it), else to the only function of
 that name in the worktree; a variable to its file's, those files', or one
-another script exports to the commands it runs. A path is evaluated where it
+another script exports to the commands it runs. Bash's scope is dynamic: a
+variable a function uses with no `local` of its own is tied to the local of
+the nearest functions up its callers that declare it, `F.x`, a definition
+where another function may reach it. A path is evaluated where it
 names the script's own folder (`dirname "$0"`, `${BASH_SOURCE%/*}`, `$(cd ..
 && pwd)`) or named by a `# shellcheck source=` directive
 (`src/extract/bash.rs`, `src/resolve/bash.rs`). In Python, a file with no
@@ -233,7 +236,8 @@ What graff does so far is measured there too:
   NixOS flake and on nixpkgs.
 - `evals/bash/`: Bash against what ran when ctx's test suite ran, traced by
   Bash itself, and against bash-language-server's ties of names, on ctx and
-  on bash-completion.
+  on bash-completion; a function's use of its callers' locals against Bash's
+  call stack as bash-completion's completions run.
 - `evals/python/`: Python against pyright's ties of names, on kimi-k3-in-c's
   tools/, on ekko's and graff's evals/, and on Python 3.14's library.
 - `evals/c/`: C against clangd's ties of names, on kimi-k3-in-c, with

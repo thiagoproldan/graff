@@ -10,6 +10,12 @@
 //! - a variable, among those another script exports to the commands it
 //!   runs, `export X=..` or `X=.. cmd` (`environment`).
 //!
+//! A variable a function uses with no local of its own is, by Bash's
+//! dynamic scope, the local of the nearest function that calls it, through
+//! the calls tied to one function, that declares it local (`caller`); the
+//! file's own only where a path of callers reaches top-level code, or a
+//! function nothing calls, without passing one.
+//!
 //! What none of these finds is the system's: a command, or a variable the
 //! environment brings. A path a script sources or runs reaches the file of
 //! the worktree it names, from the script's folder, else from the
@@ -37,6 +43,12 @@ struct Index<'a> {
     /// The scripts each script sources, and those that source it.
     sources: HashMap<usize, Vec<usize>>,
     sourcers: HashMap<usize, Vec<usize>>,
+    /// Each script's functions, by qualified name.
+    qualified: HashMap<usize, HashMap<&'a str, Definition>>,
+    /// The names each function declares local, and those of them its file
+    /// shares, by function and name.
+    binds: HashMap<Definition, Vec<&'a str>>,
+    locals: HashMap<(Definition, &'a str), Definition>,
 }
 
 impl<'a> Index<'a> {
@@ -50,6 +62,9 @@ impl<'a> Index<'a> {
             environment: HashMap::new(),
             sources: HashMap::new(),
             sourcers: HashMap::new(),
+            qualified: HashMap::new(),
+            binds: HashMap::new(),
+            locals: HashMap::new(),
         };
         for (f, file) in files.iter().enumerate() {
             if file.extraction.symbols.iter().any(|s| s.kind == Kind::File) {
@@ -69,7 +84,16 @@ impl<'a> Index<'a> {
                             .entry(&symbol.name)
                             .or_insert(d);
                         index.named.entry(&symbol.name).or_default().push(d);
+                        index
+                            .qualified
+                            .entry(f)
+                            .or_default()
+                            .insert(&symbol.qualified, d);
+                        if let Some(names) = &symbol.value {
+                            index.binds.insert(d, names.split(' ').collect());
+                        }
                     }
+                    Kind::Variable if local(&symbol.qualified).is_some() => {}
                     Kind::Variable | Kind::Environment => {
                         index
                             .variables
@@ -87,6 +111,16 @@ impl<'a> Index<'a> {
         for (f, file) in files.iter().enumerate() {
             if file.language != Language::Bash {
                 continue;
+            }
+            for (s, symbol) in file.extraction.symbols.iter().enumerate() {
+                if symbol.kind == Kind::Variable
+                    && let Some((function, name)) = local(&symbol.qualified)
+                    && let Some(&function) = index.qualified.get(&f).and_then(|q| q.get(function))
+                {
+                    index
+                        .locals
+                        .insert((function, name), Definition { file: f, symbol: s });
+                }
             }
             for import in &file.extraction.imports {
                 if sourced(import)
@@ -228,6 +262,87 @@ impl<'a> Index<'a> {
     }
 }
 
+/// A local's function and name, from its qualified name, `F.x`: a script's
+/// own variable's holds no `.`.
+fn local(qualified: &str) -> Option<(&str, &str)> {
+    let (function, name) = qualified.rsplit_once('.')?;
+    let name = name.split('#').next().unwrap_or(name);
+    Some((function, name))
+}
+
+/// The functions that call each function, through the calls tied to it:
+/// `None` for a call from top-level code.
+type Callers = HashMap<Definition, Vec<Option<Definition>>>;
+
+/// The functions nearest a function's callers, theirs, and so on, that
+/// declare a name local; and whether a path of callers reaches top-level
+/// code, or a function nothing calls, without passing one.
+fn binders(
+    index: &Index,
+    callers: &Callers,
+    function: Definition,
+    name: &str,
+) -> (Vec<Definition>, bool) {
+    let mut found = Vec::new();
+    let mut top = false;
+    let mut seen = HashSet::from([function]);
+    let mut queue = vec![function];
+    while let Some(f) = queue.pop() {
+        let calling = callers.get(&f).map(Vec::as_slice).unwrap_or_default();
+        if calling.is_empty() {
+            top = true;
+        }
+        for &caller in calling {
+            match caller {
+                None => top = true,
+                Some(c) if index.binds.get(&c).is_some_and(|n| n.contains(&name)) => {
+                    if !found.contains(&c) {
+                        found.push(c);
+                    }
+                }
+                Some(c) => {
+                    if seen.insert(c) {
+                        queue.push(c);
+                    }
+                }
+            }
+        }
+    }
+    found.sort();
+    (found, top)
+}
+
+/// What a use reaches when functions that call its own bind the name: the
+/// local of each that the index holds, and, where a path of callers reaches
+/// top-level code, what the use reaches by its file. One binder, held, and
+/// nothing else is the use's own; with one that is not held, the use is
+/// one of several still.
+fn dynamic(
+    index: &Index,
+    binders: &[Definition],
+    top: bool,
+    name: &str,
+    global: Resolution,
+) -> Resolution {
+    let mut found: Vec<Definition> = binders
+        .iter()
+        .filter_map(|&b| index.locals.get(&(b, name)).copied())
+        .collect();
+    let held = found.len() == binders.len();
+    if top {
+        match global {
+            Resolution::Resolved(d, _) => found.push(d),
+            Resolution::Ambiguous(all) => found.extend(all),
+            Resolution::External => {}
+        }
+    }
+    match found.as_slice() {
+        [] => Resolution::External,
+        [d] if held => Resolution::Resolved(*d, Rule::Caller),
+        _ => Resolution::Ambiguous(found),
+    }
+}
+
 /// Whether an import loads its file into the script, as `.` and `source`
 /// do, rather than running it.
 fn sourced(import: &Import) -> bool {
@@ -240,13 +355,27 @@ fn sourced(import: &Import) -> bool {
 pub fn resolve(files: &[File]) -> Vec<Edge> {
     let index = Index::new(files);
     let mut edges = Vec::new();
+    let loaded: HashMap<usize, Vec<usize>> = files
+        .iter()
+        .enumerate()
+        .filter(|(_, file)| file.language == Language::Bash)
+        .map(|(f, _)| (f, index.loaded(f)))
+        .collect();
+    let function_of =
+        |f: usize, from: &Option<String>| index.qualified.get(&f)?.get(from.as_deref()?).copied();
+    let mut callers: Callers = HashMap::new();
     for (f, file) in files.iter().enumerate() {
         if file.language != Language::Bash {
             continue;
         }
-        let extraction = file.extraction;
-        let loaded = index.loaded(f);
-        for call in &extraction.calls {
+        for call in &file.extraction.calls {
+            let resolution = index.function(f, &loaded[&f], &call.name);
+            if let Resolution::Resolved(d, _) = resolution {
+                callers
+                    .entry(d)
+                    .or_default()
+                    .push(function_of(f, &call.from));
+            }
             edges.push(Edge {
                 file: f,
                 line: call.line,
@@ -254,10 +383,31 @@ pub fn resolve(files: &[File]) -> Vec<Edge> {
                 path: None,
                 used: Use::Call(call.kind),
                 from: call.from.clone(),
-                resolution: index.function(f, &loaded, &call.name),
+                resolution,
             });
         }
+    }
+    let shared: HashSet<&str> = index.binds.values().flatten().copied().collect();
+    let mut walked: HashMap<(Definition, &str), (Vec<Definition>, bool)> = HashMap::new();
+    for (f, file) in files.iter().enumerate() {
+        if file.language != Language::Bash {
+            continue;
+        }
+        let extraction = file.extraction;
+        let loaded = &loaded[&f];
         for reference in &extraction.references {
+            let mut resolution = index.variable(f, loaded, &reference.name);
+            if let Some(function) = function_of(f, &reference.from)
+                && shared.contains(reference.name.as_str())
+            {
+                let (found, top) = walked
+                    .entry((function, reference.name.as_str()))
+                    .or_insert_with(|| binders(&index, &callers, function, &reference.name))
+                    .clone();
+                if !found.is_empty() {
+                    resolution = dynamic(&index, &found, top, &reference.name, resolution);
+                }
+            }
             edges.push(Edge {
                 file: f,
                 line: reference.line,
@@ -269,10 +419,15 @@ pub fn resolve(files: &[File]) -> Vec<Edge> {
                     Use::Reference(reference.kind)
                 },
                 from: reference.from.clone(),
-                resolution: index.variable(f, &loaded, &reference.name),
+                resolution,
             });
         }
-        for import in &extraction.imports {
+    }
+    for (f, file) in files.iter().enumerate() {
+        if file.language != Language::Bash {
+            continue;
+        }
+        for import in &file.extraction.imports {
             index.imported(f, import, &mut edges);
         }
     }
@@ -525,6 +680,102 @@ log() { helper; echo "$1" >>"$LOG_FILE"; }
         ];
         expected.sort();
         assert_eq!(found, expected);
+    }
+
+    /// A completion script that sources a library of helpers, which read
+    /// and set the locals of the functions that call them.
+    const DYNAMIC: &[(&str, &str)] = &[
+        (
+            "bin/complete",
+            r#". "${BASH_SOURCE%/*}/../lib/split.sh"
+_comp_cmd() {
+  local cur prev
+  _split
+}
+_other() {
+  local cur mode
+  _middle
+}
+_middle() { _split; }
+"#,
+        ),
+        (
+            "lib/split.sh",
+            r#"_split() {
+  prev=${cur%%=*}
+  echo "$mode"
+}
+_lone() { echo "$cur"; }
+_lone
+_set() { level=1; }
+"#,
+        ),
+    ];
+
+    #[test]
+    fn a_variable_a_function_does_not_declare_is_the_local_of_the_callers_that_do() {
+        let extractions: Vec<Extraction> = DYNAMIC
+            .iter()
+            .map(|(_, source)| extract::extract(Language::Bash, source.as_bytes()))
+            .collect();
+        let files: Vec<File> = DYNAMIC
+            .iter()
+            .zip(&extractions)
+            .map(|((path, _), extraction)| File {
+                path,
+                language: Language::Bash,
+                extraction,
+            })
+            .collect();
+        let named = |d: &Definition| {
+            format!(
+                "{} {}",
+                files[d.file].path, files[d.file].extraction.symbols[d.symbol].qualified
+            )
+        };
+        let mut found: Vec<(u32, String, String)> = resolve(&files)
+            .into_iter()
+            .filter(|e| matches!(e.used, Use::Reference(_) | Use::Setting))
+            .map(|e| {
+                let reached = match &e.resolution {
+                    Resolution::Resolved(d, rule) => format!("{} ({})", named(d), rule.name()),
+                    Resolution::Ambiguous(all) => {
+                        all.iter().map(named).collect::<Vec<_>>().join(" or ")
+                    }
+                    Resolution::External => "external".to_string(),
+                };
+                (e.line, e.name, reached)
+            })
+            .collect();
+        found.sort();
+        let edge = |line, name: &str, reached: &str| (line, name.to_string(), reached.to_string());
+        assert_eq!(
+            found,
+            vec![
+                // Both callers of _split that reach it declare cur: one
+                // directly, one through _middle.
+                edge(
+                    2,
+                    "cur",
+                    "bin/complete _comp_cmd.cur or bin/complete _other.cur"
+                ),
+                // _comp_cmd declares prev; _other, which nothing calls, does
+                // not, so the library's own prev is one too.
+                edge(
+                    2,
+                    "prev",
+                    "bin/complete _comp_cmd.prev or lib/split.sh prev"
+                ),
+                // _other alone declares mode, and the other path ends at a
+                // function nothing calls, which defines no mode.
+                edge(3, "mode", "bin/complete _other.mode (caller)"),
+                // Called from top-level code: no local of any function.
+                edge(5, "cur", "external"),
+                // A function's first assignment defines the file's variable
+                // and sets it, where no caller declares it.
+                edge(7, "level", "lib/split.sh level (scope)"),
+            ]
+        );
     }
 
     #[test]

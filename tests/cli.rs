@@ -1337,6 +1337,77 @@ src/hooks/handoff:17 environment CTX_FUNNEL: 2 callers, 0 possible
     );
 }
 
+/// A completion script whose functions keep locals that the library's
+/// helper, which declares none, reads and sets: Bash's dynamic scope.
+const BASH_DYNAMIC: &[(&str, &str)] = &[
+    (
+        "bin/complete",
+        r#"#!/bin/bash
+. "${BASH_SOURCE%/*}/../lib/split.sh"
+_comp_cmd() {
+  local cur prev
+  _split
+}
+_other() {
+  local cur mode
+  _middle
+}
+_middle() { _split; }
+"#,
+    ),
+    (
+        "lib/split.sh",
+        r#"_split() {
+  prev=${cur%%=*}
+  echo "$mode"
+}
+"#,
+    ),
+];
+
+#[test]
+fn bash_a_helpers_free_variable_reaches_its_callers_locals() {
+    let demo = Demo::of("bash-dynamic", BASH_DYNAMIC);
+    // Asked by its name alone, the use is still tied through every call
+    // of the worktree's scripts, which the question did not name.
+    assert_eq!(
+        demo.ask(&["callers", "_other.mode"]),
+        demo.rooted(
+            "callers _other.mode in ROOT
+bin/complete:8 variable _other.mode: 1 caller, 0 possible
+  lib/split.sh:1-4 function _split: ref 3
+"
+        )
+    );
+    assert_eq!(
+        demo.ask(&["callees", "_split"]),
+        demo.rooted(
+            "callees _split in ROOT
+lib/split.sh:1-4 function _split: 1 callee, 2 possible, 1 outside the worktree
+  bin/complete:8 variable _other.mode: ref 3
+  possible: prev: set 2 (one of 2)
+  possible: cur: ref 2 (one of 2)
+  outside the worktree: echo
+"
+        )
+    );
+    assert_eq!(
+        demo.ask(&["outline", "bin/complete"]),
+        demo.rooted(
+            "outline bin/complete in ROOT
+bin/complete: 11 lines, 7 symbols
+  3-6 function _comp_cmd
+    4 variable cur
+    4 variable prev
+  7-10 function _other
+    8 variable cur
+    8 variable mode
+  11 function _middle
+"
+        )
+    );
+}
+
 #[test]
 fn bash_outline_callees_and_impact() {
     let demo = Demo::of("bash-outline", BASH_DEMO);

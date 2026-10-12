@@ -245,6 +245,9 @@ pub enum Rule {
     Source,
     /// Bash: a variable another script exports to the commands it runs.
     Environment,
+    /// Bash: the local of the function that calls the one a variable is
+    /// used in, or calls its caller, as Bash's dynamic scope has it.
+    Caller,
     /// C: a definition of a file the file includes, or of one that
     /// includes it; or the definition a prototype found there declares.
     Include,
@@ -270,6 +273,7 @@ impl Rule {
             Rule::Option => "option",
             Rule::Source => "source",
             Rule::Environment => "environment",
+            Rule::Caller => "caller",
             Rule::Include => "include",
             Rule::Anchor => "anchor",
         }

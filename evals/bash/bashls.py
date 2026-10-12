@@ -25,8 +25,18 @@ The check runs first against graff's resolver broken on purpose (each
 target the next definition of its file), and stops unless that scores under
 half of graff's precision.
 
+A tie by Bash's dynamic scope, rule `caller`, is to a local of a function
+that calls the one the name is used in; bash-language-server never looks
+past the function, so its answer there is no truth, and precision is given
+without that rule too.
+
+With --against FOLDER, the edges of another build's examples, FOLDER/resolve
+and FOLDER/extract, are scored too against the same answers: bash-language-
+server is asked for the names of both.
+
     nix develop -c python3 evals/bash/bashls.py ctx /projects/ctx         # bashls-ctx.txt
     nix develop -c python3 evals/bash/bashls.py bash-completion /nix/store/..-bash-completion-2.18.0/share/bash-completion
+    nix develop -c python3 evals/bash/bashls.py --against /tmp/main-examples bash-completion /nix/store/..
     nix develop -c python3 evals/bash/test_bashls.py
 """
 
@@ -165,9 +175,10 @@ def answer_of(path, places):
 
 def agrees(edge, answer, assigned):
     """Whether graff's target is bash-language-server's answer: a function
-    at one of its lines, a variable of its file assigned at one of them."""
+    at one of its lines, a variable of its file assigned at one of them, a
+    function's local, `F.x`, at its declaration."""
     target = edge["target"]
-    if target["kind"] == "function":
+    if target["kind"] == "function" or "." in target["qualified"]:
         return any(p == (target["path"], target["start"]) for p in answer)
     lines = assigned.get((target["path"], bare(target["qualified"])), set())
     return any(p[0] == target["path"] and p[1] in lines for p in answer)
@@ -222,7 +233,8 @@ def category(edges, path, answer):
     return "variables in their file" if answer[0][0] == path else "variables in another file"
 
 
-def summary(judged, found):
+def summary(judged, found, leave_out=()):
+    judged = {rule: c for rule, c in judged.items() if rule not in leave_out}
     correct = sum(c["correct"] for c in judged.values())
     wrong = sum(c["wrong"] for c in judged.values())
     hits = found["found"]
@@ -237,7 +249,8 @@ def assignments(extractions):
     lines = collections.defaultdict(set)
     for path, extraction in extractions.items():
         for symbol in extraction["symbols"]:
-            if symbol["kind"] in ("variable", "environment"):
+            # A function's local, `F.x`, is not the file's x.
+            if symbol["kind"] in ("variable", "environment") and "." not in symbol["qualified"]:
                 lines[path, symbol["name"]].add(symbol["start"])
         for reference in extraction["references"]:
             if reference["kind"] == "set":
@@ -275,8 +288,12 @@ def ask(root, files, edges):
 
 def main():
     arguments = sys.argv[1:]
+    against = None
+    if arguments[:1] == ["--against"] and len(arguments) > 1:
+        against = os.path.realpath(arguments[1])
+        arguments = arguments[2:]
     if len(arguments) != 2:
-        sys.exit("usage: bashls.py NAME FOLDER")
+        sys.exit("usage: bashls.py [--against FOLDER] NAME FOLDER")
     name, source = arguments
     binaries = build()
     built = run(["nix", "build", "--no-link", "--print-out-paths", "nixpkgs#bash-language-server"]).stdout.split()[0]
@@ -297,18 +314,25 @@ def main():
         files = bash_files(root)
         listed = "\n".join(files) + "\n"
 
-        def edges_of(broken):
-            command = [binaries["resolve"], root] + (["--broken"] if broken else [])
+        def edges_of(broken, resolve=binaries["resolve"]):
+            command = [resolve, root] + (["--broken"] if broken else [])
             return [json.loads(line) for line in run(command, stdin=listed).stdout.splitlines()]
 
-        extracted = run([binaries["extract"]], cwd=root, stdin=listed, check=False).stdout.splitlines()
-        extractions = {item["path"]: item["extraction"] for item in map(json.loads, extracted)}
-        assigned = assignments(extractions)
+        def assigned_of(extract):
+            extracted = run([extract], cwd=root, stdin=listed, check=False).stdout.splitlines()
+            return assignments({item["path"]: item["extraction"] for item in map(json.loads, extracted)})
+
+        assigned = assigned_of(binaries["extract"])
         edges = edges_of(False)
-        asked, unplaced = ask(root, files, edges)
+        base = edges_of(False, os.path.join(against, "resolve")) if against else []
+        asked, unplaced = ask(root, files, edges + base)
         broken = summary(*score(edges_of(True), asked, assigned)[:2])
         judged, found, wrong, missed, answers = score(edges, asked, assigned)
         real = summary(judged, found)
+        lexical = summary(judged, found, ("caller",))
+        if against:
+            base_judged, base_found = score(base, asked, assigned_of(os.path.join(against, "extract")))[:2]
+            base_real = summary(base_judged, base_found)
         if broken["precision"] >= real["precision"] / 2:
             sys.exit(f"the broken resolver scores like the real one: {broken} against {real}")
         texts = {}
@@ -332,6 +356,8 @@ def main():
         f"broken resolver: precision {broken['precision']:.3f}, recall {broken['recall']:.3f}",
         f"graff: precision {real['precision']:.3f} ({real['correct']} of {real['correct'] + real['wrong']} judged; "
         f"{real['unjudged']} unjudged), recall {real['recall']:.3f} ({real['found']} of {real['answers']} answers)",
+        f"graff but its caller rule: precision {lexical['precision']:.3f} ({lexical['correct']} of "
+        f"{lexical['correct'] + lexical['wrong']} judged)",
         "by rule: " + ", ".join(
             f"{rule} {c['correct']}/{c['correct'] + c['wrong']} ({c['unjudged']} unjudged)"
             for rule, c in sorted(judged.items())),
@@ -342,6 +368,14 @@ def main():
         "missed, by what graff did: " + ", ".join(f"{count} {how}" for how, count in sorted(found.items())
                                                  if how != "found"),
     ]
+    if against:
+        report[6:6] = [f"against {against}: precision {base_real['precision']:.3f} ({base_real['correct']} of "
+                       f"{base_real['correct'] + base_real['wrong']} judged; {base_real['unjudged']} unjudged), "
+                       f"recall {base_real['recall']:.3f} ({base_real['found']} of {base_real['answers']} answers)",
+                       "  by rule: " + ", ".join(
+                           f"{rule} {c['correct']}/{c['correct'] + c['wrong']} ({c['unjudged']} unjudged)"
+                           for rule, c in sorted(base_judged.items())),
+                       ""]
     details = ["", "wrong edges:"]
     for edge, answer in wrong:
         target = edge["target"]

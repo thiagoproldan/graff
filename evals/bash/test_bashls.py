@@ -84,6 +84,31 @@ def test_score_judges_functions_by_line_and_variables_by_file_and_says_no():
     assert (summary["precision"], summary["recall"]) == (3 / 5, 3 / 7)
 
 
+def test_a_local_agrees_at_its_declaration_alone_and_the_caller_rule_can_be_left_out():
+    # The file assigns x at 2 and 5; f declares it local at 7, which is no
+    # line of the file's x.
+    assigned = bashls.assignments({"main.sh": {
+        "symbols": [{"kind": "variable", "name": "x", "qualified": "x", "start": 2},
+                    {"kind": "variable", "name": "x", "qualified": "f.x", "start": 7}],
+        "references": [{"kind": "set", "name": "x", "line": 5}]}})
+    assert assigned == {("main.sh", "x"): {2, 5}}
+    edges = [
+        edge(20, "x", "main.sh", kind="variable", start=7, rule="caller", use="reference value", qualified="f.x"),
+        # f's local, where bash-language-server names the file's x: no.
+        edge(21, "x", "main.sh", kind="variable", start=7, rule="caller", use="reference value", qualified="f.x"),
+        # The file's x, where bash-language-server names f's local: no.
+        edge(22, "x", "main.sh", kind="variable", start=2, use="reference value"),
+        edge(23, "x", "main.sh", kind="variable", start=2, use="reference value"),
+    ]
+    asked = {("main.sh", 20, "x"): [("main.sh", 7)], ("main.sh", 21, "x"): [("main.sh", 5)],
+             ("main.sh", 22, "x"): [("main.sh", 7)], ("main.sh", 23, "x"): [("main.sh", 5)]}
+    judged, found = bashls.score(edges, asked, assigned)[:2]
+    assert dict(judged["caller"]) == {"correct": 1, "wrong": 1}
+    assert dict(judged["scope"]) == {"correct": 1, "wrong": 1}
+    assert bashls.summary(judged, found)["precision"] == 2 / 4
+    assert bashls.summary(judged, found, ("caller",))["precision"] == 1 / 2
+
+
 if __name__ == "__main__":
     tests = [value for name, value in sorted(globals().items()) if name.startswith("test_")]
     for test in tests:

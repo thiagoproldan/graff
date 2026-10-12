@@ -10,6 +10,14 @@
 //! `local`, or a script binds only by `read` or `for`, gives neither, as a
 //! Rust local does not; nor do the variables Bash sets itself.
 //!
+//! But Bash's scope is dynamic: a function sees the locals of the functions
+//! that call it, and bash-completion's helpers read and set their callers'
+//! `cur` and `prev` so. A function's symbol holds the names it declares
+//! local; a local is a definition of its own, `F.x`, which resolution ties
+//! such a use to through the calls, where another function of its file uses
+//! the name with no local of its own, or where its file sources another,
+//! whose functions may.
+//!
 //! A path `.` sources, or a command runs -- as its name, or as the script an
 //! interpreter or a wrapper is given, `exec python3 "$here/x.py"` -- is an
 //! import. A path is evaluated where it names the script's own folder, as
@@ -36,7 +44,10 @@ use super::{
     Call, CallKind, Extraction, Import, Kind, MAX_DEPTH, RefKind, Reference, Symbol, end_line, line,
 };
 
-/// The variables Bash sets itself, which no script defines.
+/// The variables Bash sets itself, which no script defines; and
+/// `COMPREPLY`, which a completion function fills and Bash reads when it
+/// returns, then unsets (bash-5.3's pcomplete.c), so that no script's
+/// assignment defines it either.
 const BASH_VARIABLES: &[&str] = &[
     "BASH",
     "BASHOPTS",
@@ -54,6 +65,7 @@ const BASH_VARIABLES: &[&str] = &[
     "BASH_SUBSHELL",
     "BASH_VERSINFO",
     "BASH_VERSION",
+    "COMPREPLY",
     "COMP_CWORD",
     "COMP_KEY",
     "COMP_LINE",
@@ -152,6 +164,10 @@ pub fn extract(source: &[u8]) -> Extraction {
         comments: Vec::new(),
         sites: Vec::new(),
         locals: HashMap::new(),
+        declared: Vec::new(),
+        reads: Vec::new(),
+        parents: HashMap::new(),
+        sources: false,
         stack: Vec::new(),
         too_deep: false,
     };
@@ -199,6 +215,15 @@ struct Scan<'s, 't> {
     sites: Vec<Site<'t>>,
     /// The names each function declares local, by its node id.
     locals: HashMap<usize, HashSet<String>>,
+    /// Each local's declaration, in the order they are written: its
+    /// function's node id, its name and the statement.
+    declared: Vec<(usize, String, Node<'t>)>,
+    /// Each variable read in a function, with the innermost one's node id.
+    reads: Vec<(String, usize)>,
+    /// The function each function is written in, by node id.
+    parents: HashMap<usize, usize>,
+    /// Whether the file sources another, with `.` or `source`.
+    sources: bool,
     /// The functions the walk is in, by node id.
     stack: Vec<usize>,
     too_deep: bool,
@@ -210,6 +235,9 @@ impl<'s, 't> Scan<'s, 't> {
     }
 
     fn site(&mut self, name: &str, at: Node<'t>, how: How, value: Option<Node<'t>>) {
+        if BASH_VARIABLES.contains(&name) {
+            return;
+        }
         self.sites.push(Site {
             name: name.to_string(),
             at,
@@ -219,13 +247,52 @@ impl<'s, 't> Scan<'s, 't> {
         });
     }
 
-    fn local(&mut self, name: &str) {
-        if let Some(&function) = self.stack.last() {
-            self.locals
+    fn local(&mut self, name: &str, statement: Node<'t>) {
+        if let Some(&function) = self.stack.last()
+            && self
+                .locals
                 .entry(function)
                 .or_default()
-                .insert(name.to_string());
+                .insert(name.to_string())
+        {
+            self.declared.push((function, name.to_string(), statement));
         }
+    }
+
+    fn read(&mut self, variable: Node) {
+        if let Some(&function) = self.stack.last() {
+            self.reads.push((self.text(variable).to_string(), function));
+        }
+    }
+
+    /// Whether a function, or one it is written in, declares a name local.
+    fn binds(&self, function: usize, name: &str) -> bool {
+        let mut at = Some(function);
+        while let Some(f) = at {
+            if self.locals.get(&f).is_some_and(|l| l.contains(name)) {
+                return true;
+            }
+            at = self.parents.get(&f).copied();
+        }
+        false
+    }
+
+    /// The names a function declares local that another function may read
+    /// or set by Bash's dynamic scope: one of the file that uses it with no
+    /// local of its own, or, in a file that sources another, any.
+    fn shared(&self) -> HashSet<String> {
+        let declared: HashSet<&str> = self.declared.iter().map(|(_, n, _)| n.as_str()).collect();
+        if self.sources {
+            return declared.into_iter().map(String::from).collect();
+        }
+        let uses = self.reads.iter().map(|(n, f)| (n.as_str(), *f)).chain(
+            self.sites
+                .iter()
+                .filter_map(|s| Some((s.name.as_str(), s.function?))),
+        );
+        uses.filter(|&(name, function)| declared.contains(name) && !self.binds(function, name))
+            .map(|(name, _)| name.to_string())
+            .collect()
     }
 
     fn visit(&mut self, node: Node<'t>, depth: usize) {
@@ -236,6 +303,9 @@ impl<'s, 't> Scan<'s, 't> {
         match node.kind() {
             "function_definition" => {
                 self.functions.push(node);
+                if let Some(&parent) = self.stack.last() {
+                    self.parents.insert(node.id(), parent);
+                }
                 self.stack.push(node.id());
                 for child in children(node) {
                     self.visit(child, depth + 1);
@@ -273,16 +343,27 @@ impl<'s, 't> Scan<'s, 't> {
                 }
             }
             "expansion" => {
-                // `${x:=1}` assigns x when it is unset.
-                if let Some(variable) = expanded(node)
-                    && children(node)
+                if let Some(variable) = expanded(node) {
+                    self.read(variable);
+                    // `${x:=1}` assigns x when it is unset.
+                    if children(node)
                         .iter()
                         .any(|c| !c.is_named() && matches!(self.text(*c), ":=" | "="))
-                {
-                    let name = self.text(variable);
-                    self.site(name, node, How::Assigned, None);
+                    {
+                        let name = self.text(variable);
+                        self.site(name, node, How::Assigned, None);
+                    }
                 }
             }
+            "simple_expansion" => {
+                if let Some(variable) = named_children(node)
+                    .into_iter()
+                    .find(|c| c.kind() == "variable_name")
+                {
+                    self.read(variable);
+                }
+            }
+            "variable_name" if arithmetic(node) => self.read(node),
             _ => {}
         }
         for child in children(node) {
@@ -313,7 +394,7 @@ impl<'s, 't> Scan<'s, 't> {
                 _ => continue,
             };
             if local {
-                self.local(name);
+                self.local(name, node);
                 continue;
             }
             let how = match (
@@ -351,6 +432,9 @@ impl<'s, 't> Scan<'s, 't> {
         let Some(name) = name.and_then(|name| plain(self.source, name)) else {
             return;
         };
+        if matches!(name, "." | "source") {
+            self.sources = true;
+        }
         let arguments: Vec<Node<'t>> = arguments(node);
         let words: Vec<&str> = arguments.iter().map(|a| self.text(*a)).collect();
         match name {
@@ -558,6 +642,23 @@ fn assigned<'s>(source: &'s [u8], assignment: Node) -> Option<&'s str> {
     std::str::from_utf8(&source[name.byte_range()]).ok()
 }
 
+/// Whether a name is read as arithmetic reads it, `(( n > 1 ))`,
+/// `$(( a + b ))`, or as an index, `a[i]`.
+fn arithmetic(name: Node) -> bool {
+    name.parent().is_some_and(|p| {
+        matches!(
+            p.kind(),
+            "binary_expression"
+                | "unary_expression"
+                | "postfix_expression"
+                | "ternary_expression"
+                | "parenthesized_expression"
+                | "arithmetic_expansion"
+                | "compound_statement"
+        ) || (p.kind() == "subscript" && p.child_by_field_name("name") != Some(name))
+    })
+}
+
 /// The variable an expansion reads: `x` in `${x:-1}`, `${#x}`, `${x[@]}`.
 fn expanded(expansion: Node) -> Option<Node> {
     for child in named_children(expansion) {
@@ -704,6 +805,8 @@ struct Pending {
     start: u32,
     end: u32,
     doc: Option<String>,
+    /// A function's: the names it declares local.
+    value: Option<String>,
     /// A function's node id, or a variable's name, to find its qualified name by.
     key: Key,
 }
@@ -713,6 +816,8 @@ enum Key {
     Function(usize),
     Variable(String),
     Section(usize),
+    /// A shared local: its function's node id.
+    Local(usize),
 }
 
 struct Reader<'s, 't> {
@@ -728,6 +833,9 @@ struct Reader<'s, 't> {
     defining: HashSet<usize>,
     /// Names the file binds only as a local is bound: no references.
     bound: HashSet<String>,
+    /// Names a function declares local that another may use by dynamic
+    /// scope: each such local is a definition.
+    shared: HashSet<String>,
     /// Where `read`, `for` and the like bind a variable, by node id: a set
     /// of one the file assigns too.
     binding: HashSet<usize>,
@@ -759,6 +867,7 @@ impl<'s, 't> Reader<'s, 't> {
             variables: HashMap::new(),
             defining: HashSet::new(),
             bound: HashSet::new(),
+            shared: HashSet::new(),
             binding: HashSet::new(),
             sections: Vec::new(),
             values: HashMap::new(),
@@ -778,19 +887,42 @@ impl<'s, 't> Reader<'s, 't> {
     /// The file, its sections, functions and variables, each named in the
     /// order they are written.
     fn symbols(&mut self, root: Node<'t>) {
+        self.shared = self.scan.shared();
         let mut pending: Vec<Pending> = Vec::new();
         for &function in &self.scan.functions {
             let Some(name) = function.child_by_field_name("name") else {
                 continue;
             };
+            let locals: Vec<&str> = self
+                .scan
+                .declared
+                .iter()
+                .filter(|(f, _, _)| *f == function.id())
+                .map(|(_, name, _)| name.as_str())
+                .collect();
             pending.push(Pending {
                 name: self.text(name).to_string(),
                 kind: Kind::Function,
                 start: line(function),
                 end: end_line(function),
                 doc: self.doc(function.start_position().row as u32),
+                value: (!locals.is_empty()).then(|| locals.join(" ")),
                 key: Key::Function(function.id()),
             });
+        }
+        // Each shared local, at the statement that declares it.
+        for (function, name, statement) in &self.scan.declared {
+            if self.shared.contains(name) {
+                pending.push(Pending {
+                    name: name.clone(),
+                    kind: Kind::Variable,
+                    start: line(*statement),
+                    end: end_line(*statement),
+                    doc: None,
+                    value: None,
+                    key: Key::Local(*function),
+                });
+            }
         }
         // Each variable at its first assignment; one the file exports, an
         // environment variable.
@@ -851,6 +983,7 @@ impl<'s, 't> Reader<'s, 't> {
                 start: line(statement),
                 end: end_line(statement),
                 doc: self.doc(statement.start_position().row as u32),
+                value: None,
                 key: Key::Variable(site.name.clone()),
             });
             // A path: what a variable the file assigns once, at its top, holds.
@@ -889,6 +1022,7 @@ impl<'s, 't> Reader<'s, 't> {
                 start: *start,
                 end,
                 doc: None,
+                value: None,
                 key: Key::Section(i),
             });
         }
@@ -908,12 +1042,20 @@ impl<'s, 't> Reader<'s, 't> {
         });
         let mut taken: HashMap<String, usize> = HashMap::new();
         for p in pending {
-            let n = taken.entry(p.name.clone()).or_default();
+            // A local is named by its function: `_comp_compgen._upvars`.
+            let written = match &p.key {
+                Key::Local(function) => match self.functions.get(function) {
+                    Some(f) => format!("{f}.{}", p.name),
+                    None => continue,
+                },
+                _ => p.name.clone(),
+            };
+            let n = taken.entry(written.clone()).or_default();
             *n += 1;
             let qualified = if *n == 1 {
-                p.name.clone()
+                written
             } else {
-                format!("{}#{n}", p.name)
+                format!("{written}#{n}")
             };
             match &p.key {
                 Key::Function(id) => {
@@ -926,6 +1068,7 @@ impl<'s, 't> Reader<'s, 't> {
                     self.variables.insert(name.clone(), qualified.clone());
                 }
                 Key::Section(_) => self.sections.push((p.start, p.end, qualified.clone())),
+                Key::Local(_) => {}
             }
             self.out.symbols.push(Symbol {
                 name: p.name,
@@ -937,7 +1080,7 @@ impl<'s, 't> Reader<'s, 't> {
                 internal: false,
                 typed: None,
                 consumed: false,
-                value: None,
+                value: p.value,
                 declared: false,
             });
         }
@@ -1020,7 +1163,8 @@ impl<'s, 't> Reader<'s, 't> {
 
     /// Whether a use of a variable is recorded: not one of Bash's own, nor
     /// a local of a function the walk is in, nor one the file binds only by
-    /// `read` or `for`.
+    /// `read` or `for` -- unless a function uses it, and it may be the local
+    /// of a function that calls this one.
     fn recorded(&self, name: &str) -> bool {
         if BASH_VARIABLES.contains(&name) || !is_name(name) {
             return false;
@@ -1031,7 +1175,8 @@ impl<'s, 't> Reader<'s, 't> {
                 .get(function)
                 .is_some_and(|names| names.contains(name))
         });
-        !local && !(self.bound.contains(name) && !self.variables.contains_key(name))
+        let callers = !self.stack.is_empty() && self.shared.contains(name);
+        !local && (callers || !(self.bound.contains(name) && !self.variables.contains_key(name)))
     }
 
     fn reference(&mut self, name: &str, node: Node, kind: RefKind) {
@@ -1123,29 +1268,15 @@ impl<'s, 't> Reader<'s, 't> {
                             .iter()
                             .any(|c| !c.is_named() && matches!(self.text(*c), ":=" | "="));
                     self.reference(name, variable, RefKind::Value);
-                    if sets && !self.defining.contains(&node.id()) {
+                    if sets && !self.defines(node) {
                         self.reference(name, variable, RefKind::Set);
                     }
                 }
             }
             // A name in arithmetic, `(( n > 1 ))`, `$(( a + b ))`, or an index, `a[i]`.
-            "variable_name" => {
-                let arithmetic = node.parent().is_some_and(|p| {
-                    matches!(
-                        p.kind(),
-                        "binary_expression"
-                            | "unary_expression"
-                            | "postfix_expression"
-                            | "ternary_expression"
-                            | "parenthesized_expression"
-                            | "arithmetic_expansion"
-                            | "compound_statement"
-                    ) || (p.kind() == "subscript" && p.child_by_field_name("name") != Some(node))
-                });
-                if arithmetic {
-                    let name = self.text(node);
-                    self.reference(name, node, RefKind::Value);
-                }
+            "variable_name" if arithmetic(node) => {
+                let name = self.text(node);
+                self.reference(name, node, RefKind::Value);
             }
             _ => {}
         }
@@ -1167,10 +1298,17 @@ impl<'s, 't> Reader<'s, 't> {
                     Some("local" | "declare" | "typeset")
                 )
         }) && !self.stack.is_empty();
-        if local_declaration || self.defining.contains(&node.id()) {
+        if local_declaration || self.defines(node) {
             return;
         }
         self.reference(name, node, RefKind::Set);
+    }
+
+    /// Whether an assignment is the one that defines its variable, emitted
+    /// already: one in a function is a set too, which may set the local of
+    /// a function that calls it, else the variable it defines.
+    fn defines(&self, node: Node) -> bool {
+        self.defining.contains(&node.id()) && self.stack.is_empty()
     }
 
     fn command(&mut self, node: Node<'t>, depth: usize) {
@@ -1731,6 +1869,9 @@ unset -v LEVEL
                 ("GONE", RefKind::Set, 7, None),
                 ("LEVEL", RefKind::Set, 9, None),
                 ("ROOT", RefKind::Set, 10, None),
+                // The assignment in a function that defines count sets a
+                // caller's local too, where one declares it.
+                ("count", RefKind::Set, 15, Some("f")),
                 ("OUTER", RefKind::Value, 17, Some("f")),
                 ("count", RefKind::Value, 17, Some("f")),
                 ("LEVEL", RefKind::Value, 17, Some("f")),
@@ -1758,6 +1899,78 @@ unset -v LEVEL
                 .iter()
                 .any(|s| s.name == "f" && s.kind != Kind::Function)
         );
+    }
+
+    #[test]
+    fn a_local_another_function_uses_is_a_definition_and_comp_reply_is_bashs() {
+        let out = extract(
+            br#"_complete() {
+  local cur prev words
+  cur=$1
+  _split
+  for i in 1; do echo "$prev $words"; done
+  COMPREPLY=(a)
+}
+_split() {
+  [[ $cur == *=* ]] || return 1
+  prev=${cur%%=*}
+  cur=${cur#*=}
+  for i in 1; do :; done
+  echo "${COMPREPLY[@]}"
+}
+"#,
+        );
+        assert!(!out.syntax_error);
+        // cur and prev are _split's to use, words is _complete's alone; the
+        // function holds every name it declares local.
+        assert_eq!(
+            symbols(&out),
+            vec![
+                ("", Kind::File, 1, 14),
+                ("_complete", Kind::Function, 1, 7),
+                ("_complete.cur", Kind::Variable, 2, 2),
+                ("_complete.prev", Kind::Variable, 2, 2),
+                ("_split", Kind::Function, 8, 14),
+                ("prev", Kind::Variable, 10, 10),
+                ("cur", Kind::Variable, 11, 11),
+            ]
+        );
+        assert_eq!(
+            symbol(&out, "_complete").value.as_deref(),
+            Some("cur prev words")
+        );
+        assert_eq!(symbol(&out, "_split").value, None);
+        // _split's uses are recorded, to be tied through the calls; neither
+        // _complete's own nor COMPREPLY, which Bash reads, is; nor `i`,
+        // which no function declares local.
+        assert_eq!(
+            references(&out),
+            vec![
+                ("cur", RefKind::Value, 9, Some("_split")),
+                // The first assignment in a function defines the file's
+                // variable, and sets a caller's local too.
+                ("prev", RefKind::Set, 10, Some("_split")),
+                ("cur", RefKind::Value, 10, Some("_split")),
+                ("cur", RefKind::Set, 11, Some("_split")),
+                ("cur", RefKind::Value, 11, Some("_split")),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_local_of_a_file_that_sources_another_is_a_definition() {
+        let sourcing = extract(b". ./lib.sh\nrun() {\n  local level=1 mode\n  helper\n}\n");
+        let alone = extract(b"run() {\n  local level=1 mode\n  helper\n}\n");
+        let locals = |out: &Extraction| -> Vec<String> {
+            out.symbols
+                .iter()
+                .filter(|s| s.kind == Kind::Variable)
+                .map(|s| s.qualified.clone())
+                .collect()
+        };
+        assert_eq!(locals(&sourcing), vec!["run.level", "run.mode"]);
+        assert!(locals(&alone).is_empty());
+        assert_eq!(symbol(&alone, "run").value.as_deref(), Some("level mode"));
     }
 
     #[test]

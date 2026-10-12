@@ -153,6 +153,22 @@ fn main() {
             Resolution::Ambiguous(candidates) => ("ambiguous", None, candidates.len(), None),
             Resolution::External => ("external", None, 0, None),
         };
+        // Each candidate of an ambiguous edge.
+        let targets: Vec<_> = match &edge.resolution {
+            Resolution::Ambiguous(candidates) => candidates
+                .iter()
+                .map(|d| {
+                    let symbol = &files[d.file].extraction.symbols[d.symbol];
+                    json!({
+                        "path": files[d.file].path,
+                        "qualified": symbol.qualified,
+                        "kind": symbol.kind.name(),
+                        "start": symbol.start,
+                    })
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
         let line = json!({
             "path": files[edge.file].path,
             "line": edge.line,
@@ -164,6 +180,7 @@ fn main() {
             "rule": rule,
             "candidates": candidates,
             "target": target,
+            "targets": targets,
         });
         writeln!(out, "{line}").expect("stdout takes the line");
     }

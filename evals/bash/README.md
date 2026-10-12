@@ -137,7 +137,8 @@ xtrace.py's does.
   of `CTX_DISABLE`, which two scripts export to what they run, so graff
   calls it ambiguous; and 1 name tree-sitter-bash misreads (below).
 - **bash-completion shares variables through Bash's dynamic scope, which
-  neither tool reads.** A completion function declares `local cur prev`,
+  neither tool read then** (graff does since task 102, below; dynamic.py
+  judges it). A completion function declares `local cur prev`,
   and the helpers it calls read and set them; every completion fills the
   one `COMPREPLY` Bash reads. graff gives a script's variable its first
   assignment there (a function's own `local` gives none), and
@@ -167,6 +168,100 @@ xtrace.py's does.
   bash-language-server had reached the file by chance: nvm.bash sources
   `"$NVM_DIR"/bash_completion`, which it reads as `./bash_completion` from
   the root, and analyzes on demand.
+
+### Result, 2026-10-12 (task 102): Bash's dynamic scope
+
+A variable a function uses with no `local` of its own is now tied to the
+local of the nearest functions up its callers that declare it (rule
+`caller`), and `COMPREPLY` is Bash's, as `COMP_WORDS` is (decision 343).
+Both builds' edges were scored against one run of bash-language-server,
+which nixpkgs now builds at 5.8.1: main's build at c2f8bec, whose Bash code
+main's 53db3bb keeps, and the branch's.
+
+|                                    | ctx, main | ctx, task 102 | bash-completion, main | bash-completion, task 102 |
+| ---------------------------------- | --------- | ------------- | --------------------- | ------------------------- |
+| names asked, both builds' together | 4,655     | 4,655         | 11,509                | 11,509                    |
+| precision                          | 3,566 of 3,567 | 3,573 of 3,574 | 0.987, 4,871 of 4,933 | 0.995, 4,747 of 4,773 |
+| recall                             | 0.994, 3,357 of 3,378 | 0.996, 3,363 of 3,378 | 0.927, 4,818 of 5,199 | 0.905, 4,705 of 5,199 |
+| rule `caller`, judged              |           | none          |                       | 0 of 15 (131 not judged)  |
+
+- bash-language-server reads a function lexically and never looks at who
+  calls it, so it names no caller's local: of graff's 146 `caller` ties,
+  it judges 15, all wrong for it. Without them graff's precision is 0.998.
+- The recall lost on bash-completion is where bash-language-server names
+  a helper's own file's assignment and graff calls the use one of its
+  callers' locals (251 answers missed as ambiguous), and the 82 names of
+  `COMPREPLY` main has edges for and the branch records none of. Where the
+  two builds tie a use differently and Bash's call stack judges it
+  (dynamic.py, below), main is wrong at every one of 118 but `COMPREPLY`,
+  and the branch names Bash's binder exactly at 52, among others at 38,
+  and misses at 28. At the 171 uses of `COMPREPLY` judged, main's tie to
+  its file's variable was the global Bash read; the branch records none.
+- ctx has no `caller` tie: its libraries read no caller's local. Its edges
+  but those of variables are the same in both builds (3,823), as are
+  bash-completion's (10,117). ctx has 9 more: a function's first
+  assignment of a variable is now a set too (7), and a loop's `f` in
+  test-hooks.sh, which a function there declares local, is now recorded
+  and left to the system (2).
+- Resolving bash-completion's 523 files took 17.3-17.9 ms against main's
+  7.5-8.0, five runs each, interleaved, under the balanced profile and a
+  load of 14; extracting them 671-740 ms against 617-638.
+
+## dynamic.py
+
+bash-language-server is no truth for a function's use of its callers'
+locals, so this check asks Bash. Each completion of bash-completion is
+loaded with `_comp_load`, as a first Tab does, and its function called for
+the words `-`, `--` and none, COMP_WORDS and the rest set as Bash sets them,
+with xtrace on and PS4 printing the whole stack:
+
+    +@BASH_SOURCE[0]@LINENO@FUNCNAME[*]@BASH_SOURCE[*]@ command
+
+The names each function declares local come from Bash's own print of it,
+`declare -f`, and its file from `declare -F` under extdebug. For each of
+graff's uses of a variable in a function, at a line the trace shows run in
+it, the truth is the nearest function below it on the stack that declares
+the name, else the global; graff's answer is what its edge names, a local
+`F.x` as F of its file, a script's variable or nothing the worktree
+defines as the global. Each completion runs with coreutils, sed, awk, grep
+and find alone in PATH, in an empty folder, stdin closed, under a timeout.
+
+```
+nix develop -c python3 evals/bash/dynamic.py --against MAIN/examples --trace /tmp/bc-trace.json bash-completion /nix/store/..-bash-completion-2.18.0/share/bash-completion
+nix develop -c python3 evals/bash/test_dynamic.py
+```
+
+- **exact**: the uses where graff names Bash's binders and nothing else;
+- **covered**: those where it names every binder Bash used;
+- **named**, **used**: of the binders Bash used, the share graff names; of
+  those graff names, the share Bash used.
+
+### Result, 2026-10-12
+
+Bash 5.3.15, 521 completions run, none past 10 s, 104,669 distinct
+commands traced, 964 functions printed; 6,852 binders seen at 167 uses, 127
+of them bound by a caller's local (dynamic-bash-completion.txt).
+
+|                                     | uses | exact       | covered     | named | used  |
+| ----------------------------------- | ---- | ----------- | ----------- | ----- | ----- |
+| broken resolver                     | 167  | 0.156       | 0.383       | 0.042 | 0.247 |
+| task 102                            | 167  | 0.503, 84   | 0.731, 122  | 0.050 | 0.300 |
+| bound by a caller, broken resolver  | 127  | 0           | 0.299       | 0.038 | 0.233 |
+| bound by a caller, main             | 112  | 0           | 0           | 0.001 | 0.071 |
+| bound by a caller, task 102         | 127  | 0.346, 44   | 0.646, 82   | 0.045 | 0.275 |
+| every local of the name, and global | 167  | 0.234       | 1.000       | 1.000 | 0.237 |
+
+Main judged on its own edges has 315 uses, 171 of them `COMPREPLY`.
+
+- **What it misses** (45 uses not covered): a helper's `cur` is bound by
+  hundreds of completion functions, in files that call bash_completion's
+  helpers with no `.`, whose locals are no definitions, so graff names
+  bash_completion's own binders alone (bash_completion:1410, 1643, 1665);
+  and 17 of the 45 are reached through `_comp_compgen__call_generator`,
+  which calls `_comp_compgen_$1` by a name only the run knows (task 362).
+- **Named is low by design**: making every local a definition would add
+  4,330 symbols to bash-completion's 1,618, and a helper's `cur` would be
+  one of some 400; the control that names them all is exact at 0.234.
 
 ## Sections
 

@@ -804,9 +804,27 @@ impl Store {
             ),
         };
         let holders = worktree.holders();
-        let calls = format!(
-            "SELECT content, name, path, kind, line, caller, receiver, local, typed FROM calls WHERE {} ORDER BY rowid",
+        // Every call of a script: a variable a function uses with no local
+        // of its own is a local of the function that calls it, which only
+        // the whole graph of calls tells.
+        let scripts: Vec<String> = worktree
+            .contents
+            .iter()
+            .zip(&worktree.languages)
+            .filter(|(_, language)| **language == Language::Bash)
+            .map(|(content, _)| content.to_string())
+            .collect();
+        let calls_filter = if scripts.is_empty() || matches!(which, Sites::All) {
             filter.replace("{from}", "caller")
+        } else {
+            format!(
+                "({}) OR content IN ({})",
+                filter.replace("{from}", "caller"),
+                scripts.join(", ")
+            )
+        };
+        let calls = format!(
+            "SELECT content, name, path, kind, line, caller, receiver, local, typed FROM calls WHERE {calls_filter} ORDER BY rowid"
         );
         let mut query = self.connection.prepare(&calls)?;
         let mut rows = query.query(rusqlite::params_from_iter(&values))?;

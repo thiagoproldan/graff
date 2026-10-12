@@ -328,6 +328,75 @@ balanced profile, load 13 to 16:
   against 37-38, `map` 39-40 against 54-58 (first runs aside). Resolving
   the 523 files: 16.6-21.0 ms against 20.2-21.0, three runs each.
 
+### Result, 2026-10-12 (tasks 403 and 411): patterns, and calls by computed names
+
+Task 403 reads again a file whose error holds a pattern, with the pattern
+quoted (see "What tree-sitter-bash misreads"): bash_completion, which was
+one error from its first line to its last, is read whole, and the 32
+functions lost in 22 files are found. Task 411 ties a command named by no
+plain word to the functions its name may be: `"${_generator[@]}"`, which
+`_comp_compgen` sets to `("_comp_compgen_$1")`, is a call by the glob
+`_comp_compgen_*`, ambiguous among the 48 functions it fits, and each of
+them has `_comp_compgen__call_generator` as a caller, so its free `cur`
+reaches that function's local (decision on task 411). What the tools do
+with such a call, checked: bash-language-server 5.8.1 ties a command only
+by a `word` under `command_name` (server/out/analyser.js), so it ties none;
+ShellCheck's data flow reads a command with no literal name as running
+nothing (`transferCommand ctx Nothing = return ()`, CFGAnalysis.hs), and
+its wiki asks to silence SC2329 for functions invoked indirectly.
+
+Main's build at 58231d3 against task 403's (4823d92) and the branch's
+(8a7e318), the same trace as task 362's (dynamic.py), one run of
+bash-language-server for each pair (bashls.py), balanced profile, load 8:
+
+|                                    | uses | exact     | covered    | named | used  |
+| ---------------------------------- | ---- | --------- | ---------- | ----- | ----- |
+| broken resolver, candidates too    | 181  | 0.149     | 0.149      | 0.004 | 0.002 |
+| main                               | 167  | 0.503, 84 | 0.772, 129 | 0.928 | 0.667 |
+| task 403                           | 181  | 0.547, 99 | 0.901, 163 | 0.996 | 0.669 |
+| tasks 403 and 411                  | 181  | 0.508, 92 | 0.956, 173 | 0.999 | 0.617 |
+| bound by a caller, main            | 127  | 0.354, 45 | 0.701, 89  | 0.928 | 0.665 |
+| bound by a caller, task 403        | 136  | 0.404, 55 | 0.868, 118 | 0.996 | 0.668 |
+| bound by a caller, tasks 403 + 411 | 136  | 0.368, 50 | 0.949, 129 | 0.999 | 0.620 |
+
+- **Uses**: 181 from 167, as the functions graff now reads hold more of
+  the lines the trace ran.
+- **Task 411's cost**: a computed call may run any function its glob
+  fits, so some uses gain a binder Bash did not use there: exact 99 -> 92,
+  used 0.669 -> 0.617. One use covered under task 403 is not any more:
+  bash_completion:3190, `_comp_root_command` in `_comp_as_root`, which Bash
+  found unbound in the runs traced, and which graff now ties to the locals
+  of `_comp_cmd_sudo` and `_comp_cmd_doas` alone, a path of callers that
+  reached a function nothing calls now reaching a computed call.
+- **What it misses** (8 uses not covered): 7 are `_comp_compgen__call_generator`'s
+  own `_comp_compgen__*` locals, which Bash found bound there and unbound
+  too (bash_completion:619, 693, 694, 933, 934, 1309 twice): graff names
+  the local and not the global; and 3190 above.
+- **bashls.py**: bash-completion precision 0.995 (4,747 of 4,773) on main,
+  0.994 (4,523 of 4,549) on the branch, 1.000 but for the caller rule,
+  which bash-language-server, reading no calls, does not judge; recall
+  0.910 (4,705 of 5,170) against 0.872 (4,509). Of the answers the branch
+  misses, 357 are to names only main's misreadings ask, a case pattern
+  read as a call (`--directory`), which the branch no longer has, and 270
+  are its ambiguous edges, which bashls.py judges as misses: the variables
+  of the functions recovered now reach their callers' locals. Against task
+  403 alone, on its own run: precision 0.993 against 0.994, recall 0.938
+  (4,515 of 4,813) against 0.937 (4,509). ctx is the same on both builds:
+  precision 1.000 (3,573 of 3,574), recall 0.996 (3,363 of 3,378). The
+  reports name their graff "with uncommitted changes": the reports
+  themselves, written by the runs before.
+- **Time**, a git copy of bash-completion (1,105 files), each build with
+  its own cache, warm index, six runs each interleaved, balanced profile,
+  load 4: `callers cur` 169-173 ms against main's 166-169, `def cur` 58-63
+  against 57-59, `callers _comp_initialize` 85-100 against 84-120,
+  `callers _comp_compgen_filedir` 83-87 against 82-84, `outline
+  bash_completion` 41-42 against 40-41, `map` 60-61 against 58-60.
+  Indexing the copy from an empty cache: 332-345 ms against 222-234, four
+  runs each interleaved. Most of it is bash_completion, 139 KB: 190 ms
+  against 86 to extract, as it is now read three times, 43-50 ms a
+  reading -- once as written, once with its 202 misreadings mended, and
+  once more for 6 the second reading still misread.
+
 ## Sections
 
 A comment banner, `# --- title ---`, `# === title ===` or `### title ###`,

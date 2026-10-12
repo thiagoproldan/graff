@@ -83,6 +83,24 @@ enum Command {
         #[command(flatten)]
         asked: Asked,
     },
+    /// The definitions that matter most, by signature under their files,
+    /// ranked by PageRank over the graph of uses, around the files and
+    /// symbols named: what a session reads first
+    Map {
+        /// Files or symbols to center the map on, which it leaves out:
+        /// src/store.rs, Storage::load [default: none, the whole worktree]
+        focus: Vec<String>,
+        /// A folder in the worktree [default: the current one]
+        #[arg(short = 'C', long)]
+        folder: Option<PathBuf>,
+        /// The tokens the map may take, counted as 4 bytes each: Aider's
+        /// default
+        #[arg(long, default_value_t = 1024, value_parser = clap::value_parser!(u32).range(1..))]
+        budget: u32,
+        /// Answer with one JSON object
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Args)]
@@ -136,6 +154,19 @@ fn main() -> ExitCode {
         } => ask(asked, |store, root, options| {
             query::search(store, root, &words.join(" "), limit as usize, options)
         }),
+        Command::Map {
+            focus,
+            folder,
+            budget,
+            json,
+        } => ask(
+            Asked {
+                folder,
+                budget,
+                json,
+            },
+            |store, root, options| query::map(store, root, &focus, options),
+        ),
     };
     match done {
         Ok(()) => ExitCode::SUCCESS,

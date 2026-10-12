@@ -381,6 +381,8 @@ pub enum Sites<'a> {
     In { path: &'a str, from: &'a str },
     /// Those anywhere in this file.
     File(&'a str),
+    /// Every one of the worktree's: the whole graph, which a rank reads.
+    All,
     /// Those that may stand where a Nix module goes: at the top of a file,
     /// in no definition, or in its `imports`.
     Top,
@@ -775,6 +777,10 @@ impl Store {
                     vec![worktree.contents[at].into()],
                 )
             }
+            Sites::All => (
+                "content IN (SELECT content FROM files WHERE worktree = ?1)".to_string(),
+                vec![worktree.id.into()],
+            ),
             Sites::Top => (
                 "content IN (SELECT content FROM files WHERE worktree = ?1) AND ({from} IS NULL OR {from} = 'imports')"
                     .to_string(),

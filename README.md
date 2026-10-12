@@ -3,8 +3,9 @@
 A code map for Claude Code, built without models. Of three tools for Claude
 Code, ekko keeps the why, ctx keeps the cost down, and graff is to say where:
 where a symbol is defined, what calls it and what it calls, what a file
-holds and on which lines, and a search ranked by BM25 and personalized
-PageRank, every answer within a token budget, from an index that re-parses
+holds and on which lines, a search ranked by BM25, and a map of what
+matters most ranked by personalized PageRank, every answer within a token
+budget, from an index that re-parses
 what changed on each query. Its languages are the ones used here: Rust, Nix,
 Bash, Python, C and Markdown.
 
@@ -92,7 +93,7 @@ code span writes as code names one (`Storage::load`, `k3_mmw()`,
 `CTX_MIN`, not a bare `kind`) are tied to the file, the section, the
 definition holding the line, or the one definition out of test code
 whose full name ends as written; a Rust file stands for the `mod` items
-that load it (`src/resolve/markdown.rs`). It answers six
+that load it (`src/resolve/markdown.rs`). It answers seven
 questions (`src/query.rs`):
 
     graff def Storage::load        # its lines, doc, signature, a type's impl blocks
@@ -101,6 +102,7 @@ questions (`src/query.rs`):
     graff outline src/store.rs     # what a file defines, nested, with its lines
     graff impact Storage::load     # its callers, theirs, and so on, 3 levels deep
     graff search open store        # the definitions those words find, best first
+    graff map src/store.rs         # what matters most around it, by file, 1,024 tokens
 
 A symbol is named by the end of its path (`load`, `store::Storage::load`),
 with its file (`src/store.rs:Storage::load`) or by a line
@@ -117,7 +119,23 @@ of their qualified names, their paths and their docs, an identifier split
 at underscores and where its case says a word starts and kept whole too, a
 word in a name counting five times, as Zoekt counts one, and test code
 keeping half its score (`src/search.rs`); it gives 20 unless `--limit` says
-how many.
+how many. `map` is Aider's repository map: the worktree's definitions
+ranked by PageRank over the graph of the uses that tie them, from the
+definition a use is in to the one it reaches, a use that may reach one of
+several definitions weighing a tenth and one that may reach a type of std
+or of Python's library none (`src/rank.rs`); each by its signature under its
+file's path, the files best first, cut to 1,024 tokens unless `--budget`
+says otherwise. Named files and symbols are its focus, which it leaves out:
+the walk jumps to them rather than anywhere, so the map gives what they
+lean on. On ekko at f9564f4 (4,799 definitions) it took 0.35 to 0.36 s,
+on kmux at 5377be7 (15,984) 1.49 to 1.52 s, on Python 3.14's library
+(33,403) 1.04 to 1.06 s, and on nixpkgs's nixos/modules at 71dd4e4
+(116,641) 2.35 to 2.41 s, against 0.04, 0.11, 0.16 and 0.40 s for
+`outline` (five runs each, 2026-10-12, on AC with TLP's balanced profile,
+the CPU's boost off, the load at 6 to 10 from other sessions): resolving
+every use of the worktree takes most of it. `search` does not use the graph: on the
+probe of `evals/search/`, ordering its results by a walk from them, or
+adding their rank to their score, did no better than BM25 alone.
 An answer is cut to `--budget` tokens, 2,000 unless told, counted as 4
 bytes each, least important lines first, and its last line says what it
 left out and the budget that would hold it all; `--json` gives the same

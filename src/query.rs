@@ -21,6 +21,7 @@ use serde_json::{Value, json};
 
 use crate::extract::{CallKind, Kind, RefKind, Symbol};
 use crate::lang::Language;
+use crate::rank;
 use crate::resolve::nix::{Instances, Placement};
 use crate::resolve::{self, Definition, Edge, File, Library, Resolution, Use};
 use crate::search;
@@ -68,6 +69,11 @@ impl From<store::Error> for Error {
 /// name in a module, `store::Storage` to `Storage`, so that only Markdown's
 /// links and mentions of its file reach the module.
 const MODULE_CALLERS: &str = "links and mentions only, as Rust's uses reach what they name in it";
+
+/// What a use that may reach one of several definitions weighs in a rank,
+/// against one tied to one: Aider's weight of a name more than five files
+/// define.
+const AMBIGUOUS: f64 = 0.1;
 
 /// The kinds whose impl blocks `def` lists.
 const IMPLEMENTED: [Kind; 5] = [
@@ -545,17 +551,8 @@ pub fn search(
         };
         let symbols = &extraction.symbols;
         let test_file = resolve::markdown::test_file(path);
-        // A helper's argument the binding of the module stands for, as in
-        // `outline`; an impl block, which `def` lists under its type.
-        let made: HashSet<(u32, u32)> = symbols
-            .iter()
-            .filter(|s| s.kind != Kind::Argument)
-            .map(|s| (s.start, s.end))
-            .collect();
         for (s, symbol) in symbols.iter().enumerate() {
-            if matches!(symbol.kind, Kind::Anchor | Kind::Impl)
-                || (symbol.kind == Kind::Argument && made.contains(&(symbol.start, symbol.end)))
-            {
+            if !listed(symbols, s) {
                 continue;
             }
             let qualified = match symbol.qualified.rsplit_once('#') {
@@ -604,6 +601,165 @@ pub fn search(
         lines.push(Line::new(text, item, rank(5, n), "results"));
     }
     Ok(render(&format!("search {query}"), root, &lines, options))
+}
+
+/// The worktree's definitions that matter most, each by its signature under
+/// its file's path, as Aider's repository map gives them: ranked by
+/// PageRank over the graph of definitions and the uses that tie them
+/// (`src/rank.rs`), the walk jumping to the files and symbols in focus, or
+/// anywhere without one. What is in focus is left out, as Aider leaves out
+/// the files already in its chat: `outline` and `def` give it. The files
+/// come best first, a file's definitions in its order.
+pub fn map(
+    store: &mut Store,
+    root: &Path,
+    focus: &[String],
+    options: &Options,
+) -> Result<String, Error> {
+    let mut code = Code::open(store, root)?;
+    // Each file or symbol in focus, by the definitions it is, a file's top
+    // with them.
+    let mut drawn: Vec<(Vec<Definition>, Option<usize>)> = Vec::new();
+    for written in focus {
+        drawn.push(match code.file_named(written) {
+            Some(f) => (
+                code.definitions(Some(f)).chain(code.whole(f)).collect(),
+                Some(f),
+            ),
+            None => (code.find(written)?, None),
+        });
+    }
+    let graph = code.graph()?;
+    // Each draws the walk as much as another, as each file in Aider's chat
+    // does, a file's share split among its definitions.
+    let mut weights = vec![0.0; graph.walk.nodes()];
+    let mut focused: HashSet<Definition> = HashSet::new();
+    for (found, file) in &drawn {
+        let mut nodes: Vec<usize> = found.iter().map(|&d| graph.node(d)).collect();
+        if let Some(f) = file
+            && code.whole(*f).is_none()
+        {
+            nodes.push(graph.definitions + f);
+        }
+        for &node in &nodes {
+            weights[node] += 1.0 / nodes.len() as f64;
+        }
+        focused.extend(found);
+    }
+    let shares = graph.walk.rank(Some(&weights));
+    // A file is its path, over its definitions; an enum's variants are on
+    // its lines, as `outline` puts them. With a focus, what the walk never
+    // reaches from it is not around it: the walk goes as uses do, from a
+    // definition to what it leans on, as Aider's does from the files in its
+    // chat, and `callers` gives what leans on it.
+    let mut ranked: Vec<(Definition, f64)> = Vec::new();
+    for (file, (_, extraction)) in code.worktree.files.iter().enumerate() {
+        for s in 0..extraction.symbols.len() {
+            let d = Definition { file, symbol: s };
+            if listed(&extraction.symbols, s)
+                && !matches!(extraction.symbols[s].kind, Kind::File | Kind::Variant)
+                && !focused.contains(&d)
+                && shares[graph.node(d)] > 0.0
+            {
+                ranked.push((d, shares[graph.node(d)]));
+            }
+        }
+    }
+    ranked.sort_by(|a, b| {
+        b.1.total_cmp(&a.1)
+            .then(code.order(a.0).cmp(&code.order(b.0)))
+    });
+    // A file comes where its best definition does.
+    let mut files: Vec<(usize, Vec<(usize, Definition)>)> = Vec::new();
+    let mut at: HashMap<usize, usize> = HashMap::new();
+    for (n, &(d, _)) in ranked.iter().enumerate() {
+        let i = *at.entry(d.file).or_insert_with(|| {
+            files.push((d.file, Vec::new()));
+            files.len() - 1
+        });
+        files[i].1.push((n, d));
+    }
+    let mut text = format!(
+        "{} in {}, by PageRank",
+        count(ranked.len(), "definition"),
+        count(files.len(), "file")
+    );
+    if !focus.is_empty() {
+        text.push_str(&format!(" around {}", focus.join(", ")));
+    }
+    let item = json!({"definitions": ranked.len(), "files": files.len(), "focus": focus});
+    let mut lines = vec![Line::new(text, item, rank(6, 0), "headers")];
+    for (f, mut held) in files {
+        let path = &code.worktree.files[f].0;
+        let text = fs::read_to_string(root.join(path)).unwrap_or_default();
+        let file: Vec<&str> = text.lines().collect();
+        let best = held[0].0;
+        lines.push(Line::heading(
+            format!("{path}:"),
+            json!({"file": path}),
+            rank(5, best),
+            "files",
+        ));
+        held.sort_by_key(|&(_, d)| code.order(d));
+        for (n, d) in held {
+            let symbol = code.symbol(d);
+            let signature = code.signature_in(d, &file);
+            let shown = match &signature {
+                Some(signature) => signature.clone(),
+                None => format!("{} {}", symbol.kind.name(), symbol.qualified),
+            };
+            let item = json!({
+                "definition": code.json(d), "signature": signature,
+                "rank": (shares[graph.node(d)] * 1e6).round() / 1e6,
+            });
+            lines.push(Line::new(
+                format!("  {} {shown}", span(symbol.start, symbol.end)),
+                item,
+                rank(5, n),
+                "definitions",
+            ));
+        }
+    }
+    let asked = if focus.is_empty() {
+        "map".to_string()
+    } else {
+        format!("map {}", focus.join(" "))
+    };
+    Ok(render(&asked, root, &lines, options))
+}
+
+/// Whether a name is written as a file's path: with a `/`, or ending in an
+/// extension graff reads. A bare word, `handoff`, names symbols.
+fn path_like(written: &str) -> bool {
+    written.contains('/')
+        || [
+            ".rs",
+            ".nix",
+            ".sh",
+            ".bash",
+            ".py",
+            ".c",
+            ".h",
+            ".md",
+            ".markdown",
+        ]
+        .iter()
+        .any(|extension| written.ends_with(extension))
+}
+
+/// Whether `search` and `map` list a definition of a file: not a Markdown
+/// file's custom anchor, a place for links; not an impl block, which `def`
+/// lists under its type; not a helper's argument the binding of the module
+/// stands for, as in `outline`.
+fn listed(symbols: &[Symbol], s: usize) -> bool {
+    let symbol = &symbols[s];
+    match symbol.kind {
+        Kind::Anchor | Kind::Impl => false,
+        Kind::Argument => !symbols.iter().any(|other| {
+            other.kind != Kind::Argument && (other.start, other.end) == (symbol.start, symbol.end)
+        }),
+        _ => true,
+    }
 }
 
 /// A worktree's files, with what was read of each.
@@ -656,6 +812,21 @@ fn build() -> Option<String> {
         meta.len(),
         modified.as_nanos()
     ))
+}
+
+/// The worktree's definitions as a graph a rank walks.
+struct Graph {
+    walk: rank::Graph,
+    /// Each file's first node: its definitions' come one after another.
+    first: Vec<usize>,
+    /// How many nodes are definitions; a file's top comes after them.
+    definitions: usize,
+}
+
+impl Graph {
+    fn node(&self, d: Definition) -> usize {
+        self.first[d.file] + d.symbol
+    }
 }
 
 /// What a use of a name is in: a definition, or the top of a file.
@@ -880,6 +1051,47 @@ impl<'s> Code<'s> {
         ))
     }
 
+    /// The graph a rank walks: a node for each definition, and one for the
+    /// top of each file with no definition of its own, a Rust file's; an
+    /// edge from what a use is in to what it reaches, of weight one. A use
+    /// that may reach one of several definitions weighs a tenth, as Aider
+    /// weighs a name five files define, shared among them; one that may
+    /// reach a type of std or of Python's library, none, as the uses of a
+    /// name those types have too, `.len()`, are mostly theirs.
+    fn graph(&mut self) -> Result<Graph, Error> {
+        let edges = self.edges(Sites::All)?;
+        let mut first = Vec::with_capacity(self.worktree.files.len());
+        let mut definitions = 0;
+        for (_, extraction) in &self.worktree.files {
+            first.push(definitions);
+            definitions += extraction.symbols.len();
+        }
+        let mut graph = Graph {
+            walk: rank::Graph::new(definitions + first.len()),
+            first,
+            definitions,
+        };
+        for edge in &edges {
+            let from = match self.caller(edge) {
+                Caller::In(d) => graph.node(d),
+                Caller::Top(f) => self
+                    .whole(f)
+                    .map_or(definitions + f, |whole| graph.node(whole)),
+            };
+            match &edge.resolution {
+                Resolution::Resolved(d, _) => graph.walk.add(from, graph.node(*d), 1.0),
+                Resolution::Ambiguous(found) if !self.used(edge).outside => {
+                    for &d in found {
+                        let weight = AMBIGUOUS / found.len() as f64;
+                        graph.walk.add(from, graph.node(d), weight);
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(graph)
+    }
+
     fn symbol(&self, d: Definition) -> &Symbol {
         &self.worktree.files[d.file].1.symbols[d.symbol]
     }
@@ -981,12 +1193,18 @@ impl<'s> Code<'s> {
     /// starts: a function's signature, a C prototype whole, a Python class's
     /// line past its decorators, the first line of anything else.
     fn signature(&self, d: Definition) -> Option<String> {
-        let symbol = self.symbol(d);
         let text = fs::read_to_string(self.root.join(self.path(d))).ok()?;
-        let lines: Vec<&str> = text
-            .lines()
+        self.signature_in(d, &text.lines().collect::<Vec<_>>())
+    }
+
+    /// A definition's signature, from its file's lines.
+    fn signature_in(&self, d: Definition, file: &[&str]) -> Option<String> {
+        let symbol = self.symbol(d);
+        let lines: Vec<&str> = file
+            .iter()
             .skip(symbol.start.checked_sub(1)? as usize)
             .take((symbol.end - symbol.start + 1) as usize)
+            .copied()
             .collect();
         if self.worktree.languages[d.file] == Language::Python {
             return python_signature(&lines);
@@ -1079,6 +1297,12 @@ impl<'s> Code<'s> {
         }
     }
 
+    /// The file a name names when it is written as a path, as `find` reads
+    /// it.
+    fn file_named(&self, written: &str) -> Option<usize> {
+        path_like(written).then(|| self.file(written).ok())?
+    }
+
     /// Each definition a written name names, the whole name first; an error
     /// that gives the nearest names when none does.
     fn find(&self, written: &str) -> Result<Vec<Definition>, Error> {
@@ -1086,21 +1310,7 @@ impl<'s> Code<'s> {
         // is named by its path, as `graff outline` names one, and a Rust
         // file names the module it is; a bare word with no extension,
         // `handoff`, names symbols.
-        let path_like = written.contains('/')
-            || [
-                ".rs",
-                ".nix",
-                ".sh",
-                ".bash",
-                ".py",
-                ".c",
-                ".h",
-                ".md",
-                ".markdown",
-            ]
-            .iter()
-            .any(|extension| written.ends_with(extension));
-        let as_file = path_like.then(|| self.file(written));
+        let as_file = path_like(written).then(|| self.file(written));
         let path_alone = !written.contains([':', '#']);
         if let Some(Ok(f)) = as_file {
             if let Some(whole) = self.whole(f) {
@@ -1889,6 +2099,9 @@ struct Line {
     rank: u32,
     /// What the line is, as a cut names it: `callers`.
     part: &'static str,
+    /// Whether it heads the lines after it, to the next that heads others,
+    /// and is given only with one of them: a file's path in a map.
+    heads: bool,
 }
 
 impl Line {
@@ -1898,6 +2111,15 @@ impl Line {
             json,
             rank,
             part,
+            heads: false,
+        }
+    }
+
+    /// A line that heads the lines after it.
+    fn heading(text: String, json: Value, rank: u32, part: &'static str) -> Line {
+        Line {
+            heads: true,
+            ..Line::new(text, json, rank, part)
         }
     }
 }
@@ -1937,6 +2159,21 @@ fn render(query: &str, root: &Path, lines: &[Line], options: &Options) -> String
             }
             kept[i] = true;
             used += sizes[i];
+        }
+        // A heading the budget kept none of the lines of is left out too.
+        let mut heading: Option<usize> = None;
+        for i in 0..lines.len() {
+            if lines[i].heads {
+                if let Some(h) = heading {
+                    kept[h] = false;
+                }
+                heading = kept[i].then_some(i);
+            } else if kept[i] {
+                heading = None;
+            }
+        }
+        if let Some(h) = heading {
+            kept[h] = false;
         }
         kept
     };

@@ -3,6 +3,7 @@
 pub mod extract;
 pub mod lang;
 pub mod query;
+pub mod rank;
 pub mod resolve;
 pub mod search;
 pub mod store;

@@ -75,6 +75,34 @@ The misses are mostly subjects that name no code (`docs: sync stale
 version/count references`, `README: drop self-ranking superlatives`) or
 name it in other words than the code's.
 
+## The graph, probed (task 18)
+
+Task 18 asked whether the graph of uses `graff map` ranks by
+(`src/rank.rs`) orders `search`'s results better, as HippoRAG's
+personalized PageRank seeded by a query's matches ranks passages, or as a
+query-independent rank added to BM25 does in web search (Craswell et al.,
+"Relevance weighting for query independent evidence", 2005). Four ways,
+from a build that read them from the environment (not committed), on the
+same 60 commits of each, 2026-10-12:
+
+| Order of the results                                   | kmux MRR | nixdk MRR |
+| ------------------------------------------------------ | -------- | --------- |
+| BM25 alone (graff's)                                   | .392     | .500      |
+| BM25's matches by a walk jumping to them by score      | .022     | .289      |
+| every definition by that walk, matched or not          | .000     | not run   |
+| BM25 + 0.25 or 1 × ln(N × rank), the walk anywhere     | .393, .396 | .498, .490 |
+| BM25 + 0.25 or 1 × ln(N × rank), the walk to the matches | .392, .383 | .498, .498 |
+
+The first two walks weighed every use alike, those that may reach one of
+several definitions too; the last two, the graph as committed. A walk
+ranks what many uses reach, which a commit's change seldom is: ranked by
+it, the definitions a subject names fall behind the hubs they lean on.
+Added to BM25 the rank moves nothing past a probe or two either way, and
+costs a resolution of every use, 0.8 to 1.4 s more on Python's library
+and nixos/modules: `search` stays BM25 alone. Gate A's questions (task 19),
+which ask where things are rather than name what changed, may find
+otherwise; they are not read here (gotcha 56).
+
 ## Time
 
 `graff search parse configuration file`, five runs each, interleaved with

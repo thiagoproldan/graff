@@ -502,6 +502,101 @@ src/store.rs:2 const MAX
 }
 
 #[test]
+fn map_gives_what_matters_most_by_file_around_a_focus() {
+    let demo = Demo::new("map");
+    // The whole worktree, a file's definitions in its order, an enum's
+    // variants on its line; the file with what most uses reach first.
+    assert_eq!(
+        demo.ask(&["map"]),
+        demo.rooted(
+            "map in ROOT
+15 definitions in 2 files, by PageRank
+src/store.rs:
+  2 pub const MAX: u32 = 10;
+  5-7 pub struct Storage
+  11-13 pub fn open(path: &str) -> Storage
+  15-17 pub fn fetch(&self, key: &str) -> u32
+  19-21 fn size(&self, key: &str) -> u32
+  25-27 fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result
+  30-33 pub enum Kind
+  35 pub struct Item;
+  38-40 pub fn get(&self) -> Kind
+  43-45 pub fn first(items: &[Item]) -> Kind
+  48-50 mod tests
+src/lib.rs:
+  1 pub mod store;
+  6-9 pub fn run(path: &str) -> u32
+  11-13 fn helper() -> u32
+  17-19 pub fn other() -> u32
+"
+        )
+    );
+    // What most uses reach ranks first, and a cut keeps it: the store, not
+    // what no use reaches.
+    let json: serde_json::Value = serde_json::from_str(&demo.ask(&["map", "--json"])).unwrap();
+    let rank = |qualified: &str| {
+        let results = json["results"].as_array().unwrap();
+        let found = results
+            .iter()
+            .find(|r| r["definition"]["qualified"] == qualified)
+            .unwrap_or_else(|| panic!("{qualified} not in {json}"));
+        found["rank"].as_f64().unwrap()
+    };
+    assert!(rank("Storage") > rank("Storage::size"));
+    assert!(rank("Storage::size") > rank("other"));
+    let cut = demo.ask(&["map", "--budget", "75"]);
+    assert!(cut.contains("pub struct Storage"), "{cut}");
+    assert!(!cut.contains("other"), "{cut}");
+    // Around a file or a symbol: what it leans on, itself left out.
+    assert_eq!(
+        demo.ask(&["map", "src/lib.rs"]),
+        demo.rooted(
+            "map src/lib.rs in ROOT
+5 definitions in 1 file, by PageRank around src/lib.rs
+src/store.rs:
+  2 pub const MAX: u32 = 10;
+  5-7 pub struct Storage
+  11-13 pub fn open(path: &str) -> Storage
+  15-17 pub fn fetch(&self, key: &str) -> u32
+  19-21 fn size(&self, key: &str) -> u32
+"
+        )
+    );
+    assert_eq!(
+        demo.ask(&["map", "Storage::open"]),
+        demo.rooted(
+            "map Storage::open in ROOT
+1 definition in 1 file, by PageRank around Storage::open
+src/store.rs:
+  5-7 pub struct Storage
+"
+        )
+    );
+    // A file's path is given only with one of its definitions.
+    for budget in 40..80 {
+        let map = demo.ask(&["map", "--budget", &budget.to_string()]);
+        let lines: Vec<&str> = map.lines().collect();
+        for (n, line) in lines.iter().enumerate() {
+            if line.ends_with(':') {
+                assert!(lines[n + 1].starts_with("  "), "{map}");
+            }
+        }
+    }
+    let json: serde_json::Value =
+        serde_json::from_str(&demo.ask(&["map", "run", "--json"])).unwrap();
+    assert_eq!(json["results"][0]["definitions"], 6);
+    assert_eq!(json["results"][1]["file"], "src/store.rs");
+    assert!(json["results"][2]["rank"].as_f64().unwrap() > 0.0);
+    assert_eq!(
+        demo.refused(&["map", "nowhere"]),
+        format!(
+            "graff: no definition named nowhere in {}, nor a name near it\n",
+            demo.repo.display()
+        )
+    );
+}
+
+#[test]
 fn an_answer_fits_its_budget_and_says_what_it_left_out() {
     let demo = Demo::new("budget");
     let whole = demo.ask(&["callers", "Storage"]);

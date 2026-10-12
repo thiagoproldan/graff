@@ -1208,6 +1208,14 @@ mod tests {
         let folder = Folder::new();
         let root = repository(folder.0.join("repo"));
         write(&root, "src/a.rs", "fn a() {}\n", Duration::ZERO);
+        // Dated ahead, so that no slow step between the write and the first
+        // check can carry the file out of the racy window.
+        fs::File::options()
+            .write(true)
+            .open(root.join("src/a.rs"))
+            .unwrap()
+            .set_modified(SystemTime::now() + OLD)
+            .unwrap();
         let mut store = Store::open(&folder.0.join("index.db")).unwrap();
         store.check(&root).unwrap();
         assert_eq!(store.check(&root).unwrap(), checked(3, 2, 1, 0, 0));

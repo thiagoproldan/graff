@@ -137,7 +137,8 @@ pub fn extract(source: &[u8]) -> Extraction {
     reader.scan(root, 0);
     reader.guard = guard(root, source);
     reader.out.guard = reader.guard.clone();
-    reader.out.branches = branches(&directives(source), reader.guard.as_deref(), end_line(root));
+    let directives = directives(source);
+    reader.out.branches = branches(&directives, reader.guard.as_deref(), end_line(root));
     reader.out.symbols.push(Symbol {
         name: String::new(),
         qualified: String::new(),
@@ -148,10 +149,12 @@ pub fn extract(source: &[u8]) -> Extraction {
         internal: false,
         typed: None,
         consumed: false,
+        value: None,
     });
     for child in named_children(root) {
         reader.item(child, 1);
     }
+    macro_values(&directives, &mut reader.out.symbols);
     reader.out
 }
 
@@ -315,6 +318,42 @@ fn directives(source: &[u8]) -> Vec<Directive> {
         start = end + 1;
     }
     found
+}
+
+/// The longest replacement list of a macro kept as its value.
+const MAX_VALUE: usize = 160;
+
+/// Gives each macro its replacement list where it reads as an integer
+/// expression, from the `#define` directive that makes it: the syntax tree
+/// ends a list where a comment begins in it, and a directive reads whole.
+fn macro_values(directives: &[Directive], symbols: &mut [Symbol]) {
+    for directive in directives.iter().filter(|d| d.name == "define") {
+        let name_end = directive
+            .rest
+            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .unwrap_or(directive.rest.len());
+        let (name, body) = directive.rest.split_at(name_end);
+        // `F(x)` is function-like where its parenthesis follows the name.
+        if name.is_empty() || body.starts_with('(') {
+            continue;
+        }
+        if let Some(symbol) = symbols
+            .iter_mut()
+            .find(|s| s.kind == Kind::Macro && s.start == directive.first && s.name == name)
+        {
+            symbol.value = integer_expression(body);
+        }
+    }
+}
+
+/// A replacement list when it reads as an integer expression: names,
+/// numbers, operators and parentheses, no more than MAX_VALUE bytes.
+/// Whether it is a number graff computes is for resolution to tell.
+fn integer_expression(body: &str) -> Option<String> {
+    let text = body.trim();
+    let plain = |c: char| c.is_ascii_alphanumeric() || " _()+-*/%<>=!&|^~?:.".contains(c);
+    (!text.is_empty() && text.len() <= MAX_VALUE && text.chars().all(plain))
+        .then(|| text.to_string())
 }
 
 /// A directive's text with its comments left out: `/* .. */` spans, and
@@ -623,6 +662,7 @@ impl<'s, 't> Reader<'s, 't> {
             internal,
             typed: None,
             consumed: false,
+            value: None,
         });
         qualified
     }
@@ -1788,6 +1828,34 @@ int fast;
             vec![(2, 5, "!defined(B_H)"), (4, 5, "defined(A)")]
         );
         assert_eq!(out.guard, None);
+    }
+
+    #[test]
+    fn an_object_like_macro_keeps_its_replacement_list_where_it_reads_as_an_integer() {
+        let out = extract(
+            b"#define A 64\n#define B (A + 1) /* one more */ \\\n   * 2 // x\n#define C(x) (x)\n#define D \"text\"\n#define E\n#define F 0x10UL\n#define G {1, 2}\n#define H(a) a\n#define I 'c'\n#define J 1 ? A : B\n",
+        );
+        let values: Vec<(&str, Option<&str>)> = out
+            .symbols
+            .iter()
+            .filter(|s| s.kind == Kind::Macro)
+            .map(|s| (s.name.as_str(), s.value.as_deref()))
+            .collect();
+        assert_eq!(
+            values,
+            vec![
+                ("A", Some("64")),
+                ("B", Some("(A + 1) * 2")),
+                ("C", None),
+                ("D", None),
+                ("E", None),
+                ("F", Some("0x10UL")),
+                ("G", None),
+                ("H", None),
+                ("I", None),
+                ("J", Some("1 ? A : B")),
+            ]
+        );
     }
 
     #[test]

@@ -28,7 +28,13 @@
 //! undefined if the host's compiler is known not to define it: a macro
 //! another system's, processor's or compiler's defines. Any other is
 //! unknown, as a build's flags may define it, and so is a branch whose
-//! condition turns on one, which stays a candidate. The order of a file's
+//! condition turns on one, which stays a candidate. A condition is computed as
+//! `#if` computes it, in 64 bits and by C's operators: a macro stands for the
+//! value the host's compiler gives it (`host_number`; where gcc's and clang's
+//! differ, as `__GNUC__`, the condition has a value if each gives the same),
+//! a standard header's (`standard_number`), or the one a definition in sight
+//! gives as an integer expression, which every definition the build reads
+//! gives alike. The order of a file's
 //! includes is not read: what it includes after a branch is taken as seen
 //! before it. A use in a branch the build leaves out is read as a build
 //! that takes the branch would read it, the macros the branch tests given
@@ -498,6 +504,11 @@ struct Sight<'i, 'a> {
     around: HashSet<usize>,
     /// Each branch's value, by its file and its place among the file's.
     values: RefCell<HashMap<(usize, usize), Option<bool>>>,
+    /// Whether each standard header is included where the file is read, by
+    /// whether what includes the file counts.
+    headers: RefCell<HashMap<(&'static str, bool), bool>>,
+    /// The macros whose values are being read, for one that names itself.
+    expanding: RefCell<Vec<String>>,
 }
 
 impl<'i, 'a> Sight<'i, 'a> {
@@ -509,6 +520,8 @@ impl<'i, 'a> Sight<'i, 'a> {
             included,
             around,
             values: RefCell::new(HashMap::new()),
+            headers: RefCell::new(HashMap::new()),
+            expanding: RefCell::new(Vec::new()),
         }
     }
 
@@ -531,12 +544,113 @@ impl<'i, 'a> Sight<'i, 'a> {
                 .iter()
                 .any(|&d| seen(d.file) && index.symbol(d).kind == Kind::Macro && index.always(d))
         });
-        let standard = standard(name).iter().any(|header| {
-            std::iter::once(&self.file)
-                .chain(&self.included)
-                .any(|&f| index.system[f].contains(header))
-        });
+        let standard = standard(name)
+            .iter()
+            .any(|header| self.includes_standard(header, false));
         (guard || defines || standard).then_some(true)
+    }
+
+    /// Whether a standard header is included where the file is read: by the
+    /// file, or by one it includes; with `through_includers`, for a header,
+    /// by every file that includes it too, which includes what the header
+    /// needs, though a header that tests whether the macro is defined, to
+    /// define it itself if not, is read alone.
+    fn includes_standard(&self, header: &'static str, through_includers: bool) -> bool {
+        let key = (header, through_includers);
+        if let Some(&known) = self.headers.borrow().get(&key) {
+            return known;
+        }
+        let known = self.reads_through(self.file, header, through_includers, &mut Vec::new());
+        self.headers.borrow_mut().insert(key, known);
+        known
+    }
+
+    fn reads_through(
+        &self,
+        file: usize,
+        header: &str,
+        through_includers: bool,
+        visiting: &mut Vec<usize>,
+    ) -> bool {
+        let index = self.index;
+        let sees = |f: usize| index.system[f].contains(&header);
+        let included: Vec<usize> = if file == self.file {
+            self.included.iter().copied().collect()
+        } else {
+            index.closure(file, &index.includes)
+        };
+        if sees(file) || included.into_iter().any(sees) {
+            return true;
+        }
+        let includers = &index.includers[file];
+        if !through_includers || includers.is_empty() || visiting.contains(&file) {
+            return false;
+        }
+        visiting.push(file);
+        let all = includers
+            .iter()
+            .all(|&includer| self.reads_through(includer, header, true, visiting));
+        visiting.pop();
+        all
+    }
+
+    /// The value of a macro that is defined where the file is read: the
+    /// host's compiler gives it (`host_number`, clang's where the flag
+    /// says), or a standard header the file includes, or the definitions it
+    /// sees, which every one the build reads gives alike as an integer
+    /// expression.
+    fn number(&self, name: &str, clang: bool) -> Option<Num> {
+        if let Some(known) = host_number(name, clang) {
+            return Some(known);
+        }
+        // A limit a condition compares is the header's, not a fallback's.
+        if let Some(known) = standard_number(name)
+            && standard(name)
+                .iter()
+                .any(|header| self.includes_standard(header, true))
+        {
+            return Some(known);
+        }
+        if self.defined(name) != Some(true) {
+            return None;
+        }
+        let index = self.index;
+        let seen = |f: usize| f == self.file || self.included.contains(&f);
+        let mut agreed: Option<Num> = None;
+        for &d in index.named.get(name)? {
+            let symbol = index.symbol(d);
+            if symbol.kind != Kind::Macro || !seen(d.file) || self.left_out(d.file, symbol.start) {
+                continue;
+            }
+            let found = self.expand(name, symbol.value.as_deref()?, clang)?;
+            match agreed {
+                Some(known) if (known.bits, known.unsigned) != (found.bits, found.unsigned) => {
+                    return None;
+                }
+                Some(known) => agreed = Some(known.tainted(found)),
+                None => agreed = Some(found),
+            }
+        }
+        agreed
+    }
+
+    /// What a macro's replacement list comes to.
+    fn expand(&self, name: &str, body: &str, clang: bool) -> Option<Num> {
+        const MAX_DEPTH: usize = 16;
+        {
+            let mut expanding = self.expanding.borrow_mut();
+            if expanding.len() >= MAX_DEPTH || expanding.iter().any(|n| n == name) {
+                return None;
+            }
+            expanding.push(name.to_string());
+        }
+        let names = Names {
+            defined: &|n| self.defined(n),
+            number: &|n, c| self.number(n, c),
+        };
+        let found = read(&tokens(body), &names, clang);
+        self.expanding.borrow_mut().pop();
+        found
     }
 
     /// Whether a line of a file is in a branch the build leaves out where
@@ -602,12 +716,16 @@ impl<'i, 'a> Sight<'i, 'a> {
     }
 
     fn value_in(&self, build: &HashMap<&str, bool>, condition: &str) -> Option<bool> {
-        value(condition, &|name| {
-            build
-                .get(name)
-                .copied()
-                .map_or_else(|| self.defined(name), Some)
-        })
+        let names = Names {
+            defined: &|name| {
+                build
+                    .get(name)
+                    .copied()
+                    .map_or_else(|| self.defined(name), Some)
+            },
+            number: &|name, clang| self.number(name, clang),
+        };
+        value(condition, &names)
     }
 
     /// The value of a branch of a file where this file is read.
@@ -616,7 +734,14 @@ impl<'i, 'a> Sight<'i, 'a> {
             return known;
         }
         let condition = &self.index.files[file].extraction.branches[b].condition;
-        let known = value(condition, &|name| self.defined(name));
+        // A macro the branch defines, which its own condition reads, finds
+        // the branch unknown.
+        self.values.borrow_mut().insert((file, b), None);
+        let names = Names {
+            defined: &|name| self.defined(name),
+            number: &|name, clang| self.number(name, clang),
+        };
+        let known = value(condition, &names);
         self.values.borrow_mut().insert((file, b), known);
         known
     }
@@ -628,8 +753,13 @@ impl Index<'_> {
     /// that includes it.
     fn always(&self, d: Definition) -> bool {
         let branches = &self.files[d.file].extraction.branches;
-        self.around_line(d.file, self.symbol(d).start)
-            .all(|b| value(&branches[b].condition, &host) == Some(true))
+        self.around_line(d.file, self.symbol(d).start).all(|b| {
+            let names = Names {
+                defined: &host,
+                number: &host_number,
+            };
+            value(&branches[b].condition, &names) == Some(true)
+        })
     }
 
     /// The branches of a file a line is in, the innermost first.
@@ -664,7 +794,7 @@ fn host(name: &str) -> Option<bool> {
     let systems: &[&str] = match name {
         "__linux__" | "__linux" => &["linux", "android"],
         "__unix__" | "__unix" => UNIX,
-        "__APPLE__" | "__MACH__" => &["macos", "ios"],
+        "__APPLE__" | "__MACH__" | "__APPLE_CC__" => &["macos", "ios"],
         "_WIN32" => &["windows"],
         "_WIN64" if OS == "windows" => return Some(cfg!(target_pointer_width = "64")),
         "_WIN64" => &["windows"],
@@ -681,11 +811,35 @@ fn host(name: &str) -> Option<bool> {
         "__HAIKU__" => &["haiku"],
         "__EMSCRIPTEN__" => &["emscripten"],
         // The compilers of the systems but Windows: gcc and clang.
-        "__GNUC__" | "__ATOMIC_RELAXED" | "__ATOMIC_ACQUIRE" | "__ATOMIC_RELEASE"
-        | "__ATOMIC_ACQ_REL" | "__ATOMIC_SEQ_CST" | "__ATOMIC_CONSUME"
+        "__GNUC__"
+        | "__GNUC_MINOR__"
+        | "__GNUC_PATCHLEVEL__"
+        | "__ATOMIC_RELAXED"
+        | "__ATOMIC_ACQUIRE"
+        | "__ATOMIC_RELEASE"
+        | "__ATOMIC_ACQ_REL"
+        | "__ATOMIC_SEQ_CST"
+        | "__ATOMIC_CONSUME"
+        | "__BYTE_ORDER__"
+        | "__ORDER_LITTLE_ENDIAN__"
+        | "__ORDER_BIG_ENDIAN__"
+        | "__ORDER_PDP_ENDIAN__"
+        | "__CHAR_BIT__"
+        | "__SIZEOF_POINTER__"
+        | "__SIZEOF_SIZE_T__"
+        | "__SIZEOF_INT__"
+        | "__SIZEOF_SHORT__"
+        | "__SIZEOF_LONG__"
+        | "__SIZEOF_LONG_LONG__"
+        | "__SIZEOF_WCHAR_T__"
+        | "__SIZEOF_FLOAT__"
+        | "__SIZEOF_DOUBLE__"
             if OS != "windows" =>
         {
             return Some(true);
+        }
+        "__LP64__" | "_LP64" if OS != "windows" => {
+            return Some(cfg!(target_pointer_width = "64"));
         }
         "__TINYC__" if OS != "windows" => return Some(false),
         "__cplusplus" => return Some(false),
@@ -729,9 +883,125 @@ fn processor(name: &str, arch: &str) -> Option<bool> {
     Some(archs.contains(&arch))
 }
 
+/// The value of a macro the host's compiler predefines: a recent gcc's, or
+/// clang's where the flag says so, for what they give differently. None for
+/// one it does not define, and for one whose value graff does not know.
+fn host_number(name: &str, clang: bool) -> Option<Num> {
+    if host(name) != Some(true) {
+        return None;
+    }
+    let size = |bytes: usize| Some(Num::signed(bytes as i64));
+    match name {
+        "__GNUC__" => Some(Num {
+            compiler: true,
+            ..Num::signed(if clang { 4 } else { 14 })
+        }),
+        "__GNUC_MINOR__" => Some(Num::signed(2)),
+        "__GNUC_PATCHLEVEL__" => Some(Num {
+            compiler: true,
+            ..Num::signed(i64::from(clang))
+        }),
+        "__ATOMIC_RELAXED" => Some(Num::signed(0)),
+        "__ATOMIC_CONSUME" => Some(Num::signed(1)),
+        "__ATOMIC_ACQUIRE" => Some(Num::signed(2)),
+        "__ATOMIC_RELEASE" => Some(Num::signed(3)),
+        "__ATOMIC_ACQ_REL" => Some(Num::signed(4)),
+        "__ATOMIC_SEQ_CST" => Some(Num::signed(5)),
+        "__ORDER_LITTLE_ENDIAN__" => Some(Num::signed(1234)),
+        "__ORDER_BIG_ENDIAN__" => Some(Num::signed(4321)),
+        "__ORDER_PDP_ENDIAN__" => Some(Num::signed(3412)),
+        "__BYTE_ORDER__" => Some(Num::signed(byte_order())),
+        "__CHAR_BIT__" => size(8),
+        "__SIZEOF_POINTER__" | "__SIZEOF_SIZE_T__" | "__SIZEOF_LONG__" => {
+            size(std::mem::size_of::<usize>())
+        }
+        "__SIZEOF_INT__" | "__SIZEOF_FLOAT__" | "__SIZEOF_WCHAR_T__" => size(4),
+        "__SIZEOF_SHORT__" => size(2),
+        "__SIZEOF_LONG_LONG__" | "__SIZEOF_DOUBLE__" => size(8),
+        // A version, which graff does not know, of the systems that give one.
+        "__FreeBSD__" | "_MSC_VER" => None,
+        // The others are 1.
+        _ => Some(Num::signed(1)),
+    }
+}
+
+/// What `__BYTE_ORDER__` is on the host: 1234 for little endian, 4321 for
+/// big.
+fn byte_order() -> i64 {
+    if cfg!(target_endian = "little") {
+        1234
+    } else {
+        4321
+    }
+}
+
+/// The value of a macro a standard header defines, as it is for the host:
+/// `<endian.h>`'s orders, `<limits.h>`'s and `<stdint.h>`'s limits. None for
+/// any other.
+fn standard_number(name: &str) -> Option<Num> {
+    use std::env::consts::OS;
+    let pointer = usize::BITS;
+    // `long` is as wide as a pointer on the systems but Windows.
+    let long = if OS == "windows" { 32 } else { pointer };
+    let signed_max = |bits: u32| Num::signed(((1u128 << (bits - 1)) - 1) as i64);
+    let signed_min = |bits: u32| Num::signed(-(1i128 << (bits - 1)) as i64);
+    let unsigned_max = |bits: u32| Num::unsigned(((1u128 << bits) - 1) as u64);
+    // An unsigned of fewer bits than an int promotes to int.
+    let small_max = |bits: u32| {
+        if bits < 32 {
+            Num::signed(((1u128 << bits) - 1) as i64)
+        } else {
+            unsigned_max(bits)
+        }
+    };
+    match name {
+        "__LITTLE_ENDIAN" => Some(Num::signed(1234)),
+        "__BIG_ENDIAN" => Some(Num::signed(4321)),
+        "__PDP_ENDIAN" => Some(Num::signed(3412)),
+        "__BYTE_ORDER" => Some(Num::signed(byte_order())),
+        "CHAR_BIT" => Some(Num::signed(8)),
+        "SCHAR_MIN" => Some(signed_min(8)),
+        "SCHAR_MAX" => Some(signed_max(8)),
+        "UCHAR_MAX" => Some(Num::signed(255)),
+        "SHRT_MIN" => Some(signed_min(16)),
+        "SHRT_MAX" => Some(signed_max(16)),
+        "USHRT_MAX" => Some(Num::signed(65535)),
+        "INT_MIN" => Some(signed_min(32)),
+        "INT_MAX" => Some(signed_max(32)),
+        "UINT_MAX" => Some(unsigned_max(32)),
+        "LONG_MIN" => Some(signed_min(long)),
+        "LONG_MAX" => Some(signed_max(long)),
+        "ULONG_MAX" => Some(unsigned_max(long)),
+        "LLONG_MIN" => Some(signed_min(64)),
+        "LLONG_MAX" => Some(signed_max(64)),
+        "ULLONG_MAX" => Some(unsigned_max(64)),
+        "INTPTR_MIN" | "PTRDIFF_MIN" => Some(signed_min(pointer)),
+        "INTPTR_MAX" | "PTRDIFF_MAX" => Some(signed_max(pointer)),
+        "UINTPTR_MAX" | "SIZE_MAX" => Some(unsigned_max(pointer)),
+        "INTMAX_MIN" => Some(signed_min(64)),
+        "INTMAX_MAX" => Some(signed_max(64)),
+        "UINTMAX_MAX" => Some(unsigned_max(64)),
+        _ => {
+            // INT8_MIN, INT32_MAX, UINT16_MAX.
+            let unsigned = name.starts_with('U');
+            let rest = name
+                .strip_prefix("UINT")
+                .or_else(|| name.strip_prefix("INT"))?;
+            let (width, limit) = rest.split_once('_')?;
+            let bits: u32 = width.parse().ok().filter(|b| [8, 16, 32, 64].contains(b))?;
+            match (unsigned, limit) {
+                (false, "MIN") => Some(signed_min(bits)),
+                (false, "MAX") => Some(signed_max(bits)),
+                (true, "MAX") => Some(small_max(bits)),
+                _ => None,
+            }
+        }
+    }
+}
+
 /// The standard headers that define a macro, by ISO C: <stdint.h>'s limits
 /// and constants, which <inttypes.h> includes; <limits.h>'s; <stddef.h>'s
-/// `offsetof`.
+/// `offsetof`; and POSIX's <endian.h>'s byte orders.
 fn standard(name: &str) -> &'static [&'static str] {
     const STDINT: &[&str] = &["stdint.h", "inttypes.h"];
     const LIMITS: &[&str] = &[
@@ -760,6 +1030,13 @@ fn standard(name: &str) -> &'static [&'static str] {
     }
     if name == "offsetof" {
         return &["stddef.h"];
+    }
+    // glibc's and musl's, which <endian.h> defines whatever the dialect.
+    if matches!(
+        name,
+        "__BYTE_ORDER" | "__LITTLE_ENDIAN" | "__BIG_ENDIAN" | "__PDP_ENDIAN"
+    ) {
+        return &["endian.h"];
     }
     if matches!(
         name,
@@ -813,20 +1090,206 @@ fn macros(condition: &str) -> impl Iterator<Item = &str> {
         })
 }
 
+/// A number of a condition, as `#if` computes it: in `intmax_t`, or in
+/// `uintmax_t` where an operand is unsigned, both 64 bits here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Num {
+    bits: u64,
+    unsigned: bool,
+    /// Whether it is what gcc says and clang says otherwise, `__GNUC__`'s
+    /// version: a condition that turns on one is read for each.
+    compiler: bool,
+}
+
+impl Num {
+    fn signed(n: i64) -> Num {
+        Num {
+            bits: n as u64,
+            unsigned: false,
+            compiler: false,
+        }
+    }
+
+    fn unsigned(n: u64) -> Num {
+        Num {
+            bits: n,
+            unsigned: true,
+            compiler: false,
+        }
+    }
+
+    fn flag(on: bool) -> Num {
+        Num::signed(i64::from(on))
+    }
+
+    fn truth(self) -> bool {
+        self.bits != 0
+    }
+
+    fn tainted(self, by: Num) -> Num {
+        Num {
+            compiler: self.compiler || by.compiler,
+            ..self
+        }
+    }
+}
+
+/// An operator of two operands, by C's precedence from `|` up to `*`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Op {
+    Or,
+    And,
+    BitOr,
+    BitXor,
+    BitAnd,
+    Eq,
+    Ne,
+    Lt,
+    Gt,
+    Le,
+    Ge,
+    Shl,
+    Shr,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Rem,
+}
+
+impl Op {
+    /// How tight it binds: `||` is 1.
+    fn precedence(self) -> u8 {
+        match self {
+            Op::Or => 1,
+            Op::And => 2,
+            Op::BitOr => 3,
+            Op::BitXor => 4,
+            Op::BitAnd => 5,
+            Op::Eq | Op::Ne => 6,
+            Op::Lt | Op::Gt | Op::Le | Op::Ge => 7,
+            Op::Shl | Op::Shr => 8,
+            Op::Add | Op::Sub => 9,
+            Op::Mul | Op::Div | Op::Rem => 10,
+        }
+    }
+
+    /// What the operator makes of two numbers; none where C leaves it
+    /// undefined or the result does not fit.
+    fn apply(self, left: Num, right: Num) -> Option<Num> {
+        let compiler = left.compiler || right.compiler;
+        let made = match self {
+            // The shifts keep the left operand's type; the others convert both.
+            Op::Shl | Op::Shr => {
+                let count = u32::try_from(right.bits)
+                    .ok()
+                    .filter(|&c| c < 64 && (right.unsigned || right.bits as i64 >= 0))?;
+                let bits = if self == Op::Shl {
+                    left.bits << count
+                } else if left.unsigned {
+                    left.bits >> count
+                } else {
+                    (left.bits as i64 >> count) as u64
+                };
+                Num {
+                    bits,
+                    unsigned: left.unsigned,
+                    compiler: false,
+                }
+            }
+            _ if left.unsigned || right.unsigned => {
+                let (a, b) = (left.bits, right.bits);
+                match self {
+                    Op::Add => Num::unsigned(a.wrapping_add(b)),
+                    Op::Sub => Num::unsigned(a.wrapping_sub(b)),
+                    Op::Mul => Num::unsigned(a.wrapping_mul(b)),
+                    Op::Div => Num::unsigned(a.checked_div(b)?),
+                    Op::Rem => Num::unsigned(a.checked_rem(b)?),
+                    Op::BitOr => Num::unsigned(a | b),
+                    Op::BitXor => Num::unsigned(a ^ b),
+                    Op::BitAnd => Num::unsigned(a & b),
+                    Op::Eq => Num::flag(a == b),
+                    Op::Ne => Num::flag(a != b),
+                    Op::Lt => Num::flag(a < b),
+                    Op::Gt => Num::flag(a > b),
+                    Op::Le => Num::flag(a <= b),
+                    Op::Ge => Num::flag(a >= b),
+                    Op::Or | Op::And | Op::Shl | Op::Shr => return None,
+                }
+            }
+            _ => {
+                let (a, b) = (left.bits as i64, right.bits as i64);
+                match self {
+                    Op::Add => Num::signed(a.checked_add(b)?),
+                    Op::Sub => Num::signed(a.checked_sub(b)?),
+                    Op::Mul => Num::signed(a.checked_mul(b)?),
+                    Op::Div => Num::signed(a.checked_div(b)?),
+                    Op::Rem => Num::signed(a.checked_rem(b)?),
+                    Op::BitOr => Num::signed(a | b),
+                    Op::BitXor => Num::signed(a ^ b),
+                    Op::BitAnd => Num::signed(a & b),
+                    Op::Eq => Num::flag(a == b),
+                    Op::Ne => Num::flag(a != b),
+                    Op::Lt => Num::flag(a < b),
+                    Op::Gt => Num::flag(a > b),
+                    Op::Le => Num::flag(a <= b),
+                    Op::Ge => Num::flag(a >= b),
+                    Op::Or | Op::And | Op::Shl | Op::Shr => return None,
+                }
+            }
+        };
+        Some(Num { compiler, ..made })
+    }
+}
+
 /// A token of a condition.
 #[derive(Clone, Copy, PartialEq)]
 enum Token<'c> {
     Name(&'c str),
-    /// A number, by whether it is not 0.
-    Number(bool),
+    /// A number; none for one graff does not read, a float or a character.
+    Number(Option<Num>),
     Not,
-    And,
-    Or,
+    Complement,
+    Operator(Op),
+    Question,
+    Colon,
     Open,
     Close,
-    /// Any other operator, which makes what it is in a value graff does
-    /// not compute: `>=`, `+`, `?`.
+    /// Any other, which makes what it is in a value graff does not compute:
+    /// `,`, `"`.
     Other,
+}
+
+/// A number as C writes it: decimal, `0x`, `0b` or octal, with the suffixes
+/// `u`, `l` and `ll`.
+fn number(text: &str) -> Option<Num> {
+    let digits = text.trim_end_matches(['u', 'U', 'l', 'L']);
+    let suffix = &text[digits.len()..];
+    if suffix.len() > 3 || !suffix.chars().all(|c| "uUlL".contains(c)) {
+        return None;
+    }
+    let (radix, body) = if let Some(hex) = digits
+        .strip_prefix("0x")
+        .or_else(|| digits.strip_prefix("0X"))
+    {
+        (16, hex)
+    } else if let Some(binary) = digits
+        .strip_prefix("0b")
+        .or_else(|| digits.strip_prefix("0B"))
+    {
+        (2, binary)
+    } else if digits.len() > 1 && digits.starts_with('0') {
+        (8, &digits[1..])
+    } else {
+        (10, digits)
+    };
+    let n = u64::from_str_radix(body, radix).ok()?;
+    let unsigned = suffix.contains(['u', 'U']) || n > i64::MAX as u64;
+    Some(if unsigned {
+        Num::unsigned(n)
+    } else {
+        Num::signed(n as i64)
+    })
 }
 
 fn tokens(condition: &str) -> Vec<Token<'_>> {
@@ -845,17 +1308,7 @@ fn tokens(condition: &str) -> Vec<Token<'_>> {
                 while i < bytes.len() && (word(bytes[i]) || bytes[i] == b'.') {
                     i += 1;
                 }
-                // 0, 0x0, 0UL: the digits past a base's prefix, before a suffix.
-                let text = &condition[start..i];
-                let digits = text
-                    .strip_prefix("0x")
-                    .or_else(|| text.strip_prefix("0X"))
-                    .unwrap_or(text);
-                let nonzero = digits
-                    .chars()
-                    .take_while(char::is_ascii_hexdigit)
-                    .any(|c| c != '0');
-                Token::Number(nonzero)
+                Token::Number(number(&condition[start..i]))
             }
             b if word(b) => {
                 while i < bytes.len() && word(bytes[i]) {
@@ -863,26 +1316,51 @@ fn tokens(condition: &str) -> Vec<Token<'_>> {
                 }
                 Token::Name(&condition[start..i])
             }
-            _ if condition[i..].starts_with("&&") => {
-                i += 2;
-                Token::And
-            }
-            _ if condition[i..].starts_with("||") => {
-                i += 2;
-                Token::Or
-            }
-            _ if condition[i..].starts_with("!=") => {
-                i += 2;
-                Token::Other
-            }
-            b => {
+            b'\'' => {
+                // A character, to its closing quote.
                 i += 1;
-                match b {
-                    b'!' => Token::Not,
-                    b'(' => Token::Open,
-                    b')' => Token::Close,
-                    _ => Token::Other,
+                while i < bytes.len() && bytes[i] != b'\'' {
+                    i += if bytes[i] == b'\\' { 2 } else { 1 };
                 }
+                i = (i + 1).min(bytes.len());
+                Token::Number(None)
+            }
+            _ => {
+                let two = condition.get(i..i + 2).unwrap_or("");
+                let (width, token) = match two {
+                    "&&" => (2, Token::Operator(Op::And)),
+                    "||" => (2, Token::Operator(Op::Or)),
+                    "==" => (2, Token::Operator(Op::Eq)),
+                    "!=" => (2, Token::Operator(Op::Ne)),
+                    "<=" => (2, Token::Operator(Op::Le)),
+                    ">=" => (2, Token::Operator(Op::Ge)),
+                    "<<" => (2, Token::Operator(Op::Shl)),
+                    ">>" => (2, Token::Operator(Op::Shr)),
+                    _ => (
+                        1,
+                        match bytes[i] {
+                            b'!' => Token::Not,
+                            b'~' => Token::Complement,
+                            b'|' => Token::Operator(Op::BitOr),
+                            b'^' => Token::Operator(Op::BitXor),
+                            b'&' => Token::Operator(Op::BitAnd),
+                            b'<' => Token::Operator(Op::Lt),
+                            b'>' => Token::Operator(Op::Gt),
+                            b'+' => Token::Operator(Op::Add),
+                            b'-' => Token::Operator(Op::Sub),
+                            b'*' => Token::Operator(Op::Mul),
+                            b'/' => Token::Operator(Op::Div),
+                            b'%' => Token::Operator(Op::Rem),
+                            b'?' => Token::Question,
+                            b':' => Token::Colon,
+                            b'(' => Token::Open,
+                            b')' => Token::Close,
+                            _ => Token::Other,
+                        },
+                    ),
+                };
+                i += width;
+                token
             }
         };
         found.push(token);
@@ -890,137 +1368,197 @@ fn tokens(condition: &str) -> Vec<Token<'_>> {
     found
 }
 
-/// A condition's value by C's rules for `#if`, with `defined` telling
-/// which macros are: none where it turns on one `defined` cannot tell, on
-/// a macro's value, or on what graff does not compute, as
-/// `__STDC_VERSION__ >= 201112L`.
-fn value(condition: &str, defined: &dyn Fn(&str) -> Option<bool>) -> Option<bool> {
+/// What a condition's macros stand for.
+struct Names<'f> {
+    /// Whether a macro is defined, as `defined` asks.
+    defined: &'f dyn Fn(&str) -> Option<bool>,
+    /// The value of a macro that is defined, as gcc or clang gives it where
+    /// the flag says clang: none where graff does not know it.
+    number: &'f dyn Fn(&str, bool) -> Option<Num>,
+}
+
+/// A condition's value by C's rules for `#if`, with `names` telling which
+/// macros are defined and what they stand for: none where it turns on a
+/// macro they cannot tell, or on what graff does not compute, as a float or
+/// a call. Where it turns on what gcc and clang give differently, it has a
+/// value if each gives the same.
+fn value(condition: &str, names: &Names) -> Option<bool> {
     let tokens = tokens(condition);
-    let mut at = 0;
-    let value = either(&tokens, &mut at, defined);
-    if at == tokens.len() { value } else { None }
-}
-
-/// `a || b`.
-fn either(
-    tokens: &[Token],
-    at: &mut usize,
-    defined: &dyn Fn(&str) -> Option<bool>,
-) -> Option<bool> {
-    let mut value = both(tokens, at, defined);
-    while tokens.get(*at) == Some(&Token::Or) {
-        *at += 1;
-        let right = both(tokens, at, defined);
-        value = match (value, right) {
-            (Some(true), _) | (_, Some(true)) => Some(true),
-            (Some(false), Some(false)) => Some(false),
-            _ => None,
-        };
+    let first = read(&tokens, names, false)?;
+    if first.compiler && read(&tokens, names, true)?.truth() != first.truth() {
+        return None;
     }
-    value
+    Some(first.truth())
 }
 
-/// `a && b`.
-fn both(tokens: &[Token], at: &mut usize, defined: &dyn Fn(&str) -> Option<bool>) -> Option<bool> {
-    let mut value = operand(tokens, at, defined);
-    while tokens.get(*at) == Some(&Token::And) {
-        *at += 1;
-        let right = operand(tokens, at, defined);
-        value = match (value, right) {
-            (Some(false), _) | (_, Some(false)) => Some(false),
-            (Some(true), Some(true)) => Some(true),
-            _ => None,
-        };
+/// What a condition's tokens come to read as gcc or, where the flag says,
+/// clang gives its macros: none if they do not make one expression.
+fn read(tokens: &[Token], names: &Names, clang: bool) -> Option<Num> {
+    let mut reader = Reader {
+        tokens,
+        at: 0,
+        names,
+        clang,
+    };
+    let value = reader.conditional();
+    if reader.at == tokens.len() {
+        value
+    } else {
+        None
     }
-    value
 }
 
-/// What `&&` and `||` join: a comparison or a sum is no value graff
-/// computes.
-fn operand(
-    tokens: &[Token],
-    at: &mut usize,
-    defined: &dyn Fn(&str) -> Option<bool>,
-) -> Option<bool> {
-    let mut value = unary(tokens, at, defined);
-    while tokens.get(*at) == Some(&Token::Other) {
-        *at += 1;
-        unary(tokens, at, defined);
-        value = None;
-    }
-    value
+/// A condition read from its tokens, by precedence.
+struct Reader<'t, 'c, 'f> {
+    tokens: &'t [Token<'c>],
+    at: usize,
+    names: &'t Names<'f>,
+    clang: bool,
 }
 
-fn unary(tokens: &[Token], at: &mut usize, defined: &dyn Fn(&str) -> Option<bool>) -> Option<bool> {
-    match *tokens.get(*at)? {
-        Token::Not => {
-            *at += 1;
-            unary(tokens, at, defined).map(|value| !value)
+impl Reader<'_, '_, '_> {
+    /// `a ? b : c`.
+    fn conditional(&mut self) -> Option<Num> {
+        let condition = self.binary(1);
+        if self.tokens.get(self.at) != Some(&Token::Question) {
+            return condition;
         }
-        Token::Open => {
-            *at += 1;
-            let value = either(tokens, at, defined);
-            if tokens.get(*at) == Some(&Token::Close) {
-                *at += 1;
-            }
-            value
+        self.at += 1;
+        let yes = self.conditional();
+        if self.tokens.get(self.at) != Some(&Token::Colon) {
+            return None;
         }
-        Token::Name("defined") => {
-            *at += 1;
-            let parenthesized = tokens.get(*at) == Some(&Token::Open);
-            if parenthesized {
-                *at += 1;
-            }
-            let value = match tokens.get(*at) {
-                Some(Token::Name(name)) => {
-                    *at += 1;
-                    defined(name)
+        self.at += 1;
+        let no = self.conditional();
+        match (condition, yes, no) {
+            (Some(c), Some(y), Some(n)) => Some(if c.truth() { y } else { n }.tainted(c)),
+            (Some(c), Some(y), _) if c.truth() => Some(y.tainted(c)),
+            (Some(c), _, Some(n)) if !c.truth() => Some(n.tainted(c)),
+            (None, Some(y), Some(n)) if y.bits == n.bits && y.unsigned == n.unsigned => Some(y),
+            _ => None,
+        }
+    }
+
+    /// Operators of at least `least` precedence, left to right.
+    fn binary(&mut self, least: u8) -> Option<Num> {
+        let mut left = self.unary();
+        while let Some(&Token::Operator(op)) = self.tokens.get(self.at)
+            && op.precedence() >= least
+        {
+            self.at += 1;
+            let right = self.binary(op.precedence() + 1);
+            left = match (op, left, right) {
+                // One operand that settles `&&` or `||` does, whatever the other is.
+                (Op::And, Some(l), _) if !l.truth() => Some(Num::flag(false).tainted(l)),
+                (Op::And, _, Some(r)) if !r.truth() => Some(Num::flag(false).tainted(r)),
+                (Op::Or, Some(l), _) if l.truth() => Some(Num::flag(true).tainted(l)),
+                (Op::Or, _, Some(r)) if r.truth() => Some(Num::flag(true).tainted(r)),
+                (Op::And | Op::Or, Some(l), Some(r)) => {
+                    Some(Num::flag(op == Op::And).tainted(l).tainted(r))
                 }
+                (_, Some(l), Some(r)) => op.apply(l, r),
                 _ => None,
             };
-            if parenthesized && tokens.get(*at) == Some(&Token::Close) {
-                *at += 1;
-            }
-            value
         }
-        Token::Name(name) => {
-            *at += 1;
-            // A function-like macro's call, `__has_include(<x.h>)`.
-            if tokens.get(*at) == Some(&Token::Open) {
-                let mut depth = 0;
-                while let Some(&token) = tokens.get(*at) {
-                    *at += 1;
-                    match token {
-                        Token::Open => depth += 1,
-                        Token::Close => {
-                            depth -= 1;
-                            if depth == 0 {
-                                break;
-                            }
-                        }
-                        _ => {}
-                    }
+        left
+    }
+
+    fn unary(&mut self) -> Option<Num> {
+        let token = *self.tokens.get(self.at)?;
+        match token {
+            Token::Not => {
+                self.at += 1;
+                let n = self.unary()?;
+                Some(Num::flag(!n.truth()).tainted(n))
+            }
+            Token::Complement => {
+                self.at += 1;
+                let n = self.unary()?;
+                Some(Num { bits: !n.bits, ..n })
+            }
+            Token::Operator(Op::Sub) => {
+                self.at += 1;
+                let n = self.unary()?;
+                if n.unsigned {
+                    Some(Num {
+                        bits: n.bits.wrapping_neg(),
+                        ..n
+                    })
+                } else {
+                    Some(Num {
+                        bits: (n.bits as i64).checked_neg()? as u64,
+                        ..n
+                    })
                 }
-                return None;
             }
-            // A macro stands for its value: 0 where it is not defined, and
-            // what the host's compiler predefines is not 0.
-            match defined(name) {
-                Some(false) => Some(false),
-                _ => host(name).filter(|&known| known),
+            Token::Operator(Op::Add) => {
+                self.at += 1;
+                self.unary()
             }
+            Token::Open => {
+                self.at += 1;
+                let value = self.conditional();
+                if self.tokens.get(self.at) == Some(&Token::Close) {
+                    self.at += 1;
+                }
+                value
+            }
+            Token::Name("defined") => {
+                self.at += 1;
+                let parenthesized = self.tokens.get(self.at) == Some(&Token::Open);
+                if parenthesized {
+                    self.at += 1;
+                }
+                let value = match self.tokens.get(self.at) {
+                    Some(Token::Name(name)) => {
+                        self.at += 1;
+                        (self.names.defined)(name)
+                    }
+                    _ => None,
+                };
+                if parenthesized && self.tokens.get(self.at) == Some(&Token::Close) {
+                    self.at += 1;
+                }
+                value.map(Num::flag)
+            }
+            Token::Name(name) => {
+                self.at += 1;
+                // A function-like macro's call, `__has_include(<x.h>)`.
+                if self.tokens.get(self.at) == Some(&Token::Open) {
+                    let mut depth = 0;
+                    while let Some(&token) = self.tokens.get(self.at) {
+                        self.at += 1;
+                        match token {
+                            Token::Open => depth += 1,
+                            Token::Close => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    return None;
+                }
+                // A macro stands for its value: 0 where it is not defined.
+                match (self.names.defined)(name) {
+                    Some(false) => Some(Num::flag(false)),
+                    _ => (self.names.number)(name, self.clang),
+                }
+            }
+            Token::Number(number) => {
+                self.at += 1;
+                number
+            }
+            // `,`, a string, an operator with no left operand.
+            Token::Other | Token::Operator(_) => {
+                self.at += 1;
+                self.unary();
+                None
+            }
+            Token::Question | Token::Colon | Token::Close => None,
         }
-        Token::Number(nonzero) => {
-            *at += 1;
-            Some(nonzero)
-        }
-        // `-1`, `~0`.
-        Token::Other => {
-            *at += 1;
-            unary(tokens, at, defined);
-            None
-        }
-        Token::And | Token::Or | Token::Close => None,
     }
 }
 
@@ -1412,13 +1950,30 @@ mod tests {
         assert_eq!(found, expected);
     }
 
-    #[test]
-    fn a_condition_is_read_as_cpp_reads_it_where_what_is_defined_is_known() {
+    /// What `value` is told of macros: A is defined as 4, B is not, and U is
+    /// the greatest unsigned.
+    fn read_with_a_and_b(condition: &str) -> Option<bool> {
         let defined = |name: &str| match name {
-            "A" => Some(true),
+            "A" | "U" => Some(true),
             "B" => Some(false),
             _ => None,
         };
+        let number = |name: &str, _: bool| match name {
+            "A" => Some(Num::signed(4)),
+            "U" => Some(Num::unsigned(u64::MAX)),
+            _ => None,
+        };
+        value(
+            condition,
+            &Names {
+                defined: &defined,
+                number: &number,
+            },
+        )
+    }
+
+    #[test]
+    fn a_condition_is_read_as_cpp_reads_it_where_what_is_defined_is_known() {
         for (condition, expected) in [
             ("defined(A)", Some(true)),
             ("defined A && !defined(B)", Some(true)),
@@ -1430,19 +1985,260 @@ mod tests {
             ("0x0UL", Some(false)),
             ("1", Some(true)),
             ("201112L", Some(true)),
-            // A value or a comparison graff does not compute.
+            // A value graff does not know.
             ("C", None),
             ("__STDC_VERSION__ >= 201112L", None),
             ("defined(A) && X > 1", None),
             ("defined(B) && X > 1", Some(false)),
+            ("B || X", None),
             ("__has_include(<stdint.h>) || defined(A)", Some(true)),
-            ("-1", None),
             // What it cannot read whole.
             ("defined(A) )", None),
             ("", None),
+            ("1 +", None),
+            ("1.5", None),
+            ("'a' == 97", None),
         ] {
-            assert_eq!(value(condition, &defined), expected, "{condition}");
+            assert_eq!(read_with_a_and_b(condition), expected, "{condition}");
         }
+    }
+
+    #[test]
+    fn a_condition_compares_and_computes_with_c_s_integer_operators() {
+        for (condition, expected) in [
+            ("A == 4", Some(true)),
+            ("A != 4", Some(false)),
+            ("A + 1 == 5 && A * 2 > 7 && A < 5", Some(true)),
+            ("A - 5 < 0", Some(true)),
+            ("A << 1 == 8 && A >> 1 == 2", Some(true)),
+            ("A / 3 == 1 && A % 3 == 1", Some(true)),
+            ("(A + 1) * 2 == 10", Some(true)),
+            ("A + 1 * 2 == 6", Some(true)),
+            ("A >= 4 && A <= 4", Some(true)),
+            ("A | 3 ^ 1 & 7", Some(true)),
+            ("B == 0", Some(true)),
+            // The comparison binds tighter than `&`.
+            ("7 & 3 == 3", Some(true)),
+            ("!A == 0", Some(true)),
+            ("-1 < 0", Some(true)),
+            ("~0 == -1", Some(true)),
+            ("+4 == A", Some(true)),
+            // A number with an unsigned operand makes both unsigned.
+            ("-1 < 0u", Some(false)),
+            ("-1 == U", Some(true)),
+            ("U > 0", Some(true)),
+            ("U + 1 == 0", Some(true)),
+            ("0xFFFFFFFFFFFFFFFF == -1", Some(true)),
+            ("9223372036854775808 > 0", Some(true)),
+            ("0xFFFFFFFF == 4294967295", Some(true)),
+            ("0b101 == 5 && 010 == 8 && 0x10 == 16", Some(true)),
+            ("U >> 63 == 1", Some(true)),
+            ("-8 >> 1 == -4", Some(true)),
+            // `?:`, which reads the branch the condition takes.
+            ("(1 ? A : B) == 4", Some(true)),
+            ("(0 ? X : 3) == 3", Some(true)),
+            ("X ? 1 : 1", Some(true)),
+            ("X ? 1 : 2", None),
+            // What `&&` and `||` settle with one operand.
+            ("1 || 1 / 0", Some(true)),
+            ("0 && 1 / 0", Some(false)),
+            ("X == 1 && 0", Some(false)),
+            ("X == 1 || 1", Some(true)),
+            // What is undefined, or does not fit, or is not known.
+            ("1 / 0", None),
+            ("1 % 0", None),
+            ("A / 0 == 1", None),
+            ("1 << 64", None),
+            ("1 << -1", None),
+            ("9223372036854775807 + 1", None),
+            ("X + 1", None),
+            ("A == X", None),
+        ] {
+            assert_eq!(read_with_a_and_b(condition), expected, "{condition}");
+        }
+    }
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[test]
+    fn a_condition_reads_the_hosts_values_and_what_gcc_and_clang_give_alike() {
+        let read = |condition: &str| {
+            value(
+                condition,
+                &Names {
+                    defined: &host,
+                    number: &host_number,
+                },
+            )
+        };
+        for (condition, expected) in [
+            ("__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__", Some(true)),
+            ("__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__", Some(false)),
+            (
+                "defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__",
+                Some(false),
+            ),
+            (
+                "(defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__) || (defined(__APPLE_CC__) && (defined(__ppc__) || defined(__ppc64__)))",
+                Some(false),
+            ),
+            ("__SIZEOF_POINTER__ == 8", Some(true)),
+            ("__SIZEOF_POINTER__ == 4", Some(false)),
+            ("__SIZEOF_LONG__ == 8 && __SIZEOF_INT__ == 4", Some(true)),
+            ("defined(__LP64__) && __CHAR_BIT__ == 8", Some(true)),
+            ("__linux__ == 1 && __unix__ && !_WIN32", Some(true)),
+            ("__x86_64__ + __aarch64__ == 1", Some(true)),
+            // Where gcc's version and clang's are alike, and where they are not.
+            ("__GNUC__ >= 4", Some(true)),
+            ("(__GNUC__ * 100 + __GNUC_MINOR__) >= 302", Some(true)),
+            ("__GNUC__ >= 5", None),
+            ("__GNUC__ == 4 || __GNUC__ > 4", Some(true)),
+            ("__GNUC_PATCHLEVEL__ == 0", None),
+            ("__GNUC__ >= 5 && 0", Some(false)),
+            // A build's flags, and what a header or a version decides.
+            ("__AVX2__", None),
+            ("__FreeBSD__ >= 12", Some(false)),
+            ("__STDC_VERSION__ >= 201112L", None),
+        ] {
+            assert_eq!(read(condition), expected, "{condition}");
+        }
+    }
+
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn the_standard_headers_give_their_limits_their_values() {
+        let int = |n: i64| Some(Num::signed(n));
+        let uint = |n: u64| Some(Num::unsigned(n));
+        for (name, expected) in [
+            ("CHAR_BIT", int(8)),
+            ("INT_MIN", int(-2147483648)),
+            ("INT_MAX", int(2147483647)),
+            ("UINT_MAX", uint(4294967295)),
+            ("SCHAR_MIN", int(-128)),
+            ("USHRT_MAX", int(65535)),
+            ("INT8_MIN", int(-128)),
+            ("INT16_MAX", int(32767)),
+            ("INT32_MIN", int(-2147483648)),
+            ("INT64_MAX", int(i64::MAX)),
+            ("INT64_MIN", int(i64::MIN)),
+            ("UINT8_MAX", int(255)),
+            ("UINT16_MAX", int(65535)),
+            ("UINT32_MAX", uint(4294967295)),
+            ("UINT64_MAX", uint(u64::MAX)),
+            ("UINTPTR_MAX", uint(u64::MAX)),
+            ("SIZE_MAX", uint(u64::MAX)),
+            ("INTPTR_MAX", int(i64::MAX)),
+            ("PTRDIFF_MIN", int(i64::MIN)),
+            ("LLONG_MAX", int(i64::MAX)),
+            (
+                "__BYTE_ORDER",
+                int(if cfg!(target_endian = "little") {
+                    1234
+                } else {
+                    4321
+                }),
+            ),
+            ("__BIG_ENDIAN", int(4321)),
+            // What the platform decides, and what no header defines.
+            ("CHAR_MAX", None),
+            ("UINT_LEAST16_MAX", None),
+            ("UINT24_MAX", None),
+            ("INT_MAXIMUM", None),
+            ("K3_MAX", None),
+        ] {
+            assert_eq!(standard_number(name), expected, "{name}");
+        }
+    }
+
+    /// A header that sets a size by a limit, a header of levels computed from
+    /// each other and a header that chooses by them, an order of bytes
+    /// chosen by <endian.h>, and a version chosen by what gcc and clang give.
+    const VALUES: &[(&str, &str)] = &[
+        (
+            "ptr.h",
+            "#ifndef PTR_H\n#define PTR_H\n#if UINTPTR_MAX == 0xFFFFFFFF\n#define PTR_SIZE 32\n#else\n#define PTR_SIZE 64\n#endif\nint bits = PTR_SIZE;\n#endif\n",
+        ),
+        (
+            "levels.h",
+            "#ifndef LEVELS_H\n#define LEVELS_H\n#define LEVEL 2 /* the base */\n#define LEVEL_UP (LEVEL + 1)\n#define LOOP LOOP2\n#define LOOP2 LOOP\n#define KNOB(x) (x)\n#endif\n",
+        ),
+        (
+            "pick.h",
+            "#ifndef PICK_H\n#define PICK_H\n#if LEVEL_UP >= 4\nint pick(void) { return 1; }\n#else\nint pick(void) { return 2; }\n#endif\n#if LOOP > 1\nint spin(void) { return 1; }\n#else\nint spin(void) { return 2; }\n#endif\n#if KNOB(1)\nint twist(void) { return 1; }\n#else\nint twist(void) { return 2; }\n#endif\n#endif\n",
+        ),
+        (
+            "fall.h",
+            "#ifndef FALL_H\n#define FALL_H\n#ifndef INT8_MIN\n#define INT8_MIN (-128)\n#endif\nint low = INT8_MIN;\n#endif\n",
+        ),
+        (
+            "use.c",
+            "#include <stdint.h>\n#include \"ptr.h\"\n#include \"levels.h\"\n#include \"pick.h\"\n#include \"fall.h\"\nint run(void) { return PTR_SIZE + pick() + spin() + twist(); }\n",
+        ),
+        (
+            "order.c",
+            "#include <endian.h>\n#if __BYTE_ORDER == __LITTLE_ENDIAN\nstatic int order(void) { return 1; }\n#else\nstatic int order(void) { return 2; }\n#endif\n#if __GNUC__ >= 5\nstatic int version(void) { return 1; }\n#else\nstatic int version(void) { return 2; }\n#endif\nint main(void) { return order() + version(); }\n",
+        ),
+    ];
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[test]
+    fn a_branch_that_compares_values_is_left_out_where_they_are_known() {
+        let mut found: Vec<_> = edges(VALUES)
+            .into_iter()
+            .filter(|(.., used, _)| used == "reference value" || used.starts_with("call"))
+            .filter(|(_, _, name, ..)| {
+                [
+                    "PTR_SIZE", "INT8_MIN", "pick", "spin", "twist", "order", "version",
+                ]
+                .contains(&name.as_str())
+            })
+            .collect();
+        found.sort();
+        let mut expected = vec![
+            // <stdint.h> is included by the one file that includes ptr.h,
+            // before it, so ptr.h reads UINTPTR_MAX; `#define PTR_SIZE 32`
+            // is left out.
+            edge(
+                "ptr.h",
+                8,
+                "PTR_SIZE",
+                "reference value",
+                "ptr.h PTR_SIZE#2 (scope)",
+            ),
+            edge(
+                "use.c",
+                6,
+                "PTR_SIZE",
+                "reference value",
+                "ptr.h PTR_SIZE#2 (include)",
+            ),
+            // A header that defines a limit if it is not reads it so, whatever
+            // its includers include.
+            edge(
+                "fall.h",
+                3,
+                "INT8_MIN",
+                "reference value",
+                "fall.h INT8_MIN (scope)",
+            ),
+            edge(
+                "fall.h",
+                6,
+                "INT8_MIN",
+                "reference value",
+                "fall.h INT8_MIN (scope)",
+            ),
+            // LEVEL_UP is 3, from the values of two macros.
+            edge("use.c", 6, "pick", "call free", "pick.h pick#2 (include)"),
+            // What names itself has no value, and a function-like macro's
+            // call is not computed: both branches stay.
+            edge("use.c", 6, "spin", "call free", "ambiguous, 2"),
+            edge("use.c", 6, "twist", "call free", "ambiguous, 2"),
+            // <endian.h>'s order is the host's; gcc's version is not clang's.
+            edge("order.c", 12, "order", "call free", "order.c order (scope)"),
+            edge("order.c", 12, "version", "call free", "ambiguous, 2"),
+        ];
+        expected.sort();
+        assert_eq!(found, expected);
     }
 
     #[test]

@@ -77,7 +77,8 @@ includes it, else to the only one not `static` the linker would find, and a
 prototype to the definition it declares; a definition in a branch of an
 `#if` the build leaves out is none, by what the host's compiler predefines
 and what the file and those it includes define, a header's include guard
-among them, and what a build's flags decide stays ambiguous
+among them, and the values a condition compares and computes; what a
+build's flags decide stays ambiguous
 (`src/resolve/c.rs`). In
 Markdown, read as GitHub shows it, a file and each heading are
 definitions, a heading's section running to the next heading of its level

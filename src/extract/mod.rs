@@ -16,7 +16,7 @@ use crate::lang::Language;
 
 /// Bumped whenever what an extractor produces changes, so that results kept
 /// from an older extractor are read again rather than trusted.
-pub const VERSION: u32 = 13;
+pub const VERSION: u32 = 14;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Extraction {
@@ -79,6 +79,12 @@ pub struct Symbol {
     /// option of a module's. False in other languages.
     #[serde(default)]
     pub consumed: bool,
+    /// C: the replacement list of an object-like macro that reads as an
+    /// integer expression, on one line and with its comments left out:
+    /// `64` for `#define TS_PTR_SIZE 64`, `(A + 1)`. None for any other
+    /// macro, and in other languages.
+    #[serde(default)]
+    pub value: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]

@@ -18,7 +18,9 @@ clang on Linux here, which defines `__linux__` and not `_WIN32`, and by the
 file and those it includes, through a header's include guard, a macro they
 define outside any branch, or the limits of a standard header they include;
 a branch that turns on anything else, a build's `-D` flags among it, stays a
-candidate. A use in a branch the build leaves out is read as a build that
+candidate. The values a condition compares are the host's, a standard
+header's, or those of macros defined in sight with an integer expression
+(task 172). A use in a branch the build leaves out is read as a build that
 takes the branch would read it. One check holds it against what knows more:
 
 - **clangd.py**: graff's ties of names, each call, reference and include,
@@ -216,10 +218,13 @@ graff's calls on kimi: precision 0.987 (1,322 of 1,339) to 1.000 (1,328 of
   `TS_PUBLIC` (8) turn on `DEBUG_ANALYZE_QUERY`, `NDEBUG`,
   `TREE_SITTER_FEATURE_WASM` and `TREE_SITTER_HIDE_SYMBOLS`, which a build's
   flags define, and no build file is read (decision 108); `RS` and `LS` in
-  the wasm libc's memcpy.c (24), `UChar` (5) and `TS_PTR_SIZE` turn on a
-  comparison of values, `__BYTE_ORDER == __LITTLE_ENDIAN`, which graff does
-  not compute (task 172). The 24 edges counted wrong are the wasm libc's
-  (23) and `TSWasmStore` (1), as before.
+  the wasm libc's memcpy.c (24), `UChar` (5), `U_ATTRIBUTE_DEPRECATED` (2),
+  `TS_PTR_SIZE` and `TS_BIG_ENDIAN` turned on a comparison of values,
+  `__BYTE_ORDER == __LITTLE_ENDIAN`, which task 172 computes; all but the
+  7 names of `UChar` and `U_ATTRIBUTE_DEPRECATED` are resolved now, and
+  those turn on `U_SIZEOF_WCHAR_T` and `U_GCC_MAJOR_MINOR`, which
+  platform.h defines and the corpus does not ship. The 24 edges counted
+  wrong are the wasm libc's (23) and `TSWasmStore` (1), as before.
 - **The cargo registry's C**, 42 crates, 1,697,945 edges: 3,430 changed,
   1,345 ambiguous to resolved, 1,646 ambiguous among fewer definitions, 224
   resolved to external, 190 ambiguous to external, 20 resolved to another
@@ -231,6 +236,41 @@ graff's calls on kimi: precision 0.987 (1,322 of 1,339) to 1.000 (1,328 of
   ekko's and graff's files, which hold no C, the edges are the same byte for
   byte. examples/resolve on libsqlite3-sys's C, the largest, one run each on
   AC power and the performance profile: 7.6 s before, 7.9 s now.
+
+### Result, 2026-10-12 (task 172)
+
+Task 172's graff against task 117's, on the same check (graff 7e9b6d4 with
+the uncommitted change; clangd 21.1.8, the report's header says what ran):
+`#if` compares and computes, with C's integer operators in `intmax_t` and
+`uintmax_t`, the values of the host's compiler (`__BYTE_ORDER__`,
+`__SIZEOF_POINTER__`, `__GNUC__`: where gcc's and clang's differ, a
+condition has a value only if each gives the same), of the standard headers
+(`UINTPTR_MAX`, `INT_MAX`, <endian.h>'s `__BYTE_ORDER`), and of a macro the
+file or what it includes defines with an integer expression, which the
+extraction keeps in the symbol (`value`); a limit a condition compares is
+the header's wherever a header's includers include it, a `#ifndef` of it is
+not.
+
+|                     | kimi, task 117        | kimi, task 172        | tree-sitter, task 117 | tree-sitter, task 172 |
+| ------------------- | --------------------- | --------------------- | --------------------- | --------------------- |
+| precision           | 1.000, 2,425 of 2,425 | 1.000, 2,425 of 2,425 | 0.996, 6,257 of 6,281 | 0.996, 6,283 of 6,307 |
+| recall              | 1.000, 2,322 of 2,322 | 1.000, 2,322 of 2,322 | 0.960, 6,053 of 6,307 | 0.964, 6,079 of 6,307 |
+| missed as ambiguous | 0                     | 0                     | 144                   | 118                   |
+
+The 26 names tree-sitter gains are `RS` and `LS` (24), `TS_PTR_SIZE` and
+`TS_BIG_ENDIAN`; the 24 edges counted wrong are the same. kimi's report
+differs from 117's in its header only. A first version counted the limits umachine.h defines under `#ifndef`
+(`INT8_MIN`, `UINT32_MAX`, `INT64_C`: 14 edges of 11 names) as <stdint.h>'s,
+since every file that includes umachine.h includes <stdint.h>, and missed
+them as external. A limit tested by `defined` is now the header's only
+where the file or what it includes includes it.
+
+The cargo registry's C, 43 crates, 1,698,705 edges, graff before and after
+by examples/resolve: 241 changed, 99 ambiguous to resolved (sqlite's
+`SQLITE_PTRSIZE` is `__SIZEOF_POINTER__`, a musl `NAN` is
+`__builtin_nanf("")`, the 26 of tree-sitter), 142 ambiguous among fewer
+definitions, none to another definition or to external. Timings of that run
+are not recorded: the machine held a load of 13 to 17.
 
 ## def, a prototype and its definition
 

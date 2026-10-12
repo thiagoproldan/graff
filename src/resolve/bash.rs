@@ -541,6 +541,7 @@ log() { helper; echo "$1" >>"$LOG_FILE"; }
             internal: false,
             typed: None,
             consumed: false,
+            value: None,
         });
         let file = |path| File {
             path,

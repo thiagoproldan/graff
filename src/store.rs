@@ -27,7 +27,7 @@ use crate::lang::Language;
 
 /// Bumped whenever the tables change: an index of another version is dropped
 /// and built again, as a cache may be.
-const SCHEMA: i64 = 7;
+const SCHEMA: i64 = 8;
 
 /// A file written this close before graff saw it may be written again within
 /// the same tick of the file system's clock and keep its stat, so it is hashed
@@ -61,7 +61,8 @@ const TABLES: &str = "
         doc TEXT,
         internal INTEGER NOT NULL,
         typed TEXT,
-        consumed INTEGER NOT NULL
+        consumed INTEGER NOT NULL,
+        value TEXT
     );
     CREATE INDEX symbols_by_content ON symbols (content);
     CREATE INDEX symbols_by_name ON symbols (name);
@@ -653,7 +654,7 @@ impl Store {
         };
         let holders = worktree.holders();
         let mut query = self.connection.prepare(
-            "SELECT content, name, qualified, kind, start, end, doc, internal, typed, consumed FROM symbols
+            "SELECT content, name, qualified, kind, start, end, doc, internal, typed, consumed, value FROM symbols
              WHERE content IN (SELECT content FROM files WHERE worktree = ?1) ORDER BY rowid",
         )?;
         let mut rows = query.query([id])?;
@@ -668,6 +669,7 @@ impl Store {
                 internal: row.get(7)?,
                 typed: row.get(8)?,
                 consumed: row.get(9)?,
+                value: row.get(10)?,
             };
             for &f in holders.get(&row.get(0)?).into_iter().flatten() {
                 worktree.files[f].1.symbols.push(symbol.clone());
@@ -959,7 +961,7 @@ impl<'t> Inserts<'t> {
                 "INSERT INTO contents (blob, language, extractor, syntax_error, too_deep, guard, released) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0)",
             )?,
             symbol: transaction
-                .prepare("INSERT INTO symbols VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)")?,
+                .prepare("INSERT INTO symbols VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)")?,
             call: transaction
                 .prepare("INSERT INTO calls VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)")?,
             reference: transaction
@@ -997,7 +999,8 @@ impl<'t> Inserts<'t> {
                 s.doc,
                 s.internal,
                 s.typed,
-                s.consumed
+                s.consumed,
+                s.value
             ])?;
         }
         for c in &extraction.calls {
@@ -1361,7 +1364,7 @@ mod tests {
         let nix = "{ myLib, ... }:\n# Doc.\nlet cfg = myLib.x; in { imports = [ ./a.nix ]; b = myLib.mkSys { n = cfg.y; }; c = builtins.toJSON { d = 1; }; }\n";
         let python = "from .m import Shards as S\n\n\nclass C(Base):\n    \"\"\"Doc.\"\"\"\n\n    def m(self):\n        s = S(1)\n        s.get()\n        return self.n\n";
         // C's gives branches, as Python's does, and alone a guard.
-        let c = "#ifndef A_H\n#define A_H\n#include \"a.h\"\n#include <stdint.h>\n/* Doc. */\nstatic int f(int x) { return g(x) + MAX; }\n#ifdef _WIN32\nint w;\n#endif\n#endif\n";
+        let c = "#ifndef A_H\n#define A_H\n#include \"a.h\"\n#include <stdint.h>\n#define N (4 + 1)\n/* Doc. */\nstatic int f(int x) { return g(x) + MAX; }\n#ifdef _WIN32\nint w;\n#endif\n#endif\n";
         let mut given = HashSet::new();
         for (path, language, source) in [
             ("src/a.rs", Language::Rust, rust),

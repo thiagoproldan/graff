@@ -1,5 +1,5 @@
-run 2026-10-10
-graff 9eb544c with uncommitted changes
+run 2026-10-12
+graff 7e9b6d4 with uncommitted changes
 corpus kimi: a git repository at ac1584a (git archive), 32 C files, 17 translation units
 truth: clangd version 21.1.8 (nixpkgs), CMake's compile_commands.json (cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON), --background-index=false, every file opened and built first
   4697 names asked, 4109 answered; 12 names not found on their line; 315 in the 22 regions of 8 files clangd says the build leaves out, not judged

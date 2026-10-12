@@ -1,14 +1,14 @@
-run 2026-10-10
-graff 9eb544c with uncommitted changes
+run 2026-10-12
+graff 7e9b6d4 with uncommitted changes
 corpus tree-sitter: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tree-sitter-0.27.0 (copied), 75 C files, 14 translation units
 truth: clangd version 21.1.8 (nixpkgs), compile_commands.json written for src/*.c: cc -std=c11 -Isrc -Isrc/wasm -Iinclude -D_POSIX_C_SOURCE=200112L -D_DEFAULT_SOURCE, --background-index=false, every file opened and built first
   8171 names asked, 6526 answered; 22 names not found on their line; 1195 in the 98 regions of 33 files clangd says the build leaves out, not judged
 
 broken resolver: precision 0.002, recall 0.002
-graff: precision 0.996 (6257 of 6281 judged; 573 unjudged), recall 0.960 (6053 of 6307 names clangd places in the corpus)
-by rule: file 149/149 (9 unjudged), include 3720/3722 (289 unjudged), scope 2378/2400 (275 unjudged), unique 10/10 (0 unjudged)
-missed, by what graff did: 144 ambiguous, 90 external, 1 include, 19 scope
-graff's untied edges, by clangd's place: ambiguous in the corpus 146, ambiguous no place 54, ambiguous outside 1, external in the corpus 95, external no place 1093, external outside 230
+graff: precision 0.996 (6283 of 6307 judged; 574 unjudged), recall 0.964 (6079 of 6307 names clangd places in the corpus)
+by rule: file 149/149 (9 unjudged), include 3720/3722 (290 unjudged), scope 2404/2426 (275 unjudged), unique 10/10 (0 unjudged)
+missed, by what graff did: 118 ambiguous, 90 external, 1 include, 19 scope
+graff's untied edges, by clangd's place: ambiguous in the corpus 120, ambiguous no place 53, ambiguous outside 1, external in the corpus 95, external no place 1093, external outside 230
 
 wrong edges:
 include/tree_sitter/api.h:1422 struct TSWasmStore (reference type) -> src/wasm_store.c TSWasmStore (include); clangd include/tree_sitter/api.h TSWasmStore
@@ -101,10 +101,6 @@ src/array.h:205 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: amb
     ts_assert(index < *size);
 src/array.h:269 ts_assert (call free) -> src/ts_assert.h ts_assert#2; graff: ambiguous
     ts_assert(old_end <= *size);
-src/host.h:6 TS_BIG_ENDIAN (reference value) -> src/host.h TS_BIG_ENDIAN#2; graff: ambiguous
-    #if !defined(TS_BIG_ENDIAN)
-src/host.h:15 TS_PTR_SIZE (reference value) -> src/host.h TS_PTR_SIZE#2; graff: ambiguous
-    #if !defined(TS_PTR_SIZE)
 src/language.c:65 ts_language_is_wasm (call free) -> src/wasm_store.c ts_language_is_wasm#2; graff: ambiguous
     if (self && ts_language_is_wasm(self)) {
 src/language.c:66 ts_wasm_language_retain (call free) -> src/wasm_store.c ts_wasm_language_retain#2; graff: ambiguous
@@ -197,17 +193,17 @@ src/parser.h:193 lexer (reference value) -> src/parser.c TSParser; graff: extern
     lookahead = lexer->lookahead;
 src/parser.h:193 lookahead (reference value) -> src/parser.h set_contains; graff: external
     lookahead = lexer->lookahead;
-src/parser.h:197 state (reference value) -> src/query.c AnalysisSubgraphNode, src/stack.c StackNode#2, src/stack.h StackSummaryEntry, src/parser.h TSParseAction; graff: external
+src/parser.h:197 state (reference value) -> src/stack.h StackSummaryEntry, src/parser.h TSParseAction, src/query.c AnalysisSubgraphNode, src/stack.c StackNode#2; graff: external
     state = state_value;     \
 src/parser.h:198 next_state (reference value) -> src/language.h LookaheadIterator; graff: external
     goto next_state;         \
 src/parser.h:205 lookahead (reference value) -> src/parser.h set_contains; graff: external
     if (map[i] == lookahead) {                                      \
-src/parser.h:206 state (reference value) -> src/query.c AnalysisSubgraphNode, src/stack.c StackNode#2, src/stack.h StackSummaryEntry, src/parser.h TSParseAction; graff: external
+src/parser.h:206 state (reference value) -> src/stack.h StackSummaryEntry, src/parser.h TSParseAction, src/query.c AnalysisSubgraphNode, src/stack.c StackNode#2; graff: external
     state = map[i + 1];                                           \
 src/parser.h:207 next_state (reference value) -> src/language.h LookaheadIterator; graff: external
     goto next_state;                                              \
-src/parser.h:215 state (reference value) -> src/query.c AnalysisSubgraphNode, src/stack.c StackNode#2, src/stack.h StackSummaryEntry, src/parser.h TSParseAction; graff: external
+src/parser.h:215 state (reference value) -> src/stack.h StackSummaryEntry, src/parser.h TSParseAction, src/query.c AnalysisSubgraphNode, src/stack.c StackNode#2; graff: external
     state = state_value;  \
 src/parser.h:216 next_state (reference value) -> src/language.h LookaheadIterator; graff: external
     goto next_state;      \
@@ -419,35 +415,35 @@ src/unicode/utf8.h:291 int32_t (reference value) -> src/unicode/utf8.h int32_t; 
     int32_t _u8_get_index=(i); \
 src/unicode/utf8.h:322 UChar (reference value) -> src/unicode/umachine.h UChar#4; graff: ambiguous
     (c)=(UChar)(((c)<<12)|(((s)[i]&0x3f)<<6)|((s)[(i)+1]&0x3f)); \
-src/unicode/utf8.h:393 length (reference value) -> src/subtree.h ExternalScannerState, src/query.c Slice, src/parser.h TSMapSlice, src/parser.c TSStringInput; graff: external
+src/unicode/utf8.h:393 length (reference value) -> src/subtree.h ExternalScannerState, src/parser.h TSMapSlice, src/parser.c TSStringInput, src/query.c Slice; graff: external
     ((c)=((c)<<6)|(__t&0x3f), ++(i)!=(length)) && \
-src/unicode/utf8.h:396 length (reference value) -> src/subtree.h ExternalScannerState, src/query.c Slice, src/parser.h TSMapSlice, src/parser.c TSStringInput; graff: external
+src/unicode/utf8.h:396 length (reference value) -> src/subtree.h ExternalScannerState, src/parser.h TSMapSlice, src/parser.c TSStringInput, src/query.c Slice; graff: external
     ((c)=((c)<<6)|__t, ++(i)!=(length)) \
-src/unicode/utf8.h:521 length (reference value) -> src/subtree.h ExternalScannerState, src/query.c Slice, src/parser.h TSMapSlice, src/parser.c TSStringInput; graff: external
+src/unicode/utf8.h:521 length (reference value) -> src/subtree.h ExternalScannerState, src/parser.h TSMapSlice, src/parser.c TSStringInput, src/query.c Slice; graff: external
     ++(i)!=(length) && U8_IS_TRAIL((s)[i]) && \
-src/unicode/utf8.h:522 length (reference value) -> src/subtree.h ExternalScannerState, src/query.c Slice, src/parser.h TSMapSlice, src/parser.c TSStringInput; graff: external
+src/unicode/utf8.h:522 length (reference value) -> src/subtree.h ExternalScannerState, src/parser.h TSMapSlice, src/parser.c TSStringInput, src/query.c Slice; graff: external
     ++(i)!=(length) && U8_IS_TRAIL((s)[i])) { \
 src/unicode/utf8.h:542 int32_t (reference value) -> src/unicode/utf8.h int32_t; graff: ambiguous
     int32_t __N=(n); \
 src/unicode/utf8.h:565 int32_t (reference value) -> src/unicode/utf8.h int32_t; graff: ambiguous
     int32_t __N=(n); \
-src/unicode/utf8.h:644 length (reference value) -> src/subtree.h ExternalScannerState, src/query.c Slice, src/parser.h TSMapSlice, src/parser.c TSStringInput; graff: external
+src/unicode/utf8.h:644 length (reference value) -> src/subtree.h ExternalScannerState, src/parser.h TSMapSlice, src/parser.c TSStringInput, src/query.c Slice; graff: external
     --(length); \
-src/unicode/utf8.h:645 length (reference value) -> src/subtree.h ExternalScannerState, src/query.c Slice, src/parser.h TSMapSlice, src/parser.c TSStringInput; graff: external
+src/unicode/utf8.h:645 length (reference value) -> src/subtree.h ExternalScannerState, src/parser.h TSMapSlice, src/parser.c TSStringInput, src/query.c Slice; graff: external
     } else if(U8_IS_TRAIL(__b1) && ((length)-2)>=(start)) { \
 src/unicode/utf8.h:645 start (reference value) -> src/subtree.c Edit, src/parser.h TSCharacterRange, src/query.c Stream; graff: external
     } else if(U8_IS_TRAIL(__b1) && ((length)-2)>=(start)) { \
-src/unicode/utf8.h:646 length (reference value) -> src/subtree.h ExternalScannerState, src/query.c Slice, src/parser.h TSMapSlice, src/parser.c TSStringInput; graff: external
+src/unicode/utf8.h:646 length (reference value) -> src/subtree.h ExternalScannerState, src/parser.h TSMapSlice, src/parser.c TSStringInput, src/query.c Slice; graff: external
     uint8_t __b2=s[(length)-2]; \
-src/unicode/utf8.h:650 length (reference value) -> src/subtree.h ExternalScannerState, src/query.c Slice, src/parser.h TSMapSlice, src/parser.c TSStringInput; graff: external
+src/unicode/utf8.h:650 length (reference value) -> src/subtree.h ExternalScannerState, src/parser.h TSMapSlice, src/parser.c TSStringInput, src/query.c Slice; graff: external
     (length)-=2; \
-src/unicode/utf8.h:652 length (reference value) -> src/subtree.h ExternalScannerState, src/query.c Slice, src/parser.h TSMapSlice, src/parser.c TSStringInput; graff: external
+src/unicode/utf8.h:652 length (reference value) -> src/subtree.h ExternalScannerState, src/parser.h TSMapSlice, src/parser.c TSStringInput, src/query.c Slice; graff: external
     } else if(U8_IS_TRAIL(__b2) && ((length)-3)>=(start)) { \
 src/unicode/utf8.h:652 start (reference value) -> src/subtree.c Edit, src/parser.h TSCharacterRange, src/query.c Stream; graff: external
     } else if(U8_IS_TRAIL(__b2) && ((length)-3)>=(start)) { \
-src/unicode/utf8.h:653 length (reference value) -> src/subtree.h ExternalScannerState, src/query.c Slice, src/parser.h TSMapSlice, src/parser.c TSStringInput; graff: external
+src/unicode/utf8.h:653 length (reference value) -> src/subtree.h ExternalScannerState, src/parser.h TSMapSlice, src/parser.c TSStringInput, src/query.c Slice; graff: external
     uint8_t __b3=s[(length)-3]; \
-src/unicode/utf8.h:655 length (reference value) -> src/subtree.h ExternalScannerState, src/query.c Slice, src/parser.h TSMapSlice, src/parser.c TSStringInput; graff: external
+src/unicode/utf8.h:655 length (reference value) -> src/subtree.h ExternalScannerState, src/parser.h TSMapSlice, src/parser.c TSStringInput, src/query.c Slice; graff: external
     (length)-=3; \
 src/unicode/utf8.h:697 UChar32 (reference value) -> src/unicode/umachine.h UChar32, src/unicode/utf8.h UChar32; graff: ambiguous
     (c)|=(UChar32)(__b&0x3f)<<__shift; \
@@ -513,54 +509,6 @@ src/wasm-stdlib/libc/ctype/towctrans.c:84 __towlower_l (reference value) -> src/
     weak_alias(__towlower_l, towlower_l);
 src/wasm-stdlib/libc/ctype/towctrans.c:84 towlower_l (reference value) -> src/wasm-stdlib/libc/ctype/towctrans.c (file); graff: external
     weak_alias(__towlower_l, towlower_l);
-src/wasm-stdlib/libc/string/memcpy.c:63 LS (reference value) -> src/wasm-stdlib/libc/string/memcpy.c LS; graff: ambiguous
-    *(u32 *)(d+0) = (w LS 24) | (x RS 8);
-src/wasm-stdlib/libc/string/memcpy.c:63 RS (reference value) -> src/wasm-stdlib/libc/string/memcpy.c RS; graff: ambiguous
-    *(u32 *)(d+0) = (w LS 24) | (x RS 8);
-src/wasm-stdlib/libc/string/memcpy.c:65 LS (reference value) -> src/wasm-stdlib/libc/string/memcpy.c LS; graff: ambiguous
-    *(u32 *)(d+4) = (x LS 24) | (w RS 8);
-src/wasm-stdlib/libc/string/memcpy.c:65 RS (reference value) -> src/wasm-stdlib/libc/string/memcpy.c RS; graff: ambiguous
-    *(u32 *)(d+4) = (x LS 24) | (w RS 8);
-src/wasm-stdlib/libc/string/memcpy.c:67 LS (reference value) -> src/wasm-stdlib/libc/string/memcpy.c LS; graff: ambiguous
-    *(u32 *)(d+8) = (w LS 24) | (x RS 8);
-src/wasm-stdlib/libc/string/memcpy.c:67 RS (reference value) -> src/wasm-stdlib/libc/string/memcpy.c RS; graff: ambiguous
-    *(u32 *)(d+8) = (w LS 24) | (x RS 8);
-src/wasm-stdlib/libc/string/memcpy.c:69 LS (reference value) -> src/wasm-stdlib/libc/string/memcpy.c LS; graff: ambiguous
-    *(u32 *)(d+12) = (x LS 24) | (w RS 8);
-src/wasm-stdlib/libc/string/memcpy.c:69 RS (reference value) -> src/wasm-stdlib/libc/string/memcpy.c RS; graff: ambiguous
-    *(u32 *)(d+12) = (x LS 24) | (w RS 8);
-src/wasm-stdlib/libc/string/memcpy.c:79 LS (reference value) -> src/wasm-stdlib/libc/string/memcpy.c LS; graff: ambiguous
-    *(u32 *)(d+0) = (w LS 16) | (x RS 16);
-src/wasm-stdlib/libc/string/memcpy.c:79 RS (reference value) -> src/wasm-stdlib/libc/string/memcpy.c RS; graff: ambiguous
-    *(u32 *)(d+0) = (w LS 16) | (x RS 16);
-src/wasm-stdlib/libc/string/memcpy.c:81 LS (reference value) -> src/wasm-stdlib/libc/string/memcpy.c LS; graff: ambiguous
-    *(u32 *)(d+4) = (x LS 16) | (w RS 16);
-src/wasm-stdlib/libc/string/memcpy.c:81 RS (reference value) -> src/wasm-stdlib/libc/string/memcpy.c RS; graff: ambiguous
-    *(u32 *)(d+4) = (x LS 16) | (w RS 16);
-src/wasm-stdlib/libc/string/memcpy.c:83 LS (reference value) -> src/wasm-stdlib/libc/string/memcpy.c LS; graff: ambiguous
-    *(u32 *)(d+8) = (w LS 16) | (x RS 16);
-src/wasm-stdlib/libc/string/memcpy.c:83 RS (reference value) -> src/wasm-stdlib/libc/string/memcpy.c RS; graff: ambiguous
-    *(u32 *)(d+8) = (w LS 16) | (x RS 16);
-src/wasm-stdlib/libc/string/memcpy.c:85 LS (reference value) -> src/wasm-stdlib/libc/string/memcpy.c LS; graff: ambiguous
-    *(u32 *)(d+12) = (x LS 16) | (w RS 16);
-src/wasm-stdlib/libc/string/memcpy.c:85 RS (reference value) -> src/wasm-stdlib/libc/string/memcpy.c RS; graff: ambiguous
-    *(u32 *)(d+12) = (x LS 16) | (w RS 16);
-src/wasm-stdlib/libc/string/memcpy.c:94 LS (reference value) -> src/wasm-stdlib/libc/string/memcpy.c LS; graff: ambiguous
-    *(u32 *)(d+0) = (w LS 8) | (x RS 24);
-src/wasm-stdlib/libc/string/memcpy.c:94 RS (reference value) -> src/wasm-stdlib/libc/string/memcpy.c RS; graff: ambiguous
-    *(u32 *)(d+0) = (w LS 8) | (x RS 24);
-src/wasm-stdlib/libc/string/memcpy.c:96 LS (reference value) -> src/wasm-stdlib/libc/string/memcpy.c LS; graff: ambiguous
-    *(u32 *)(d+4) = (x LS 8) | (w RS 24);
-src/wasm-stdlib/libc/string/memcpy.c:96 RS (reference value) -> src/wasm-stdlib/libc/string/memcpy.c RS; graff: ambiguous
-    *(u32 *)(d+4) = (x LS 8) | (w RS 24);
-src/wasm-stdlib/libc/string/memcpy.c:98 LS (reference value) -> src/wasm-stdlib/libc/string/memcpy.c LS; graff: ambiguous
-    *(u32 *)(d+8) = (w LS 8) | (x RS 24);
-src/wasm-stdlib/libc/string/memcpy.c:98 RS (reference value) -> src/wasm-stdlib/libc/string/memcpy.c RS; graff: ambiguous
-    *(u32 *)(d+8) = (w LS 8) | (x RS 24);
-src/wasm-stdlib/libc/string/memcpy.c:100 LS (reference value) -> src/wasm-stdlib/libc/string/memcpy.c LS; graff: ambiguous
-    *(u32 *)(d+12) = (x LS 8) | (w RS 24);
-src/wasm-stdlib/libc/string/memcpy.c:100 RS (reference value) -> src/wasm-stdlib/libc/string/memcpy.c RS; graff: ambiguous
-    *(u32 *)(d+12) = (x LS 8) | (w RS 24);
 src/wasm-stdlib/libc/string/stpncpy.c:31 __stpncpy (reference value) -> src/wasm-stdlib/libc/string/stpncpy.c (file); graff: scope
     weak_alias(__stpncpy, stpncpy);
 src/wasm-stdlib/libc/string/stpncpy.c:31 stpncpy (reference value) -> src/wasm-stdlib/libc/string/stpncpy.c (file); graff: external

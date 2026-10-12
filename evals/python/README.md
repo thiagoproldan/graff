@@ -24,12 +24,14 @@ one name and the imports that bind it there, a name reaches the first in
 no branch of an `if` false on the host, as pyright reads `sys.platform`
 and `os.name`, as a name the module assigns such a test once reads, or
 as the host's CPython lacks a module only some platforms build, or false
-where the name is used. One check holds it
+where the name is used. Two checks hold it
 against what knows more:
 
 - **pyright.py**: graff's ties of names, each call, reference, import,
   class base and qualifier, against pyright's, asked over the language
   server protocol.
+- **monitoring.py**: graff's ties of calls against what was called when
+  tests ran, seen by Python through sys.monitoring (task 124).
 
 ```
 nix develop -c python3 evals/python/pyright.py kimi-tools ~/.local/share/graff/repos/kimi-k3-in-c.git tools
@@ -38,6 +40,11 @@ nix develop -c python3 evals/python/pyright.py ekko-evals /projects/ekko evals -
 stdlib=$(nix develop -c python3 -I -c 'import sysconfig; print(sysconfig.get_path("stdlib"))')
 nix develop -c python3 evals/python/pyright.py stdlib-3.14 "$stdlib"
 nix develop -c python3 evals/python/test_pyright.py
+nix develop -c python3 evals/python/monitoring.py graff-evals . 'evals/*/test_*.py' --at 17976f4
+tests=$(mktemp -d); tar -xJf "$(nix build --no-link --print-out-paths nixpkgs#python3.src)" -C "$tests" --strip-components 3 \
+    $(sed 's|.*|Python-3.14.7/Lib/test/&.py|' evals/python/stdlib-tests.txt)
+nix develop -c python3 evals/python/monitoring.py stdlib-3.14 "$stdlib" "$tests/test_*.py"
+nix develop -c python3 evals/python/test_monitoring.py
 ```
 
 The corpora, each taken out with git archive but the last: kimi-k3-in-c's
@@ -412,3 +419,119 @@ of these, keeps both branches and counts either answer right.
   graff's symbol stays at the first assignment.
 - **What is left**: a test imported from another module, `from
   test.support import MS_WINDOWS`, stays unknown.
+
+## monitoring.py
+
+What a run calls, against graff's ties of calls (task 124). Each test
+runs as `python3 -I -X frozen_modules=off monitor.py OUT ROOT TEST`, the
+library's modules unfrozen so that each is read from its file; monitor.py
+runs the test as `python3 TEST` would and registers a callback for
+sys.monitoring's CALL event (Python 3.12+), which writes down, once, each
+call made at a place in the corpus's files: the place's lines and columns,
+as `co_positions` gives them, and what it reached -- a function or a class
+of the corpus by its qualified name and first line, a bound method by its
+function, a wrapper of `functools.wraps` or `functools.cache` by what it
+wraps, anything else by its name, outside. A test past 300 s is stopped,
+and what it called is kept.
+
+The name a call is written with is read off the source by Python's
+tokenizer: the name before the `(` that opens the arguments the place
+ends with, or a decorator's own name; a call whose callee is no name,
+`f()(x)` or `d[k](x)`, has none. What Python calls for a statement --
+`__enter__` and `__exit__` at a `with`'s expression, `__build_class__` at
+a class, a generator expression's own code, a decorator's result applied
+to what it decorates -- shares the place of an expression it did not
+name, and is left out. What a call reached maps to graff's definition of
+that name in that file whose lines hold the line Python gives, so of a
+name a module defines in both branches of a platform's test, the one that
+ran; graff names a function local to another as Python does, but for
+`<locals>`.
+
+- **precision**: of graff's calls tied to a function, a method or a
+  class, at a place where the trace shows a call of that name ran, the
+  share tied to one that ran; a call that reached only what is outside
+  the corpus is a wrong tie. A call tied to a variable is not judged:
+  what it holds, only a run tells.
+- **recall**: of the calls the trace shows reached a definition graff
+  records, the share graff ties so, by any use of the name at its place.
+
+Each wrong tie is told by what ran: a function of Python's C library of
+the name graff's target has; another value the name was bound to as the
+program ran; a subclass's override of the method graff ties `self.f()` to,
+in the corpus or in a test's own class; or another definition. Each
+missed call by what graff did, and where graff has no edge, by how the
+function around binds the name: a parameter; a local alias, which each
+assignment gives a name or a path alone, `join = sep.join`; or a local
+bound otherwise. The check runs first against graff's resolver broken on
+purpose, and stops unless that scores under half of graff's precision.
+`--keep FILE` keeps the tests' ends and the calls, and `--calls FILE`
+reads them back in place of a run, to score again.
+
+The corpora: graff's own evals/ at 17976f4, its 18 tests; and Python
+3.14.7's library as nixpkgs builds it, 775 files, under 55 of its own
+tests (`stdlib-tests.txt`), each a file of its own in CPython's Lib/test
+of the source nixpkgs builds it from, run from a folder of their own
+outside the corpus, so that only the library's own calls count. nixpkgs
+keeps test/support and test/libregrtest in the library, which those tests
+import. The library's report, 240 KB, is not committed.
+
+### Result, 2026-10-12 (task 124)
+
+|                            | graff evals/, 47 files | Python 3.14.7, 775      |
+| -------------------------- | ---------------------- | ----------------------- |
+| tests                      | 18, all pass           | 55, 20 fail or stop     |
+| calls made in the corpus   | 2,428 at 2,121 places  | 148,000 at 15,547       |
+| of a definition graff has  | 721                    | 5,779                   |
+| broken resolver, precision | 0.000                  | 0.002                   |
+| precision                  | 1.000, 701 of 701      | 0.952, 4,057 of 4,261   |
+| not judged                 | 567                    | 26,251                  |
+| tied to a variable         | 4                      | 219                     |
+| recall                     | 0.942, 679 of 721      | 0.739, 4,269 of 5,779   |
+
+By rule on the library: `glob` 68 of 81, `import` 140 of 169, `path` 724
+of 801, `receiver` 1,432 of 1,499, `scope` 1,667 of 1,684, `unique` 26 of
+27; on graff's evals/ every rule is right. The calls were scored at
+53db3bb's resolver, task 175's included, from the run's calls kept with
+`--keep`. Of the library's tests, 18 fail
+run alone, outside regrtest, and test_ftplib and test_statistics are
+stopped at 300 s; what they called before counts. The run took 21 min on
+TLP's balanced profile, the boost off, other sessions holding the load at
+11 to 22.
+
+- **graff's evals/ misses 42 calls, none graff could tie by a name**: 23
+  through the tests' own loops, `for test in tests: test()`, tied to the
+  variable `test`; 9 through a local alias, `reaches = nil.reaches` in
+  test_nil.py; 8 through a parameter, `function(*args)`; and 2 method
+  calls on a receiver whose type graff does not infer, `rules.path(..)`.
+- **On the library, 204 ties are wrong**:
+  - 103 to a function the C library replaces as the module runs: a
+    module defines it, then `from _operator import *`, `from _heapq
+    import *`, `from _functools import partial` or `from _datetime import
+    *` binds the name to the C one, as `warnings.warn` (24), `partial`
+    (13) and datetime's `date` and `datetime` (14); and 30 to a name a
+    `try` or an `if` binds to another value: `try: from posix import
+    _path_normpath as normpath` before its `except ImportError: def
+    normpath` (17), and `_strptime`'s `parse_int = int` (4). graff ties
+    the corpus's definition, the only one there is to read.
+  - 58 to a method a subclass overrides: `self.bold(..)` in pydoc.py's
+    TextDoc reaches _PlainTextDoc's, `self._add_action` in argparse.py's
+    `_ActionsContainer` its subclasses' (23 in the library, 35 in the
+    tests' own classes, which subclass the library's).
+  - 13 to another definition of the library: 5 to locale.py's
+    `setlocale` under `except ImportError:`, which a
+    `def setlocale` the module makes later replaces; 1 to logging's
+    `_register_at_fork_reinit_lock` under `if not hasattr(os,
+    'register_at_fork')`; and 7 to ipaddress.py's `_address_class`, a
+    method of `_BaseNetwork` that its subclasses set to a class. Before
+    task 175, with c2f8bec's resolver, 8 more went to subprocess.py's
+    Windows methods under `if _mswindows:` (`self._execute_child`,
+    `self._communicate`, `_cleanup`); task 175's reading of `_mswindows`
+    ties all 8 to those that ran.
+- **Missed, 1,510 calls**: 553 method calls on a receiver whose type
+  graff does not infer, among whose candidates graff stays ambiguous, and
+  111 it calls external; 135 that reached a subclass's override of the
+  method graff ties; 563 through a function's own names, 317 locals
+  bound by a call, a loop or an import, 111 local aliases graff could
+  follow as it follows `Pen = Turtle`, and 135 parameters; 116 through a
+  variable graff ties; 30 to another definition; and 2 tied as a
+  reference, not a call.

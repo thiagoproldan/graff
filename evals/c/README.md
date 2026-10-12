@@ -21,12 +21,15 @@ a branch that turns on anything else, a build's `-D` flags among it, stays a
 candidate. The values a condition compares are the host's, a standard
 header's, or those of macros defined in sight with an integer expression
 (task 172). A use in a branch the build leaves out is read as a build that
-takes the branch would read it. One check holds it against what knows more:
+takes the branch would read it. Two checks hold it against what knows more:
 
 - **clangd.py**: graff's ties of names, each call, reference and include,
   against clangd's, asked over the language server protocol with the corpus
   built as its build says; and graphify's call edges beside graff's, on the
   same truth.
+- **instrumented.py**: graff's ties of calls against what was called when
+  the corpus's own tests ran, built with `-finstrument-functions` (task
+  124).
 
 ```
 nix develop -c python3 evals/c/clangd.py kimi ~/.local/share/graff/repos/kimi-k3-in-c.git --cmake \
@@ -34,6 +37,8 @@ nix develop -c python3 evals/c/clangd.py kimi ~/.local/share/graff/repos/kimi-k3
 nix develop -c python3 evals/c/clangd.py tree-sitter ~/.cargo/registry/src/*/tree-sitter-0.27.0 \
     --flags "-std=c11 -Isrc -Isrc/wasm -Iinclude -D_POSIX_C_SOURCE=200112L -D_DEFAULT_SOURCE" --sources 'src/*.c'
 nix develop -c python3 evals/c/test_clangd.py
+OMP_NUM_THREADS=4 nix develop -c python3 evals/c/instrumented.py kimi ~/.local/share/graff/repos/kimi-k3-in-c.git
+nix develop -c python3 evals/c/test_instrumented.py
 ```
 
 The corpora: kimi-k3-in-c at ac1584a, taken out with git archive, 32 .c and
@@ -54,6 +59,21 @@ mends nothing, hence its files with an error):
 | ------------------ | ----- | ------- | -------------- | -------------- | --------------------------- |
 | kimi-k3-in-c       | 32    | 609,848 | 148.7-180.1 ms | 141.8-150.3 ms | 0 / 1                       |
 | tree-sitter 0.27.0 | 75    | 860,481 | 301.8-365.5 ms | 259.4-280.9 ms | 18 / 34                     |
+
+sqlite's amalgamation, libsqlite3-sys 0.38.2 as the cargo registry holds
+it (sqlite3/ and sqlcipher/, 9 files, 20,586,932 bytes), measured on
+2026-10-12 (task 124) at 17976f4, three runs each, extraction
+and the parse alternating, under TLP's balanced profile with the boost off
+and other sessions holding the load at 8 to 18 (gotcha 141), so slower than
+the 3.45 s the probe parsed it in on 2026-10-05: parse alone 6,580-11,653
+ms, 5 files with an error; extraction 8,464-12,183 ms, 5 with a syntax
+error and 2 cut for depth (the deepest tree 531 levels, in
+sqlcipher/sqlite3.c). Resolution took 6.6-6.9 s for its 214,512 edges, 30
+to 43 µs an edge where kimi's take 1.5: `function_around` scanned the
+file's definitions for each use, which a file of 9.5 MB makes quadratic
+(task 304). Read once, it takes 0.56-1.27 s, against 7.0-23.5 s before in
+alternating runs, the edges byte-identical on the amalgamation, kimi and
+tree-sitter's C.
 
 ## clangd.py
 
@@ -299,3 +319,66 @@ kimi's 32 none (1). Not mended: an object-like macro standing as a field
 list (src/subtree.h; CPython's `PyObject_HEAD` is the same shape, but there
 the error stays inside its struct), a macro standing as a declaration's
 specifier, and code the preprocessor splits between branches.
+
+## instrumented.py
+
+kimi-k3-in-c's `make test`, which runs every test that needs no model
+weights, runs on the commit taken out with CC a wrapper that builds each
+file `-O0 -g -fno-inline -finstrument-functions -fno-pie` after the
+Makefile's own flags, and links `-no-pie` with cyg.c, which writes down,
+once, each function entered and the address its call returns to.
+addr2line gives each function's name, its file and its first line, and
+each call's file and line, from the address before the one it returns
+to. The Makefile builds the tokenizer's and the config reader's tests
+with flags of their own, which the wrapper's follow too.
+
+- **precision**: of graff's calls tied to a function, at a line where the
+  trace shows a function of that name called, the share tied to one the
+  trace says was: its file, its name and the line addr2line gives inside
+  its lines, so of two definitions of a name in the branches of an `#if`,
+  the one the build took;
+- **recall**: of the calls the trace shows of a function of the corpus,
+  the share graff ties so. One whose function is named on no line near its
+  own was made through a pointer, or by a macro graff ties the line to.
+
+GCC places a call inside another's arguments of several lines at the line
+the outer call starts, `printf("..",\n dt_name(t->dtype))`: an edge meets
+the truth at the nearest line 5 either way with the same name
+(`SPREAD`), and how many meet off their own line is reported. A function
+the build makes, as GCC makes one of each OpenMP parallel region, is
+called from the OpenMP library and has no place. The check runs first
+against graff's resolver broken on purpose, and stops unless that scores
+under half of graff's precision.
+
+### Result, 2026-10-12 (task 124)
+
+kimi at ac1584a, OMP_NUM_THREADS 4: the tests pass; 9 programs ran (the
+CLI's contract checks, test_ops, test_cache, test_st,
+test_model_stream, test_cfg, scale_test, test_trunk, k3_model), 1,057
+pairs of function and call, none lost; 771 calls of 19 of the 32 files.
+
+|                            | kimi, 32 files        |
+| -------------------------- | --------------------- |
+| broken resolver, precision | 0.000                 |
+| precision                  | 1.000, 802 of 802     |
+| not judged                 | 496                   |
+| recall                     | 0.992, 765 of 771     |
+| met off their own line     | 4                     |
+
+By rule: `include` 196 of 196, `scope` 606 of 606.
+
+- **Of two definitions in an `#if`'s branches, the one the build took**:
+  src/io/k3_portable_io.h defines `k3_set_direct` for macOS and twice
+  more for the other systems; graff ties k3_st.c's and k3_trunk.c's calls
+  to one Linux runs, the trace's.
+- **The 6 missed are calls through a pointer**, which no name tells and
+  graff calls external, by design (`call method`, `get` and `find`): a
+  struct's field holding a function, `cache.src.get(..)` and
+  `cache.src.getmany(..)` in tests/unit/test_cache.c (5) reaching
+  k3_cache.c's `cache_get` and `cache_getmany`, and `src->find(..)` in
+  k3_bind.c reaching k3_trunk.c's `find_in_layer`. Only a run tells.
+- **Not judged**: 496 calls tied to a function at lines no test ran.
+- **Cost**: with OpenMP's 16 threads, a first run took 6.6 min, 56 min of
+  CPU, under a load of 11 to 18, the threads waiting on each other at
+  -O0; with OMP_NUM_THREADS=4 the whole check, the build included, took
+  26 s, with the same calls.

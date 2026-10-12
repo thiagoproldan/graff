@@ -1,0 +1,100 @@
+run 2026-10-12
+graff eeb0cc8
+corpus graff-evals: a git repository at 17976f4 (git archive), 47 Python files
+truth: Python 3.14.7, sys.monitoring's CALL events, each of 18 tests (evals/*/test_*.py) run as `python3 -I -X frozen_modules=off monitor.py .. TEST`
+  tests failed: none
+  2428 calls of their own at 2121 places; 721 reached a definition graff records, by the name written; 10 one it records none of (a lambda); 145 made for a statement; 0 with no name written ()
+
+broken resolver: precision 0.000, recall 0.000
+graff: precision 1.000 (701 of 701 judged; 567 unjudged, 4 tied to what holds a function), recall 0.942 (679 of 721 calls; 0 tied by a use other than a call)
+by rule: import 15/15 (98 unjudged), path 200/200 (23 unjudged), receiver 33/33 (76 unjudged), scope 440/440 (363 unjudged), unique 13/13 (7 unjudged)
+wrong, by what ran: 
+missed, by what graff did: 23 call free tied to a variable, 2 call method ambiguous, 9 no edge, through a local alias, 8 no edge, through a parameter
+
+wrong edges:
+
+missed calls:
+evals/bar/test_bar.py:45 function -> evals/bar/bar.py cbm_places; graff: no edge, through a parameter
+    function(*args)
+evals/bar/test_bar.py:45 function -> evals/bar/bar.py graphify_places; graff: no edge, through a parameter
+    function(*args)
+evals/bash/test_bashls.py:90 test -> evals/bash/test_bashls.py test_a_name_is_placed_where_it_first_stands_in_utf16_units; graff: call free tied to a variable
+    test()
+evals/bash/test_bashls.py:90 test -> evals/bash/test_bashls.py test_score_judges_functions_by_line_and_variables_by_file_and_says_no; graff: call free tied to a variable
+    test()
+evals/bash/test_bashls.py:90 test -> evals/bash/test_bashls.py test_the_answer_is_the_files_own_else_one_other_files; graff: call free tied to a variable
+    test()
+evals/bash/test_xtrace.py:174 test -> evals/bash/test_xtrace.py test_an_import_reaches_its_tie_or_the_file_its_path_names; graff: call free tied to a variable
+    test()
+evals/bash/test_xtrace.py:174 test -> evals/bash/test_xtrace.py test_bash_files_are_told_as_graff_tells_them; graff: call free tied to a variable
+    test()
+evals/bash/test_xtrace.py:174 test -> evals/bash/test_xtrace.py test_score_meets_a_line_spread_and_says_no; graff: call free tied to a variable
+    test()
+evals/bash/test_xtrace.py:174 test -> evals/bash/test_xtrace.py test_the_trace_gives_calls_sources_runs_and_what_ran; graff: call free tied to a variable
+    test()
+evals/bash/xtrace.py:242 accepted -> evals/bash/xtrace.py score.right; graff: no edge, through a parameter
+    if accepted(index.get((file, at, key), ())):
+evals/bash/xtrace.py:242 accepted -> evals/bash/xtrace.py score.right#2; graff: no edge, through a parameter
+    if accepted(index.get((file, at, key), ())):
+evals/markdown/links.py:132 read -> evals/markdown/test_links.py main.Sources.read; graff: call method ambiguous
+    text = worktree.read(path)
+evals/markdown/test_links.py:92 path -> evals/markdown/links.py Rules.path; graff: call method ambiguous
+    check(f"path {written!r} from {source}", rules.path(source, written), want)
+evals/nix/options.py:175 to_path -> evals/nix/test_options.py to_path; graff: no edge, through a parameter
+    held["lineless"].add(to_path(position["file"]))
+evals/nix/options.py:177 to_path -> evals/nix/test_options.py to_path; graff: no edge, through a parameter
+    held["positions"].add((to_path(position["file"]), position["line"]))
+evals/nix/options.py:208 to_path -> evals/nix/test_options.py to_path; graff: no edge, through a parameter
+    file = to_path(node["file"])
+evals/nix/test_nil.py:97 reaches -> evals/nix/nil.py reaches; graff: no edge, through a local alias
+    assert reaches(target("b"), ("f.nix", 2, "b"), SYMBOLS)
+evals/nix/test_nil.py:98 reaches -> evals/nix/nil.py reaches; graff: no edge, through a local alias
+    assert reaches(target("b.c"), ("f.nix", 2, "b"), SYMBOLS)
+evals/nix/test_nil.py:99 reaches -> evals/nix/nil.py reaches; graff: no edge, through a local alias
+    assert not reaches(target("b"), ("g.nix", 2, "b"), SYMBOLS)
+evals/nix/test_nil.py:101 reaches -> evals/nix/nil.py reaches; graff: no edge, through a local alias
+    assert reaches(target("x.a"), ("f.nix", 6, "a"), SYMBOLS)
+evals/nix/test_nil.py:103 reaches -> evals/nix/nil.py reaches; graff: no edge, through a local alias
+    assert reaches(target("p#2"), ("f.nix", 9, "p"), SYMBOLS)
+evals/nix/test_nil.py:104 reaches -> evals/nix/nil.py reaches; graff: no edge, through a local alias
+    assert not reaches(target("p"), ("f.nix", 9, "p"), SYMBOLS)
+evals/nix/test_nil.py:106 reaches -> evals/nix/nil.py reaches; graff: no edge, through a local alias
+    assert reaches(target("two"), ("f.nix", 11, "two"), SYMBOLS)
+evals/nix/test_nil.py:107 reaches -> evals/nix/nil.py reaches; graff: no edge, through a local alias
+    assert not reaches(target("one"), ("f.nix", 11, "two"), SYMBOLS)
+evals/nix/test_nil.py:109 reaches -> evals/nix/nil.py reaches; graff: no edge, through a local alias
+    assert reaches(target("q.r"), ("f.nix", 13, "q"), SYMBOLS)
+evals/nix/test_nil.py:158 test -> evals/nix/test_nil.py test_a_path_splits_as_graffs_does; graff: call free tied to a variable
+    test()
+evals/nix/test_nil.py:158 test -> evals/nix/test_nil.py test_a_target_reaches_the_binding_nil_names_or_one_inside_it; graff: call free tied to a variable
+    test()
+evals/nix/test_nil.py:158 test -> evals/nix/test_nil.py test_edges_are_judged_where_nil_has_the_name_and_references_found_by_scope; graff: call free tied to a variable
+    test()
+evals/nix/test_nil.py:158 test -> evals/nix/test_nil.py test_positions_count_utf16_units_and_come_back_to_bytes; graff: call free tied to a variable
+    test()
+evals/nix/test_nil.py:158 test -> evals/nix/test_nil.py test_the_tree_gives_references_inherited_names_and_binders; graff: call free tied to a variable
+    test()
+evals/nix/test_options.py:193 test -> evals/nix/test_options.py test_a_declaration_a_helper_makes_is_judged_where_the_helper_writes_it_too; graff: call free tied to a variable
+    test()
+evals/nix/test_options.py:193 test -> evals/nix/test_options.py test_a_declaration_is_judged_at_the_line_and_at_the_file; graff: call free tied to a variable
+    test()
+evals/nix/test_options.py:193 test -> evals/nix/test_options.py test_a_store_path_is_the_worktrees_and_a_folder_its_default_nix; graff: call free tied to a variable
+    test()
+evals/nix/test_options.py:193 test -> evals/nix/test_options.py test_an_option_from_outside_is_judged_on_the_bindings_def_gives; graff: call free tied to a variable
+    test()
+evals/nix/test_options.py:193 test -> evals/nix/test_options.py test_an_options_own_default_is_no_definition; graff: call free tied to a variable
+    test()
+evals/nix/test_options.py:193 test -> evals/nix/test_options.py test_callers_set_in_files_possible_ones_and_reads_aside; graff: call free tied to a variable
+    test()
+evals/nix/test_options.py:193 test -> evals/nix/test_options.py test_only_paths_a_list_of_modules_holds_are_judged_imports; graff: call free tied to a variable
+    test()
+evals/nix/test_options.py:193 test -> evals/nix/test_options.py test_rotation_gives_each_the_answer_halfway_round; graff: call free tied to a variable
+    test()
+evals/nix/test_options.py:193 test -> evals/nix/test_options.py test_settings_in_files_the_host_does_not_import_are_not_judged; graff: call free tied to a variable
+    test()
+evals/nix/test_options.py:193 test -> evals/nix/test_options.py test_the_module_graph_skips_what_has_no_file_of_its_own; graff: call free tied to a variable
+    test()
+evals/nix/test_options.py:193 test -> evals/nix/test_options.py test_the_walk_names_the_option_that_stopped_it; graff: call free tied to a variable
+    test()
+evals/python/pyright.py:119 column_of -> evals/python/pyright.py column; graff: no edge, through a parameter
+    edge["column"] = column_of(lines[edge["path"]][edge["line"] - 1], edge)

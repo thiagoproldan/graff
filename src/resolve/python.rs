@@ -11,7 +11,10 @@
 //! top's `src/`, and the folders `sys.path.append` adds; a package's
 //! module looks in the top and `src/` before its own folder. What a `from`
 //! import names is found through a module's name for a module too: `from
-//! os.path import join`. A path is followed attribute by attribute
+//! os.path import join`. A module's submodule is also the module it puts
+//! in `sys.modules` under its own name at its top, `collections.abc` for
+//! collections/__init__.py's `sys.modules['collections.abc'] =
+//! _collections_abc`, where no file is so named. A path is followed attribute by attribute
 //! (`path`): a module's names, those its imports and star imports bring,
 //! and its submodules; a class's members and, through its bases, theirs
 //! (`glob`). `self.f()` reaches the method of the class it is called in or
@@ -60,6 +63,7 @@ use std::sync::LazyLock;
 
 use tree_sitter::Parser;
 
+use crate::extract::python::is_identifier;
 use crate::extract::{Call, CallKind, Import, Kind, RefKind, Reference, Symbol};
 use crate::lang::Language;
 
@@ -178,6 +182,13 @@ struct Index<'a> {
     /// Each file's imports that bind a name, by the definition they are in,
     /// `` for the module's top, and the name.
     imports: Vec<HashMap<&'a str, HashMap<&'a str, Vec<&'a Import>>>>,
+    /// The modules each file puts in `sys.modules` as its own, by the
+    /// name's last: `abc` for collections/__init__.py's
+    /// `sys.modules['collections.abc'] = _collections_abc`.
+    registered: Vec<HashMap<&'a str, &'a Import>>,
+    /// The `sys.modules` entries being read, by file and line, which a
+    /// value that names its own entry again reads no further.
+    registering: RefCell<HashSet<(usize, u32)>>,
     /// Each file's star imports, `from m import *`.
     stars: Vec<Vec<&'a Import>>,
     /// Each file's classes' bases, by the class's qualified name.
@@ -238,6 +249,8 @@ impl<'a> Index<'a> {
             qualified: vec![HashMap::new(); n],
             scoped: vec![HashMap::new(); n],
             imports: vec![HashMap::new(); n],
+            registered: vec![HashMap::new(); n],
+            registering: RefCell::new(HashSet::new()),
             stars: vec![Vec::new(); n],
             bases: vec![HashMap::new(); n],
             roots: vec![Vec::new(); n],
@@ -352,6 +365,11 @@ impl<'a> Index<'a> {
                         .entry(bound(import))
                         .or_default()
                         .push(import),
+                    Some("sys.modules") => {
+                        if let Some(name) = own_entry(file.path, &import.path) {
+                            index.registered[f].entry(name).or_insert(import);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -758,14 +776,17 @@ impl<'a> Index<'a> {
         namespace
     }
 
-    /// A package's module of a name: `pkg/name/__init__.py`, `pkg/name.py`,
-    /// or the folder `pkg/name`. A module that is not a package has none.
+    /// A package's module of a name: `pkg/name/__init__.py` or
+    /// `pkg/name.py`; else, of any module, the one it puts in `sys.modules`
+    /// under its own name and that one, where Python finds it once the
+    /// module has run, as it has when its submodule is imported; else the
+    /// folder `pkg/name`. A module that is not a package has no other.
     fn submodule(&self, module: Module<'a>, name: &str) -> Option<Module<'a>> {
         let at = match module {
             Module::File(f) => {
                 let path = self.files[f].path;
                 if path != "__init__.py" && !path.ends_with("/__init__.py") {
-                    return None;
+                    return self.entry(f, name);
                 }
                 folder(path)
             }
@@ -774,7 +795,31 @@ impl<'a> Index<'a> {
         let child = self.child(at, name);
         match child.package.or(child.module) {
             Some(f) => Some(Module::File(f)),
-            None => child.folder.map(Module::Folder),
+            None => match module {
+                Module::File(f) => self
+                    .entry(f, name)
+                    .or_else(|| child.folder.map(Module::Folder)),
+                Module::Folder(_) => child.folder.map(Module::Folder),
+            },
+        }
+    }
+
+    /// The module a file puts in `sys.modules` under its own name and a
+    /// name: what the value it puts there reaches where it does.
+    fn entry(&self, file: usize, name: &str) -> Option<Module<'a>> {
+        let import = *self.registered[file].get(name)?;
+        let value = import.alias.as_deref()?;
+        let key = (file, import.line);
+        if !self.registering.borrow_mut().insert(key) {
+            return None;
+        }
+        let at = self.at.replace(Some(key));
+        let reach = self.path(file, None, value, None, None, 1).0;
+        self.at.set(at);
+        self.registering.borrow_mut().remove(&key);
+        match reach {
+            Reach::Found(Target::Module(module), _) => Some(module),
+            _ => None,
         }
     }
 
@@ -1653,13 +1698,6 @@ fn with_overrides(
     )
 }
 
-/// Whether a text is a name as Python writes one: `Turtle`, `_x1`.
-fn is_identifier(text: &str) -> bool {
-    let mut chars = text.chars();
-    chars.next().is_some_and(|c| c.is_alphabetic() || c == '_')
-        && chars.all(|c| c.is_alphanumeric() || c == '_')
-}
-
 /// The name an import binds: its alias; else `a` for `import a.b`, and `x`
 /// for `from m import x`.
 fn bound(import: &Import) -> &str {
@@ -1692,6 +1730,20 @@ fn above(at: &str) -> Option<&str> {
     } else {
         Some(folder(at))
     }
+}
+
+/// The name under which a file puts a module in `sys.modules` as one of
+/// its own: the last of the dotted name, where what comes before it is
+/// the file's module, `collections` for collections/__init__.py, at the
+/// end of the file's path.
+fn own_entry<'k>(path: &str, key: &'k str) -> Option<&'k str> {
+    let module = path
+        .strip_suffix("/__init__.py")
+        .or_else(|| (path == "__init__.py").then_some(""))
+        .or_else(|| path.strip_suffix(".py"))?;
+    let (parent, name) = key.rsplit_once('.')?;
+    let parent = parent.replace('.', "/");
+    (module == parent || module.ends_with(&format!("/{parent}"))).then_some(name)
 }
 
 /// A path's folder, `` at the top, and its last name.
@@ -3054,5 +3106,50 @@ class Store:
             .map(|edge| edge.name)
             .collect();
         assert_eq!(qualifiers, Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_module_a_package_puts_in_sys_modules_is_its_submodule() {
+        // Python 3.14's collections has no abc.py: its __init__.py puts
+        // _collections_abc in sys.modules as collections.abc, where `from
+        // collections.abc import ..` finds it, the package having run.
+        let package = br#"import _collections_abc
+import collections
+import sys as _sys
+
+_sys.modules['collections.abc'] = _collections_abc
+_sys.modules['collections.loop'] = collections.loop
+"#;
+        let abc = br#"class MutableMapping:
+    def clear(self):
+        self.popitem()  # popitem -> MutableMapping.popitem (receiver), configparser.py RawConfigParser.popitem (override)
+
+    def popitem(self):
+        pass
+"#;
+        let parser = br#"from collections.abc import MutableMapping as _MutableMapping  # MutableMapping -> _collections_abc.py MutableMapping (path)
+# collections.loop's value names its entry again: it reaches nothing.
+from collections.loop import x  # x -> external
+from elsewhere.abc import Set  # Set -> external
+
+
+class RawConfigParser(_MutableMapping):  # _MutableMapping -> _collections_abc.py MutableMapping (import)
+    def popitem(self):
+        pass
+"#;
+        // Only a module's own name counts: what another module puts in
+        // sys.modules depends on whether it ran first.
+        let other = br#"import sys
+import _collections_abc
+
+sys.modules['elsewhere.abc'] = _collections_abc
+"#;
+        written_edges(&[
+            ("collections/__init__.py", package),
+            ("_collections_abc.py", abc),
+            ("configparser.py", parser),
+            ("elsewhere/__init__.py", b""),
+            ("other.py", other),
+        ]);
     }
 }

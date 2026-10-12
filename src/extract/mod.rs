@@ -18,7 +18,7 @@ use crate::lang::Language;
 
 /// Bumped whenever what an extractor produces changes, so that results kept
 /// from an older extractor are read again rather than trusted.
-pub const VERSION: u32 = 27;
+pub const VERSION: u32 = 28;
 
 /// What the index keeps this build's extractions under: VERSION for a
 /// release, which a rebuild keeps reusing; for any other build, VERSION and
@@ -288,7 +288,9 @@ pub struct Import {
     /// or runs it. Python: `import` or `from`; `class` for a class's base,
     /// the class's qualified name in `from`; `sys.path.insert` or
     /// `sys.path.append` for a folder a file adds to where its imports are
-    /// looked for. C: `include`; `system` for `#include <x.h>`, `x.h`.
+    /// looked for; `sys.modules` for a module the file's top puts there
+    /// under a dotted name, the name in `path` and the value as written in
+    /// `alias`. C: `include`; `system` for `#include <x.h>`, `x.h`.
     /// Markdown: `link` for a link, with its fragment, `#x` alone for one of
     /// its own file; `mention` for a path a code span or the prose writes,
     /// with a `:line` or a `:Name` after it.

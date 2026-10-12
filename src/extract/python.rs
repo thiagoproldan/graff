@@ -32,7 +32,10 @@
 //! folder to look for modules in, `via` the call, evaluated as Jedi does
 //! where it names the file's own folder (decision 108): `__file__`,
 //! `os.path.dirname`, `abspath`, `realpath`, `normpath` and `join`, and a
-//! name the module assigns once from these, `HERE`.
+//! name the module assigns once from these, `HERE`. The module's top
+//! putting a module in `sys.modules` under a dotted name,
+//! `sys.modules['collections.abc'] = _collections_abc`, is an import of
+//! that name, `via` "sys.modules", whose alias is the value as written.
 
 use std::collections::{HashMap, HashSet};
 
@@ -1721,6 +1724,7 @@ impl<'s, 't> Reader<'s, 't> {
                 if let Some(left) = left {
                     self.store(left, scope, depth + 1);
                 }
+                self.sys_modules(node);
             }
             "augmented_assignment" => {
                 if let Some(right) = node.child_by_field_name("right") {
@@ -2150,6 +2154,72 @@ impl<'s, 't> Reader<'s, 't> {
         }
     }
 
+    /// A module the module's top puts in `sys.modules` under a dotted
+    /// name, `sys.modules['collections.abc'] = _collections_abc`: an import
+    /// of the name, `sys.modules`, whose alias is the name or the path the
+    /// value is written with. `sys` may be a name an import binds to it,
+    /// `import sys as _sys`.
+    fn sys_modules(&mut self, assignment: Node<'t>) {
+        if self.from().is_some() {
+            return;
+        }
+        let (Some(left), Some(right)) = (
+            assignment.child_by_field_name("left"),
+            assignment.child_by_field_name("right"),
+        ) else {
+            return;
+        };
+        if left.kind() != "subscript" {
+            return;
+        }
+        let Some((head, segments)) = left
+            .child_by_field_name("value")
+            .and_then(|value| chain(value, self.source))
+        else {
+            return;
+        };
+        let receiver = self.text(head);
+        let sys = receiver == "sys"
+            || self.out.imports.iter().any(|import| {
+                import.via.as_deref() == Some("import")
+                    && import.path == "sys"
+                    && import.alias.as_deref() == Some(receiver)
+            });
+        if !sys || segments != ["modules"] {
+            return;
+        }
+        let keys: Vec<Node> = fields(left)
+            .into_iter()
+            .filter(|(field, _)| *field == Some("subscript"))
+            .map(|(_, key)| key)
+            .collect();
+        let [key] = keys[..] else {
+            return;
+        };
+        let Some(name) = literal(key, self.source)
+            .filter(|name| name.contains('.') && name.split('.').all(is_identifier))
+        else {
+            return;
+        };
+        let Some((value, rest)) = chain(right, self.source) else {
+            return;
+        };
+        let value = std::iter::once(self.text(value))
+            .chain(rest)
+            .collect::<Vec<_>>()
+            .join(".");
+        self.out.imports.push(Import {
+            path: name.to_string(),
+            alias: Some(value),
+            glob: false,
+            public: false,
+            line: line(assignment),
+            from: None,
+            via: Some("sys.modules".to_string()),
+            condition: None,
+        });
+    }
+
     /// What an expression evaluates to as a path, where it names the file's
     /// own folder, as Jedi evaluates `sys.path`'s.
     fn evaluate(&self, node: Node<'t>, seen: &mut Vec<String>) -> Option<Place> {
@@ -2576,6 +2646,13 @@ fn statement(node: Node) -> Node {
         }
     }
     at
+}
+
+/// Whether a text is a name as Python writes one: `Turtle`, `_x1`.
+pub(crate) fn is_identifier(text: &str) -> bool {
+    let mut chars = text.chars();
+    chars.next().is_some_and(|c| c.is_alphabetic() || c == '_')
+        && chars.all(|c| c.is_alphanumeric() || c == '_')
 }
 
 /// A plain string literal's text: `".."` and `'lib'`, not an f-string.
@@ -3102,6 +3179,50 @@ sys.path.insert(0, "lib")
                 (".", 8, Some("sys.path.insert")),
                 ("../claude-code", 9, Some("sys.path.insert")),
                 ("..", 10, Some("sys.path.append")),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_module_the_top_puts_in_sys_modules_is_an_import_of_its_name() {
+        let out = extract(
+            br#"import sys as _sys
+import _collections_abc
+import os
+
+_sys.modules['collections.abc'] = _collections_abc
+sys.modules["os.path"] = os.path
+if True:
+    sys.modules['a.b'] = c
+other.modules['x.y'] = z
+sys.modules['plain'] = z
+sys.modules[f'x.{n}'] = z
+sys.modules['x.y'] = make()
+
+
+def later():
+    sys.modules['x.z'] = z
+"#,
+        );
+        let entries: Vec<(&str, Option<&str>, u32, Option<&str>)> = out
+            .imports
+            .iter()
+            .filter(|i| i.via.as_deref() == Some("sys.modules"))
+            .map(|i| {
+                (
+                    i.path.as_str(),
+                    i.alias.as_deref(),
+                    i.line,
+                    i.from.as_deref(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            entries,
+            vec![
+                ("collections.abc", Some("_collections_abc"), 5, None),
+                ("os.path", Some("os.path"), 6, None),
+                ("a.b", Some("c"), 8, None),
             ]
         );
     }

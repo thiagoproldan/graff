@@ -7,6 +7,7 @@ found when one of the first 5 places shares a line with it (recall@5), and
 tokens per answer.
 
     python3 evals/gate/gate.py        # summary.json, results.jsonl, index.jsonl; private/
+    python3 evals/gate/gate.py --out evals/gate/run-2    # the second run's
     python3 evals/gate/test_gate.py
 
 `summary.json` heads the run with graff's commit and store path, the power
@@ -15,7 +16,68 @@ bar's answers. `results.jsonl` holds graff's answer to every public
 question, scored, with its first five places; `private/`, which git leaves
 out, those on ~/NixOS and the work repository. The totals count all 52.
 
-## Result, 2026-10-12
+Gate A ran twice. The first run, below, failed on rule 4 alone; its
+files stay where it wrote them, in this folder. The second, by the user's
+answer 303 on the board after task 295, is in `run-2/` and is gate A's
+verdict (`evals/verdict/PROTOCOL.md`, "Deviations").
+
+## Second run, 2026-10-12: gate A passes
+
+graff at 088f4e9 (main, 24 commits after the first run's; none touched the
+questions, the bar or `gate.py`), built by the flake
+(`/nix/store/dwdqdx08yp1qskd31skdig25nzvcsxw8-graff-0.1.0`), run once as
+`gate.py --out evals/gate/run-2`, against the same bar answers. Between the
+runs task 295 made `graff search` answer `0 of N definitions match enough
+of its words` when its best match holds neither two of the question's words
+nor one as rare as a word only one definition holds (decision 344 on the
+board), chosen on probes outside the set.
+
+recall@5 on the 46 questions with an answer, by language, the first run's
+in brackets:
+
+| Language | Questions | graff                | graphify 0.9.61 | codebase-memory-mcp 0.11.0 |
+| -------- | --------- | -------------------- | --------------- | -------------------------- |
+| Rust     | 16        | 0.50 (0.50)          | 0.06            | 0                          |
+| Markdown | 10        | 0.50 (0.70)          | 0               | 0.10                       |
+| Nix      | 7         | 0.86 (0.86)          | 0               | 0.29                       |
+| Bash     | 5         | 0.40 (0.40)          | 0.40            | 0.40                       |
+| Python   | 5         | 0.50 (0.50)          | 0               | 0.10                       |
+| C        | 3         | 0.17 (0.17)          | 0               | 0                          |
+| **All**  | 46        | **0.522** (0.565)    | **0.065**       | **0.12**                   |
+
+|                                                         | graff         | graphify 0.9.61 | codebase-memory-mcp 0.11.0 |
+| ------------------------------------------------------- | ------------- | --------------- | -------------------------- |
+| Questions graff wins / loses, against each              |               | 23 / 0          | 21 / 1                     |
+| Said nothing, of the 6 questions with no answer         | 3 (0)         | 2               | 0                          |
+| Median tokens per answer                                | 786 (819)     | 1,645           | 1,313                      |
+| recall@5 were a place over its whole file to reach none | 0.435 (0.435) | 0.065           | 0.087                      |
+| file@5: recall@5 if the right file were enough          | 0.72 (0.76)   | 0.43            | 0.46                       |
+
+1. **Sign test: holds.** 23 / 0 against graphify (one-sided p 1.2e-7),
+   21 / 1 against codebase-memory-mcp (p 5.5e-6).
+2. **Every language with 5 questions: holds.** Markdown fell to 0.50,
+   still above 0 and 0.10; the rest are as they were.
+3. **Median tokens: holds.** 786 against 1,645 and 1,313.
+4. **Said nothing on half the 6 with no answer: holds, at the bar.**
+   graff said nothing on 3 (ctx-08, kimi-06, kimi-07), where 3 are needed;
+   graphify said nothing on 2, codebase-memory-mcp on 0.
+
+**Gate A passes.** Without ekko-01 to ekko-03 (note 226) it passes too:
+0.535 over 43 against 0.07 and 0.128, 22 / 0 and 20 / 1, Rust 0.54,
+median 786 tokens, nothing said on 3 of 6.
+
+- **What the cut cost**: two questions only, both Markdown on ctx, both
+  reached in the first run: ctx-05 and ctx-07 now get `0 of N definitions
+  match`. No other question's recall@5 moved (the private ones' total is the
+  first run's; their rows of the first run were not kept to compare one by
+  one). The loss to codebase-memory-mcp is the same private Nix question.
+- **Rule 4 holds with no margin**: one question fewer said nothing on and it
+  fails again.
+- Power: AC, TLP balanced (balance_power), boost off, load 17.9 at the
+  start and 14.5 at the end, from other sessions: times are not compared
+  with the first run's.
+
+## First run, 2026-10-12: gate A fails
 
 graff at 17976f4, built by the flake
 (`/nix/store/wx7vl3q848czlgq8c0pr5n961mfnq3rk-graff-0.1.0`), against the

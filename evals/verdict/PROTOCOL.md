@@ -6,6 +6,17 @@ check graff gets used and does no harm, in place of the 24 pairs that would
 have measured its cut in cost (this protocol's first version, commit 154c268).
 Task 25 runs it as written. Nothing here moves after a result is seen.
 
+## Deviations
+
+- 2026-10-12: gate A ran a second time, by the user's answer 303 on the
+  board. The first run (task 19, graff 17976f4) failed on rule 4 alone; task
+  295 then made `graff search` say it found nothing when its best match holds
+  too little, chosen on probes outside the set. The second run (task 493,
+  graff 088f4e9, main 24 commits after task 19's, none of which touched the
+  questions, the bar or gate.py) asked the same 52 questions by the same
+  rules against the same bar answers. The first result stays in `evals/gate/`, the second is in
+  `evals/gate/run-2/`, and the second is gate A's verdict.
+
 ## What is decided
 
 Task 26: graff replaces graphify in ctx's hooks, in ~/NixOS and in the global

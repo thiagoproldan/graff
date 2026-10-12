@@ -15,5 +15,5 @@ evals/python/pyright-stdlib*.txt
 evals/nix/private/
 evals/search/private/
 evals/gate/work/
-evals/gate/private/
+evals/gate/**/private/
 evals/python/monitoring-stdlib*.txt

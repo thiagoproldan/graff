@@ -216,9 +216,11 @@ What counts as graff working was fixed before its first line of code, in
   was asked at and the file ranges that answered it.
 - `evals/bar/`: graphify and codebase-memory-mcp on those questions, the bar
   graff has to clear.
-- `evals/gate/`: graff on those questions against that bar, gate A: it
-  beats both over all and in every language, at fewer tokens, but says it
-  found nothing on none of the questions with no answer, so gate A fails.
+- `evals/gate/`: graff on those questions against that bar, gate A. Its
+  first run failed: graff beat both over all and in every language, at fewer
+  tokens, but said it found nothing on none of the questions with no answer.
+  Run again by the user's leave once `search` could say nothing, it passes
+  all four rules.
 - `evals/verdict/`: the protocol that judges graff, and the tasks its paired
   runs will redo.
 

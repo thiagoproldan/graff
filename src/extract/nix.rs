@@ -9,7 +9,10 @@
 //! the file as a whole is a definition too, which a path imports. A binding
 //! in what a function that makes a package, a file or a string of it is
 //! given -- `pkgs.writeText`'s, `builtins.toJSON`'s, `mkOption`'s -- is
-//! consumed: data the function reads, which sets no option of a module's.
+//! consumed: data the function reads, which sets no option of a module's;
+//! and so is one in an attrset a `let` binds that only such a function, a
+//! string or another such binding takes, as `registryConfig` with
+//! `configFile = format.generate "config.yml" registryConfig;`.
 //!
 //! A name is tied to the binding in the file it is bound to, as Nix binds it:
 //! by a `let`, a `rec` attrset or a function, the innermost first, then by
@@ -26,7 +29,7 @@
 //! a call of `builtins.readDir` is one with no path, which says the
 //! definition it is in lists a folder.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use tree_sitter::{Node, Parser};
 
@@ -196,6 +199,12 @@ pub fn extract(source: &[u8]) -> Extraction {
         outputs: None,
         quiet: false,
         consumed: false,
+        stringy: false,
+        typed: false,
+        uses: HashMap::new(),
+        data: HashSet::new(),
+        held: HashSet::new(),
+        index: HashMap::new(),
     };
     reader.file(root);
     reader.out
@@ -315,6 +324,31 @@ struct Reader<'s> {
     /// Whether the walk is in what a function of CONSUMERS or OPTION_MAKERS
     /// is given, whose bindings it consumes.
     consumed: bool,
+    /// Whether the walk is in an interpolation, whose value becomes text.
+    stringy: bool,
+    /// Whether the walk is in an option's `type`, which a submodule's
+    /// module, no data, is given to.
+    typed: bool,
+    /// Each use of a name a `let` or a `rec` set binds, by the qualified
+    /// name of its binding.
+    uses: HashMap<String, Vec<LetUse>>,
+    /// The `let` bindings only data takes, by qualified name, and where
+    /// the symbols they hold are among the symbols.
+    data: HashSet<String>,
+    held: HashSet<usize>,
+    /// Where each definition is among the symbols, by qualified name.
+    index: HashMap<String, usize>,
+}
+
+/// A use of a name a `let` binds.
+struct LetUse {
+    /// Whether it hands the value to a function of CONSUMERS or
+    /// OPTION_MAKERS, or into a string.
+    data: bool,
+    /// Whether it reads a path from it, `cfg.port`, rather than takes it whole.
+    read: bool,
+    /// The definition it is in.
+    from: Option<String>,
 }
 
 pub(crate) fn named_children(node: Node) -> Vec<Node> {
@@ -465,6 +499,11 @@ impl<'s> Reader<'s> {
                 }
             }
             "path_expression" => self.path(node, None),
+            "interpolation" => {
+                let stringy = std::mem::replace(&mut self.stringy, true);
+                self.children(node);
+                self.stringy = stringy;
+            }
             "comment" | "hpath_expression" | "spath_expression" | "uri_expression" => {}
             _ => self.children(node),
         }
@@ -566,6 +605,7 @@ impl<'s> Reader<'s> {
         } else {
             format!("{qualified}#{count}")
         };
+        self.index.insert(qualified.clone(), self.out.symbols.len());
         self.out.symbols.push(Symbol {
             name: path.last().cloned().unwrap_or_default(),
             qualified: qualified.clone(),
@@ -1007,12 +1047,17 @@ impl<'s> Reader<'s> {
                 }
             }
         }
+        // The symbols each entry's value holds.
+        let mut held = Vec::new();
         for entry in &entries {
+            let start = self.out.symbols.len();
             let prefix = std::mem::replace(&mut self.prefix, entry.path.clone());
             let from = match &entry.qualified {
                 Some(qualified) => self.from.replace(qualified.clone()),
                 None => self.from.clone(),
             };
+            let typed = self.typed || self.quiet && entry.path.last().is_some_and(|l| l == "type");
+            let typed = std::mem::replace(&mut self.typed, typed);
             let within = self.quiet || entry.kind == Kind::Option;
             let quiet = std::mem::replace(&mut self.quiet, within);
             match entry.node.kind() {
@@ -1037,14 +1082,134 @@ impl<'s> Reader<'s> {
                 _ => {}
             }
             self.quiet = quiet;
+            self.typed = typed;
             self.from = from;
             self.prefix = prefix;
+            held.push(start..self.out.symbols.len());
         }
         if let Some(body) = body {
             self.visit(body);
         }
+        if of == Set::Let {
+            self.settle(&entries, &held);
+        }
         if binds {
             self.frames.pop();
+        }
+    }
+
+    /// Whether a value is an attrset written out, or what one is made of,
+    /// a function's body or either side of `//`: `{ http.addr = ..; }`,
+    /// `name: { .. }`, `cfg.settings // { .. }`.
+    fn attrset(&self, value: Node) -> bool {
+        let value = unwrapped(value);
+        let field = |name| {
+            value
+                .child_by_field_name(name)
+                .is_some_and(|v| self.attrset(v))
+        };
+        match value.kind() {
+            "attrset_expression" | "rec_attrset_expression" => true,
+            "binary_expression" => field("left") || field("right"),
+            "function_expression" | "let_expression" | "with_expression" => field("body"),
+            "if_expression" => field("consequence") || field("alternative"),
+            "apply_expression" => {
+                let (function, arguments) = applied(value);
+                function_name(self.source, function).is_some_and(|name| WRAPPERS.contains(&name))
+                    && arguments.last().is_some_and(|last| self.attrset(*last))
+            }
+            _ => false,
+        }
+    }
+
+    /// Marks consumed what a `let` binding holds that only data takes: an
+    /// attrset written out, used at least once and, but for reads of a path
+    /// from it, only where it hands it to a function of CONSUMERS or
+    /// OPTION_MAKERS (but in an option's `type`), into a string, or to
+    /// another such binding, as `registryConfig` in `configFile =
+    /// format.generate "config.yml" registryConfig;`. `held` are the
+    /// symbols each entry's value holds.
+    fn settle(&mut self, entries: &[Entry], held: &[std::ops::Range<usize>]) {
+        // Each name the `let` binds, as its uses know it, and what it holds.
+        let mut bound: Vec<(String, Vec<std::ops::Range<usize>>)> = Vec::new();
+        for (entry, range) in entries.iter().zip(held) {
+            let Some(first) = entry.path.get(self.prefix.len()) else {
+                continue;
+            };
+            // What a call makes, as `evalModules { .. }`, holds what the call
+            // is given, not data the `let` writes.
+            let written = entry.path.len() > self.prefix.len() + 1
+                || entry
+                    .node
+                    .child_by_field_name("expression")
+                    .is_some_and(|value| self.attrset(value));
+            if !written {
+                continue;
+            }
+            let qualified = match &entry.qualified {
+                Some(qualified) if entry.path.len() == self.prefix.len() + 1 => qualified.clone(),
+                _ => joined(&self.prefix.join("."), std::slice::from_ref(first)),
+            };
+            match bound.iter_mut().find(|(name, _)| *name == qualified) {
+                Some((_, ranges)) => ranges.push(range.clone()),
+                None => bound.push((qualified, vec![range.clone()])),
+            }
+        }
+        // One taken by another such binding is too.
+        loop {
+            let mut found = Vec::new();
+            for (qualified, ranges) in &bound {
+                if self.data.contains(qualified) {
+                    continue;
+                }
+                let Some(uses) = self.uses.get(qualified) else {
+                    continue;
+                };
+                let within = |from: &str| {
+                    from == qualified
+                        || self
+                            .index
+                            .get(from)
+                            .is_some_and(|i| ranges.iter().any(|range| range.contains(i)))
+                };
+                let taken = |from: &str| {
+                    self.data.contains(from)
+                        || self.index.get(from).is_some_and(|i| self.held.contains(i))
+                };
+                let mut data = false;
+                let mut other = false;
+                for used in uses {
+                    let from = used.from.as_deref();
+                    // Its own, as a function's call of itself.
+                    if from.is_some_and(within) {
+                        continue;
+                    }
+                    if used.data || from.is_some_and(taken) {
+                        data = true;
+                    } else if !used.read {
+                        // A read of a path from it, `defaults.port`, takes a value
+                        // out of it and says nothing of the whole.
+                        other = true;
+                    }
+                }
+                if data && !other {
+                    found.push(qualified.clone());
+                }
+            }
+            if found.is_empty() {
+                break;
+            }
+            for qualified in found {
+                if let Some((_, ranges)) = bound.iter().find(|(name, _)| *name == qualified) {
+                    for range in ranges.clone() {
+                        for i in range {
+                            self.out.symbols[i].consumed = true;
+                            self.held.insert(i);
+                        }
+                    }
+                }
+                self.data.insert(qualified);
+            }
         }
     }
 
@@ -1285,6 +1450,20 @@ impl<'s> Reader<'s> {
         let (bases, alone) = self.bases(name);
         if rest.is_empty() && !alone {
             return;
+        }
+        if let Some(Path {
+            local: Some(qualified),
+            ..
+        }) = bases.first()
+        {
+            self.uses
+                .entry(qualified.clone())
+                .or_default()
+                .push(LetUse {
+                    data: self.consumed && !self.typed || self.stringy,
+                    read: !rest.is_empty(),
+                    from: self.from.clone(),
+                });
         }
         for base in bases {
             let text = joined(&base.text, rest);
@@ -1730,6 +1909,62 @@ in
                     "{name}: {qualified}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn what_a_let_binds_that_only_data_takes_is_consumed() {
+        let out = extract(
+            br#"{ config, lib, pkgs, ... }:
+let
+  registry = { http.addr = "x"; };
+  configFile = (pkgs.formats.yaml { }).generate "config.yml" registry;
+  base = { a = 1; };
+  full = base // { b = 2; };
+  defaults = { port = 1; };
+  flags = { verbose = true; };
+  sub = { name, ... }: { config.home = name; };
+  common = { services.x.enable = true; };
+  node = lib.evalModules { modules = [ { services.y.enable = true; } ]; };
+  mixed = { c = 3; };
+  unused = { d = 4; };
+in
+{
+  options.z = lib.mkOption { type = lib.types.attrsOf (lib.types.submodule sub); };
+  config = lib.mkMerge [
+    common
+    {
+      environment.etc.a.text = builtins.toJSON full;
+      environment.etc.b.text = builtins.toJSON defaults + "${flags}";
+      services.p.port = defaults.port;
+      environment.etc.c.text = "${node.config.system.build.toplevel}";
+      environment.etc.d.text = builtins.toJSON mixed;
+      services.q.settings = mixed;
+    }
+  ];
+}
+"#,
+        );
+        for (qualified, consumed) in [
+            // Handed to a serializer, to one through another binding, into a
+            // string, or so and read a path from.
+            ("registry.http.addr", true),
+            ("base.a", true),
+            ("full.b", true),
+            ("flags.verbose", true),
+            ("defaults.port", true),
+            // The binding is not, as one a call is the value of is not.
+            ("registry", false),
+            // A submodule's module, given to an option's type; a module the
+            // configuration takes; what a call makes; one the configuration
+            // takes too; one nothing uses.
+            ("sub.config.home", false),
+            ("common.services.x.enable", false),
+            ("node.modules.services.y.enable", false),
+            ("mixed.c", false),
+            ("unused.d", false),
+        ] {
+            assert_eq!(symbol(&out, qualified).consumed, consumed, "{qualified}");
         }
     }
 

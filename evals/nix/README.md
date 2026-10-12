@@ -172,7 +172,7 @@ their first two lines.
   `utils.pam.autoOrderRules [ { .. } ]`, all right, and those under
   `mapAttrs'`, `listToAttrs` or `nameValuePair` that a `systemd.services`
   takes. Data built under a `let` name and handed to such a function
-  elsewhere is still read as settings (task 157).
+  elsewhere was still read as settings, until task 157 (below).
 - **A submodule's option is set only where the module system puts it**
   (task 152). An option a submodule declares went by the names after its
   last `options`, so any path that ended in them met it: dovecot's
@@ -301,6 +301,37 @@ their first two lines.
   every .nix file of nixpkgs, 38-44 s against 36-53 s, within that noise.
   Step 2 (instance.rs) sees through `with` and `let` too but follows no
   helper of a file's own; ~/NixOS at 428b233 has none.
+- **What a `let` binds that only data takes sets no option either** (task
+  157). Task 144 saw what a function of its list is given where the call
+  writes it; data built under a `let` name and handed over elsewhere,
+  `registryConfig = { http.addr = ..; };` and then `generate "config.yml"
+  registryConfig`, stayed settings. Now an attrset a `let` binds -- written
+  out, or what a function returns, either side of `//`, a branch of an
+  `if`, a wrapper's value -- that is used, and only where it goes to a
+  function of the list (but in an option's `type`, where a submodule's
+  module goes), into a string, or to another such binding, is consumed
+  too. A read of a path from it, `defaults.port`, takes a value out and
+  says nothing of the whole: taken for a use elsewhere, it would keep
+  heimdal's `finalConfig`, which `lib.pipe finalConfig.kdc.database`
+  reads, and 169 bindings more on nixos/modules, all data (gitlab's
+  `gitlabConfig`, kubernetes dns' `ports`). What a call makes, `node =
+  evalMinimalConfig ({ .. })`, holds no data the `let` writes, though a
+  string reads `${node.config.system.build.etcActivationCommands}`: the
+  tests' configurations stay settings. On nixpkgs' nixos/modules at
+  c59305b, 1,106 attributes more are consumed and 10 settings fewer, each
+  wrong by hand: krb5's `realms` in heimdal's and mit's `finalConfig`, the
+  example in tmpfiles' `settingsOption`, pam_mount's XML, the sql
+  exporter's JSON, what rancher's `apply` maps. Task 152 had left little
+  of the class: of the settings under a `let`, 951 met one option after
+  task 144, 754 at d0e05b7, 757 with task 160 and 747 now, nearly all of
+  them pam.nix's `pamOpts` and other submodules' own bindings, which are
+  right. On lib/, 5 settings fewer, tests' data; on the flake, no edge
+  changes. The flake's 795 questions and nixos/modules' 122 get the same
+  answers; options.py and nil.py, the same reports past the header.
+  Extracting every .nix file of nixpkgs takes 47-53 s against 45-52, and
+  resolution on nixos/modules 673-738 ms against 694-722 but for two runs
+  of 829 and 1,437 (alternating, 2026-10-12, balanced profile, a load of
+  11 to 14 from other sessions): no cost the noise lets show.
 - **What counts as wrong, read by hand**: 6 settings at each step. 3 at
   step 1 and 4 at step 2 sit under a `mkIf` the host's configuration makes
   false, which step 2 does not evaluate: it decides a condition on the

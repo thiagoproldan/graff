@@ -11,6 +11,14 @@ symbol it places at two spots. A definition SCIP places twice at one spot
 is one. Each build's edges are scored as check.py scores them, and the
 wrong edges the last build has and the first has not are listed.
 
+Task 299: rust-analyzer reads the features `cargo metadata` resolves, the
+package's default ones. Offline, `cargo metadata` fails on a crate whose
+dependencies the registry lacks -- most often its dev-dependencies -- and
+rust-analyzer falls back to `--no-deps`, where it reads no feature at all:
+the run says which build it read. --without-dev-dependencies drops the
+copy's dev-dependency tables first, so that more crates resolve (one whose
+features name a dev-dependency, syn's `test`, then fails to load).
+
     nix develop -c python3 evals/resolve/registry.py ~/.cargo/registry/src/index.crates.io-*/ryu-1.0.23 \\
         head=/tmp/head/resolve new=target/release/examples/resolve
 """
@@ -66,19 +74,45 @@ def places(index, crate, read):
     return definitions, kept, len(twice), nowhere
 
 
+def without_dev_dependencies(manifest):
+    """A Cargo.toml's text without its dev-dependency tables, plain or a
+    target's."""
+    out, dropped = [], False
+    for line in manifest.split("\n"):
+        if line.startswith("["):
+            dropped = re.match(r"""\[(target\.("[^"]*"|'[^']*'|[^.\]]+)\.)?dev-dependencies(\.|\])""", line) is not None
+        if not dropped:
+            out.append(line)
+    return "\n".join(out)
+
+
 def main():
-    if len(sys.argv) < 3 or not all("=" in a for a in sys.argv[2:]):
-        sys.exit("usage: registry.py CRATE_DIR NAME=RESOLVE_BINARY...")
-    source = os.path.realpath(sys.argv[1])
-    builds = dict(a.split("=", 1) for a in sys.argv[2:])
-    print(f"run {datetime.date.today().isoformat()}: {source}; builds " + ", ".join(f"{n} {b}" for n, b in builds.items()))
+    args = sys.argv[1:]
+    dev = "--without-dev-dependencies" not in args
+    args = [a for a in args if a != "--without-dev-dependencies"]
+    if len(args) < 2 or not all("=" in a for a in args[1:]):
+        sys.exit("usage: registry.py [--without-dev-dependencies] CRATE_DIR NAME=RESOLVE_BINARY...")
+    source = os.path.realpath(args[0])
+    builds = dict(a.split("=", 1) for a in args[1:])
+    print(f"run {datetime.date.today().isoformat()}: {source}; builds " + ", ".join(f"{n} {b}" for n, b in builds.items())
+          + ("" if dev else "; without dev-dependencies"))
     snapshot = tempfile.mkdtemp(prefix="graff-registry-")
     try:
         crate_dir = os.path.join(snapshot, "crate")
         shutil.copytree(source, crate_dir)
         manifest = open(os.path.join(crate_dir, "Cargo.toml")).read()
+        if not dev:
+            manifest = without_dev_dependencies(manifest)
+            open(os.path.join(crate_dir, "Cargo.toml"), "w").write(manifest)
         crate = re.search(r'^name\s*=\s*"([^"]+)"', manifest, re.M)[1]
         env = {**os.environ, "CARGO_NET_OFFLINE": "true"}
+        # As rust-analyzer asks it, for the host's target alone.
+        host = re.search(r"^host: (\S+)", subprocess.run(["rustc", "-vV"], capture_output=True, text=True).stdout, re.M)[1]
+        metadata = subprocess.run(["cargo", "metadata", "--format-version", "1", "--filter-platform", host],
+                                  cwd=crate_dir, env=env, capture_output=True, text=True)
+        print("  rust-analyzer's build: " + ("cargo metadata resolved, the default features"
+                                            if metadata.returncode == 0 else
+                                            "cargo metadata failed offline, --no-deps: no feature"))
         done = subprocess.run(["rust-analyzer", "scip", "."], cwd=crate_dir, env=env, capture_output=True, text=True)
         if done.returncode != 0 or not os.path.exists(os.path.join(crate_dir, "index.scip")):
             sys.exit(f"rust-analyzer failed: {done.stderr[-2000:]}")

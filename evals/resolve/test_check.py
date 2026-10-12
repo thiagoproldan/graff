@@ -137,6 +137,26 @@ def main():
           (nowhere, [r for r in references if r[3] == CRATE + "tests/gen/make()."]), (1, []))
     check("registry: one placed at two spots is left out", (twice, [r for r in references if "twice" in r[3]]), (1, []))
 
+    # Task 299: the copy without its dev-dependencies, a target's included,
+    # keeps every other table.
+    manifest = "\n".join([
+        "[package]", 'name = "demo"',
+        "[dependencies.log]", 'version = "0.4"',
+        "[dev-dependencies]", 'rand = "1"',
+        "[dev-dependencies.env_logger]", 'version = "0.11"',
+        "[target.'cfg(unix)'.dependencies.libc]", 'version = "0.2"',
+        "[target.'cfg(unix)'.dev-dependencies.nix]", 'version = "0.29"',
+        '[target."cfg(windows)".dev-dependencies]', 'windows-sys = "0.61"',
+        "[features]", "default = []",
+    ])
+    check("registry: the dev-dependency tables, a target's too, go; the others stay",
+          registry.without_dev_dependencies(manifest), "\n".join([
+              "[package]", 'name = "demo"',
+              "[dependencies.log]", 'version = "0.4"',
+              "[target.'cfg(unix)'.dependencies.libc]", 'version = "0.2"',
+              "[features]", "default = []",
+          ]))
+
     print(f"{total - failed}/{total} ok")
     sys.exit(1 if failed else 0)
 

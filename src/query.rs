@@ -836,6 +836,8 @@ struct Code<'s> {
     worktree: Worktree,
     /// Each package's library, by the name its other crates give it.
     libraries: Vec<(String, String)>,
+    /// The features each package's build enables.
+    features: resolve::cargo::Features,
     /// Each file's definitions, by qualified name.
     defined: Vec<HashMap<String, usize>>,
     /// Each Rust file's crates and module paths, and the `mod` items that
@@ -1000,11 +1002,15 @@ impl<'s> Code<'s> {
             })
             .collect();
         let places = resolve::Places::new(&files(&worktree));
+        let features = resolve::cargo::features(&files(&worktree), &|path| {
+            fs::read_to_string(root.join(path)).ok()
+        });
         Ok(Code {
             store,
             root,
             worktree,
             libraries,
+            features,
             defined,
             places,
             written,
@@ -1029,6 +1035,7 @@ impl<'s> Code<'s> {
         Ok(resolve::resolve_placed(
             &files,
             &libraries,
+            &self.features,
             self.placement.as_ref(),
         ))
     }
@@ -1113,8 +1120,9 @@ impl<'s> Code<'s> {
     /// name those types have too, `.len()`, are mostly theirs.
     ///
     /// Resolving every use of the worktree takes most of a map's time, so
-    /// the edges are kept, for the worktree's files, its libraries' names
-    /// and the build that made them.
+    /// the edges are kept, for the worktree's files, its libraries' names,
+    /// the features its packages' builds enable and the build that made
+    /// them.
     fn graph(&mut self) -> Result<Graph, Error> {
         let mut first = Vec::with_capacity(self.worktree.files.len());
         let mut definitions = 0;
@@ -1128,6 +1136,7 @@ impl<'s> Code<'s> {
             for (package, name) in &self.libraries {
                 key.push_str(&format!("\n{package} {name}"));
             }
+            key.push_str(&format!("\n{}", self.features.key()));
             key
         });
         let kept = match &key {

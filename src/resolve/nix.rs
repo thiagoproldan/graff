@@ -1224,7 +1224,7 @@ a
                 extraction,
             })
             .collect();
-        super::super::resolve(&files, &[])
+        super::super::resolve(&files, &[], &super::super::cargo::Features::default())
             .into_iter()
             .map(|edge| {
                 let reached = match &edge.resolution {

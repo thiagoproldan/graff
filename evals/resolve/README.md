@@ -115,15 +115,24 @@ the next definition in its file, and stops unless that scores differently.
   (task 170): a named import the build drops no longer shadows the glob
   that brings in the same name. The build is one on the host graff runs
   on: its target decides `unix`, `windows` and the `target_*` names (on
-  this machine, Linux on x86_64 with glibc); what a build picks --
-  `feature`, `test`, `debug_assertions`, `miri` and rustc's other names --
-  stays unknown, and so read. A name rustc does not know is set only by
-  `--cfg`, from a build script or RUSTFLAGS: unknown in a package with a
-  build script, else false (semver's `test_node_semver`, which only its
-  CI sets, in RUSTFLAGS; graff does not read RUSTFLAGS or
-  .cargo/config.toml). In code the host's build leaves out, as a
-  `#[cfg(windows)] fn f() { .. }` on Linux, or a file only such code
-  loads (`#[cfg(windows)] mod imp;`, a crate whose root is under
+  this machine, Linux on x86_64 with glibc), and its features are those
+  the build rust-analyzer reads by default enables (task 299): each
+  package's `default`, what each feature on enables in turn, and what the
+  worktree's packages ask of each other through `path` dependencies, as
+  Cargo unifies them -- unknown in a package whose Cargo.toml graff does
+  not read. What else a build picks -- `test`, `debug_assertions`, `miri`
+  and rustc's other names -- stays unknown, and so read. A name rustc
+  does not know is set only by `--cfg`, from a build script or
+  RUSTFLAGS: unknown in a package with a build script, else false
+  (semver's `test_node_semver`, which only its CI sets, in RUSTFLAGS;
+  graff does not read RUSTFLAGS or .cargo/config.toml). Code the host's
+  build leaves out for its features alone -- under `#[cfg(feature =
+  "x")]` with `x` off, or a bench, test, example or bin whose
+  `required-features` are off, which Cargo does not build -- is read as
+  the host's build with its features unknown: the build that compiles it
+  is the host's with other features on. In code the host's builds leave
+  out, as a `#[cfg(windows)] fn f() { .. }` on Linux, or a file only such
+  code loads (`#[cfg(windows)] mod imp;`, a crate whose root is under
   `#![cfg(windows)]`), every use item counts, as before: graff does not
   tell which build compiles it.
 - Of the files that are one module, those the host's build loads are it
@@ -366,3 +375,80 @@ build against this one, on the fourteen crates and libc 0.2.190:
   tokio 246 against 249 ms. Extraction, five runs each at load 6:
   tokio 1,450 against 1,449 ms; libc's runs spread from 1.7 to 4.6 s on
   both builds, the load of other sessions.
+
+## The features the default build enables (task 299)
+
+graff read every `feature` as unknown, so both `cfg_os_poll! { pub use
+self::unix::*; }` and `cfg_not_os_poll! { pub(crate) use self::shell::*;
+}` counted in mio's src/sys/mod.rs, and the first glob won. It now reads
+the features of the build rust-analyzer reads by default
+(`cargo.features = []`, `cargo.noDefaultFeatures = false`): each
+package's `default` and what it enables in turn, read from its
+Cargo.toml, with what the worktree's packages ask of each other through
+`path` dependencies (src/resolve/cargo.rs; decision 335). Code that
+build leaves out for its features alone, and a target whose
+`required-features` are off, is read as the host's build with its
+features unknown, as graff read every build before; and a name that
+build finds nowhere in the crate, where only the features it left off
+would bring it in -- syn's tests name `syn::visit_mut::VisitMut`, which
+only `visit-mut` brings in -- is looked up again that way, unless a use
+item the features do not decide brings it in from outside the crate
+(tokio's `Condvar` is std's with `parking_lot` off).
+
+rust-analyzer reads the default features only where `cargo metadata`
+resolves. Offline, it fails on a crate whose dependencies the registry
+lacks -- most often a dev-dependency -- and rust-analyzer falls back to
+`--no-deps`, where it reads no feature at all, default ones included (a
+crate of `default = ["a"]`, `a = ["c"]`: its SCIP defines the items under
+`feature = "a"`, `"c"` and `"default"` with metadata, none of them
+without). registry.py now says which build each run read, and
+`--without-dev-dependencies` drops the copy's dev-dependencies so that
+more crates resolve. e5480cf's build against this one, the fifteen
+crates both ways (registry.txt):
+
+| crate        | rust-analyzer's build                  | precision, e5480cf | recall | precision, task 299 | recall | wrong only in task 299 |
+| ------------ | -------------------------------------- | ------------------ | ------ | ------------------- | ------ | ---------------------- |
+| mio 1.2.2    | no feature; default without dev-deps   | 0.882              | 0.796  | 0.990               | 0.903  | 0                      |
+| tokio 1.53.1 | no feature both ways (`default = []`)  | 0.934              | 0.801  | 0.953               | 0.809  | 0                      |
+| glam 0.31.0  | no feature both ways                   | 0.877              | 0.634  | 0.877 (4 more right) | 0.634 | 0                      |
+| the other 12 | the same, either build                 | the same           |        | the same            |        | 0                      |
+
+- **mio's 33 wrong edges** of tasks 205/240 are right: `os-poll` is off,
+  so src/sys/mod.rs's glob is the shell module's, and `Selector`,
+  `Event` and `Events` are src/sys/shell/selector.rs's; src/waker.rs's
+  `Waker`, ambiguous among five since task 170, is the shell's too. 35
+  right edges more, 32 wrong ones fewer.
+- **tokio**: `default = []`, so the features are those rust-analyzer
+  reads offline too; 8 right edges more, 16 wrong ones fewer.
+- semver, portable-atomic, getrandom, zerocopy and regex-automata resolve
+  without their dev-dependencies, so rust-analyzer read their default
+  features there: the same scores for both builds. syn's copy without
+  dev-dependencies does not load (its feature `test` names one).
+- **Every crate of the registry**, 725, examples/resolve over each one's
+  .rs and .md files: 678 the same byte for byte, and ekko's, graff's,
+  kmux's and nixdk's. In 47 crates 2,599 sites changed: 2,101 resolved to
+  another definition (glam's two versions 1,641, `math::sin_cos` and its
+  kin now std_math's, `libm` being off; sqlite-wasm-rs 160, the
+  sqlite3_bindgen.rs constants, `sqlite3mc` being off; minimal-lexical
+  159, `VecType` the StackVec, `alloc` being off; flate2 23, the
+  miniz_oxide backend; fontdue 17, simd_x86.rs's `f32x4`), 305 external to
+  resolved (bytemuck's two versions 254), 167 resolved to external (syn's
+  seven versions 126, the `Stmt`, `Expr` and `Pat` that
+  tests/test_precedence.rs brings in from rustc_ast; cairo-rs 25, `crate::Borrowed`, which `use_glib`, on by
+  default, takes from glib; tracing-core 8, `Lazy` from once_cell with
+  `std` on; tokio 8, `Condvar` std's), 12 ambiguous to resolved, 11
+  ambiguous to another ambiguity, 3 resolved to ambiguous. Read as the
+  default build alone, code it leaves out for its features as code no
+  host builds, 1,246 sites of rustix 1.1.5's files under
+  `#[cfg(feature = "event")]` and the like reached its Windows polyfill;
+  read as the host's build with other features, syn's seven versions
+  still had 3,672 sites external, their tests' names of `full` and
+  `visit-mut` items, until a name the default build finds nowhere was
+  looked up again.
+- **Cost**, the builds interleaved, seven runs each, on AC under the
+  balanced profile (EPP balance_power, boost off, load 6): resolution of
+  rustix, median 269 against 253 ms; tokio 262 against 250 ms; libc
+  1,399 against 1,373 ms. Extraction the same within noise: tokio 1,436
+  against 1,433 ms, libc 1,647 against 1,651 ms. Branches kept: syn 2,697
+  (60 KB of conditions) against 176, glam 316 against 69, tokio 1,508
+  against 1,318, rustix 2,942 against 2,547.

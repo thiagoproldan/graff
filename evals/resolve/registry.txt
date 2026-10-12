@@ -244,3 +244,180 @@ objc2-0.6.4: 95 files, 1916 definitions and 19800 references in SCIP (rust-analy
   23eb682: precision 0.995 (5479 of 5509, 580 unjudged), recall 0.850 (5480 of 6449)
   task205-240: precision 0.995 (5479 of 5509, 580 unjudged), recall 0.850 (5480 of 6449)
   wrong in task205-240, not in 23eb682: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mio-1.2.2; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve
+  rust-analyzer's build: cargo metadata failed offline, --no-deps: no feature
+mio-1.2.2: 64 files, 121 definitions and 1519 references in SCIP (rust-analyzer 2026-09-28); left out: 133 references to a symbol of the crate it places nowhere, those to 7 it places twice
+  e5480cf: precision 0.882 (262 of 297, 1927 unjudged), recall 0.796 (262 of 329)
+  task299: precision 0.990 (297 of 300, 1936 unjudged), recall 0.903 (297 of 329)
+  wrong in task299, not in e5480cf: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/mio-1.2.2; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve; without dev-dependencies
+  rust-analyzer's build: cargo metadata resolved, the default features
+mio-1.2.2: 64 files, 121 definitions and 1522 references in SCIP (rust-analyzer 2026-09-28); left out: 133 references to a symbol of the crate it places nowhere, those to 7 it places twice
+  e5480cf: precision 0.882 (262 of 297, 1927 unjudged), recall 0.796 (262 of 329)
+  task299: precision 0.990 (297 of 300, 1936 unjudged), recall 0.903 (297 of 329)
+  wrong in task299, not in e5480cf: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.53.1; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve
+  rust-analyzer's build: cargo metadata failed offline, --no-deps: no feature
+tokio-1.53.1: 555 files, 501 definitions and 11918 references in SCIP (rust-analyzer 2026-09-28); left out: 3231 references to a symbol of the crate it places nowhere, those to 2 it places twice
+  e5480cf: precision 0.934 (776 of 831, 23125 unjudged), recall 0.801 (776 of 969)
+  task299: precision 0.953 (784 of 823, 23142 unjudged), recall 0.809 (784 of 969)
+  wrong in task299, not in e5480cf: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/tokio-1.53.1; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve; without dev-dependencies
+  rust-analyzer's build: cargo metadata failed offline, --no-deps: no feature
+tokio-1.53.1: 555 files, 501 definitions and 11918 references in SCIP (rust-analyzer 2026-09-28); left out: 3231 references to a symbol of the crate it places nowhere, those to 2 it places twice
+  e5480cf: precision 0.934 (776 of 831, 23125 unjudged), recall 0.801 (776 of 969)
+  task299: precision 0.953 (784 of 823, 23142 unjudged), recall 0.809 (784 of 969)
+  wrong in task299, not in e5480cf: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.190; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve
+  rust-analyzer's build: cargo metadata failed offline, --no-deps: no feature
+libc-0.2.190: 443 files, 9041 definitions and 15593 references in SCIP (rust-analyzer 2026-09-28); left out: 1776 references to a symbol of the crate it places nowhere, those to 6 it places twice
+  e5480cf: precision 0.974 (3235 of 3321, 24548 unjudged), recall 0.804 (3231 of 4017)
+  task299: precision 0.974 (3235 of 3321, 24548 unjudged), recall 0.804 (3231 of 4017)
+  wrong in task299, not in e5480cf: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/libc-0.2.190; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve; without dev-dependencies
+  rust-analyzer's build: cargo metadata failed offline, --no-deps: no feature
+libc-0.2.190: 443 files, 9041 definitions and 15593 references in SCIP (rust-analyzer 2026-09-28); left out: 1776 references to a symbol of the crate it places nowhere, those to 6 it places twice
+  e5480cf: precision 0.974 (3235 of 3321, 24548 unjudged), recall 0.804 (3231 of 4017)
+  task299: precision 0.974 (3235 of 3321, 24548 unjudged), recall 0.804 (3231 of 4017)
+  wrong in task299, not in e5480cf: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/semver-1.0.28; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve
+  rust-analyzer's build: cargo metadata failed offline, --no-deps: no feature
+semver-1.0.28: 15 files, 192 definitions and 3927 references in SCIP (rust-analyzer 2026-09-28); left out: 120 references to a symbol of the crate it places nowhere, those to 3 it places twice
+  e5480cf: precision 0.993 (937 of 944, 37 unjudged), recall 0.969 (937 of 967)
+  task299: precision 0.993 (937 of 944, 37 unjudged), recall 0.969 (937 of 967)
+  wrong in task299, not in e5480cf: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/semver-1.0.28; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve; without dev-dependencies
+  rust-analyzer's build: cargo metadata resolved, the default features
+semver-1.0.28: 15 files, 192 definitions and 3930 references in SCIP (rust-analyzer 2026-09-28); left out: 120 references to a symbol of the crate it places nowhere, those to 3 it places twice
+  e5480cf: precision 0.993 (937 of 944, 37 unjudged), recall 0.969 (937 of 967)
+  task299: precision 0.993 (937 of 944, 37 unjudged), recall 0.969 (937 of 967)
+  wrong in task299, not in e5480cf: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ryu-1.0.23; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve
+  rust-analyzer's build: cargo metadata failed offline, --no-deps: no feature
+ryu-1.0.23: 28 files, 132 definitions and 5302 references in SCIP (rust-analyzer 2026-09-28); left out: 172 references to a symbol of the crate it places nowhere, those to 17 it places twice
+  e5480cf: precision 0.918 (673 of 733, 28 unjudged), recall 0.912 (673 of 738)
+  task299: precision 0.918 (673 of 733, 28 unjudged), recall 0.912 (673 of 738)
+  wrong in task299, not in e5480cf: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ryu-1.0.23; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve; without dev-dependencies
+  rust-analyzer's build: cargo metadata failed offline, --no-deps: no feature
+ryu-1.0.23: 28 files, 132 definitions and 5302 references in SCIP (rust-analyzer 2026-09-28); left out: 172 references to a symbol of the crate it places nowhere, those to 17 it places twice
+  e5480cf: precision 0.918 (673 of 733, 28 unjudged), recall 0.912 (673 of 738)
+  task299: precision 0.918 (673 of 733, 28 unjudged), recall 0.912 (673 of 738)
+  wrong in task299, not in e5480cf: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/syn-2.0.119; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve
+  rust-analyzer's build: cargo metadata failed offline, --no-deps: no feature
+syn-2.0.119: 97 files, 821 definitions and 19417 references in SCIP (rust-analyzer 2026-09-28); left out: 1399 references to a symbol of the crate it places nowhere, those to 11 it places twice
+  e5480cf: precision 0.962 (1328 of 1381, 21791 unjudged), recall 0.484 (1324 of 2734)
+  task299: precision 0.962 (1328 of 1381, 21769 unjudged), recall 0.484 (1324 of 2734)
+  wrong in task299, not in e5480cf: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/syn-2.0.119; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve; without dev-dependencies
+  rust-analyzer's build: cargo metadata failed offline, --no-deps: no feature
+  rust-analyzer failed: cargo metadata rejects the copy without dev-dependencies (feature `test` names syn-test-suite, a dev-dependency)
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/portable-atomic-1.15.0; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve
+  rust-analyzer's build: cargo metadata failed offline, --no-deps: no feature
+portable-atomic-1.15.0: 54 files, 271 definitions and 3099 references in SCIP (rust-analyzer 2026-09-28); left out: 350 references to a symbol of the crate it places nowhere, those to 1 it places twice
+  e5480cf: precision 0.978 (262 of 268, 1233 unjudged), recall 0.609 (262 of 430)
+  task299: precision 0.978 (262 of 268, 1233 unjudged), recall 0.609 (262 of 430)
+  wrong in task299, not in e5480cf: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/portable-atomic-1.15.0; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve; without dev-dependencies
+  rust-analyzer's build: cargo metadata resolved, the default features
+portable-atomic-1.15.0: 54 files, 303 definitions and 3346 references in SCIP (rust-analyzer 2026-09-28); left out: 407 references to a symbol of the crate it places nowhere, those to 1 it places twice
+  e5480cf: precision 0.972 (353 of 363, 1138 unjudged), recall 0.634 (353 of 557)
+  task299: precision 0.972 (353 of 363, 1138 unjudged), recall 0.634 (353 of 557)
+  wrong in task299, not in e5480cf: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pulldown-cmark-0.13.4; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve
+  rust-analyzer's build: cargo metadata failed offline, --no-deps: no feature
+pulldown-cmark-0.13.4: 43 files, 674 definitions and 19332 references in SCIP (rust-analyzer 2026-09-28); left out: 337 references to a symbol of the crate it places nowhere, those to 2 it places twice
+  e5480cf: precision 0.996 (3016 of 3027, 1639 unjudged), recall 0.830 (3018 of 3638)
+  task299: precision 0.996 (3016 of 3027, 1639 unjudged), recall 0.830 (3018 of 3638)
+  wrong in task299, not in e5480cf: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pulldown-cmark-0.13.4; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve; without dev-dependencies
+  rust-analyzer's build: cargo metadata failed offline, --no-deps: no feature
+pulldown-cmark-0.13.4: 43 files, 674 definitions and 19332 references in SCIP (rust-analyzer 2026-09-28); left out: 337 references to a symbol of the crate it places nowhere, those to 2 it places twice
+  e5480cf: precision 0.996 (3016 of 3027, 1639 unjudged), recall 0.830 (3018 of 3638)
+  task299: precision 0.996 (3016 of 3027, 1639 unjudged), recall 0.830 (3018 of 3638)
+  wrong in task299, not in e5480cf: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_json-1.0.150; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve
+  rust-analyzer's build: cargo metadata failed offline, --no-deps: no feature
+serde_json-1.0.150: 69 files, 1531 definitions and 22889 references in SCIP (rust-analyzer 2026-09-28); left out: 831 references to a symbol of the crate it places nowhere, those to 27 it places twice
+  e5480cf: precision 0.995 (5209 of 5233, 869 unjudged), recall 0.878 (5199 of 5919)
+  task299: precision 0.995 (5209 of 5233, 869 unjudged), recall 0.878 (5199 of 5919)
+  wrong in task299, not in e5480cf: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_json-1.0.150; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve; without dev-dependencies
+  rust-analyzer's build: cargo metadata failed offline, --no-deps: no feature
+serde_json-1.0.150: 69 files, 1531 definitions and 22889 references in SCIP (rust-analyzer 2026-09-28); left out: 831 references to a symbol of the crate it places nowhere, those to 27 it places twice
+  e5480cf: precision 0.995 (5209 of 5233, 869 unjudged), recall 0.878 (5199 of 5919)
+  task299: precision 0.995 (5209 of 5233, 869 unjudged), recall 0.878 (5199 of 5919)
+  wrong in task299, not in e5480cf: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/glam-0.31.0; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve
+  rust-analyzer's build: cargo metadata failed offline, --no-deps: no feature
+glam-0.31.0: 220 files, 25324 definitions and 269020 references in SCIP (rust-analyzer 2026-09-28); left out: 25697 references to a symbol of the crate it places nowhere, those to 35 it places twice
+  e5480cf: precision 0.877 (43360 of 49424, 11679 unjudged), recall 0.634 (43367 of 68402)
+  task299: precision 0.877 (43364 of 49424, 11679 unjudged), recall 0.634 (43371 of 68402)
+  wrong in task299, not in e5480cf: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/glam-0.31.0; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve; without dev-dependencies
+  rust-analyzer's build: cargo metadata failed offline, --no-deps: no feature
+glam-0.31.0: 220 files, 25324 definitions and 269020 references in SCIP (rust-analyzer 2026-09-28); left out: 25697 references to a symbol of the crate it places nowhere, those to 35 it places twice
+  e5480cf: precision 0.877 (43360 of 49424, 11679 unjudged), recall 0.634 (43367 of 68402)
+  task299: precision 0.877 (43364 of 49424, 11679 unjudged), recall 0.634 (43371 of 68402)
+  wrong in task299, not in e5480cf: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustix-1.1.5; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve
+  rust-analyzer's build: cargo metadata failed offline, --no-deps: no feature
+rustix-1.1.5: 317 files, 183 definitions and 1865 references in SCIP (rust-analyzer 2026-09-28); left out: 204 references to a symbol of the crate it places nowhere, those to 1 it places twice
+  e5480cf: precision 0.983 (289 of 294, 13815 unjudged), recall 0.923 (289 of 313)
+  task299: precision 0.983 (289 of 294, 13815 unjudged), recall 0.923 (289 of 313)
+  wrong in task299, not in e5480cf: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rustix-1.1.5; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve; without dev-dependencies
+  rust-analyzer's build: cargo metadata failed offline, --no-deps: no feature
+rustix-1.1.5: 317 files, 183 definitions and 1865 references in SCIP (rust-analyzer 2026-09-28); left out: 204 references to a symbol of the crate it places nowhere, those to 1 it places twice
+  e5480cf: precision 0.983 (289 of 294, 13815 unjudged), recall 0.923 (289 of 313)
+  task299: precision 0.983 (289 of 294, 13815 unjudged), recall 0.923 (289 of 313)
+  wrong in task299, not in e5480cf: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/getrandom-0.4.3; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve
+  rust-analyzer's build: cargo metadata failed offline, --no-deps: no feature
+getrandom-0.4.3: 39 files, 54 definitions and 765 references in SCIP (rust-analyzer 2026-09-28); left out: 52 references to a symbol of the crate it places nowhere, those to 2 it places twice
+  e5480cf: precision 1.000 (95 of 95, 441 unjudged), recall 0.990 (95 of 96)
+  task299: precision 1.000 (95 of 95, 441 unjudged), recall 0.990 (95 of 96)
+  wrong in task299, not in e5480cf: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/getrandom-0.4.3; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve; without dev-dependencies
+  rust-analyzer's build: cargo metadata resolved, the default features
+getrandom-0.4.3: 39 files, 79 definitions and 1247 references in SCIP (rust-analyzer 2026-09-28); left out: 95 references to a symbol of the crate it places nowhere, those to 2 it places twice
+  e5480cf: precision 0.966 (169 of 175, 361 unjudged), recall 0.889 (169 of 190)
+  task299: precision 0.966 (169 of 175, 361 unjudged), recall 0.889 (169 of 190)
+  wrong in task299, not in e5480cf: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zerocopy-0.8.59; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve
+  rust-analyzer's build: cargo metadata failed offline, --no-deps: no feature
+zerocopy-0.8.59: 109 files, 1209 definitions and 20874 references in SCIP (rust-analyzer 2026-09-28); left out: 988 references to a symbol of the crate it places nowhere, those to 39 it places twice
+  e5480cf: precision 0.974 (4645 of 4768, 1326 unjudged), recall 0.785 (4647 of 5921)
+  task299: precision 0.974 (4645 of 4768, 1326 unjudged), recall 0.785 (4647 of 5921)
+  wrong in task299, not in e5480cf: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zerocopy-0.8.59; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve; without dev-dependencies
+  rust-analyzer's build: cargo metadata resolved, the default features
+zerocopy-0.8.59: 109 files, 1209 definitions and 20874 references in SCIP (rust-analyzer 2026-09-28); left out: 988 references to a symbol of the crate it places nowhere, those to 39 it places twice
+  e5480cf: precision 0.974 (4645 of 4768, 1326 unjudged), recall 0.785 (4647 of 5921)
+  task299: precision 0.974 (4645 of 4768, 1326 unjudged), recall 0.785 (4647 of 5921)
+  wrong in task299, not in e5480cf: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regex-automata-0.4.18; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve
+  rust-analyzer's build: cargo metadata failed offline, --no-deps: no feature
+regex-automata-0.4.18: 100 files, 685 definitions and 9394 references in SCIP (rust-analyzer 2026-09-28); left out: 439 references to a symbol of the crate it places nowhere, those to 0 it places twice
+  e5480cf: precision 0.999 (2119 of 2121, 10841 unjudged), recall 0.882 (2119 of 2402)
+  task299: precision 0.999 (2119 of 2121, 10841 unjudged), recall 0.882 (2119 of 2402)
+  wrong in task299, not in e5480cf: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/regex-automata-0.4.18; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve; without dev-dependencies
+  rust-analyzer's build: cargo metadata resolved, the default features
+regex-automata-0.4.18: 100 files, 3432 definitions and 59907 references in SCIP (rust-analyzer 2026-09-28); left out: 2984 references to a symbol of the crate it places nowhere, those to 8 it places twice
+  e5480cf: precision 0.995 (11810 of 11874, 1088 unjudged), recall 0.794 (11814 of 14884)
+  task299: precision 0.995 (11810 of 11874, 1088 unjudged), recall 0.794 (11814 of 14884)
+  wrong in task299, not in e5480cf: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-0.6.4; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve
+  rust-analyzer's build: cargo metadata failed offline, --no-deps: no feature
+objc2-0.6.4: 95 files, 1916 definitions and 19800 references in SCIP (rust-analyzer 2026-09-28); left out: 1586 references to a symbol of the crate it places nowhere, those to 11 it places twice
+  e5480cf: precision 0.995 (5479 of 5509, 580 unjudged), recall 0.850 (5480 of 6449)
+  task299: precision 0.995 (5479 of 5509, 580 unjudged), recall 0.850 (5480 of 6449)
+  wrong in task299, not in e5480cf: 0
+run 2026-10-12: /home/roldant/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/objc2-0.6.4; builds e5480cf /tmp/graff-299/builds/head-resolve, task299 /tmp/graff-299/builds/final-resolve; without dev-dependencies
+  rust-analyzer's build: cargo metadata failed offline, --no-deps: no feature
+objc2-0.6.4: 95 files, 1916 definitions and 19800 references in SCIP (rust-analyzer 2026-09-28); left out: 1586 references to a symbol of the crate it places nowhere, those to 11 it places twice
+  e5480cf: precision 0.995 (5479 of 5509, 580 unjudged), recall 0.850 (5480 of 6449)
+  task299: precision 0.995 (5479 of 5509, 580 unjudged), recall 0.850 (5480 of 6449)
+  wrong in task299, not in e5480cf: 0

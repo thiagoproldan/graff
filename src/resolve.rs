@@ -11,9 +11,13 @@
 //! external: std's, or a dependency's.
 //!
 //! A use item under a `#[cfg(..)]` the build leaves out brings in nothing:
-//! the build is one on the host graff runs on, its picks unknown (`cfg`).
-//! In code the host's build leaves out, every use item counts, as graff
-//! does not tell which build compiles it.
+//! the build is one on the host graff runs on, with the features the
+//! packages' manifests enable by default (`cargo`), its other picks unknown
+//! (`cfg`). Code it leaves out for its features alone -- a `#[cfg(feature =
+//! "x")]` item with `x` off, a bench whose `required-features` are off --
+//! is read as the host's build with its features unknown, which compiles
+//! it with others on. In code the host's builds leave out, every use item
+//! counts, as graff does not tell which build compiles it.
 //!
 //! Besides the calls and references read out of the files, each use item is
 //! an edge, and so is the type a path goes through: `Storage` in
@@ -21,6 +25,7 @@
 
 pub mod bash;
 pub mod c;
+pub mod cargo;
 pub(crate) mod cfg;
 pub mod markdown;
 pub mod nix;
@@ -32,6 +37,8 @@ use std::sync::LazyLock;
 
 use crate::extract::{Branch, CallKind, Extraction, Kind, RefKind, Symbol};
 use crate::lang::Language;
+use cargo::Features;
+use cfg::Build;
 
 /// The names of the methods std's types have, as evals/resolve/std_methods.py
 /// wrote them.
@@ -491,13 +498,15 @@ fn applied<'a>(files: &'a [File], places: &Places) -> HashMap<(String, &'a str),
 /// or in a file it leaves out, or loads it under a `cfg_attr` the host's
 /// build reads false, `#[cfg_attr(windows, path = "windows.rs")]`. A file
 /// no item loads is a crate's root, or one where Cargo's layout puts it:
-/// built.
+/// built, unless it is `skipped`, the root of a target the build leaves out
+/// for its `required-features`.
 fn files_left_out(
     files: &[File],
     places: &Places,
     parents: &[Vec<Option<usize>>],
     left_out: &[Vec<bool>],
-    scripted: &[bool],
+    builds: &[Build],
+    skipped: &[bool],
 ) -> Vec<bool> {
     fn visit(
         f: usize,
@@ -506,7 +515,7 @@ fn files_left_out(
         places: &Places,
         parents: &[Vec<Option<usize>>],
         left_out: &[Vec<bool>],
-        scripted: &[bool],
+        builds: &[Build],
     ) -> bool {
         if let Some(known) = out[f] {
             return known;
@@ -520,15 +529,17 @@ fn files_left_out(
             let here = around(branches, &parents[g], line)
                 .next()
                 .is_some_and(|b| left_out[g][b])
-                || condition.is_some_and(|c| cfg::value(c, scripted[g]) == Some(false));
-            all = all && (here || visit(g, out, files, places, parents, left_out, scripted));
+                || condition.is_some_and(|c| cfg::value(c, builds[g]) == Some(false));
+            all = all && (here || visit(g, out, files, places, parents, left_out, builds));
         }
         out[f] = Some(all);
         all
     }
-    let mut out = vec![None; files.len()];
+    let mut out: Vec<Option<bool>> = (0..files.len())
+        .map(|f| (skipped[f] && places.loaders(f).is_empty()).then_some(true))
+        .collect();
     (0..files.len())
-        .map(|f| visit(f, &mut out, files, places, parents, left_out, scripted))
+        .map(|f| visit(f, &mut out, files, places, parents, left_out, builds))
         .collect()
 }
 
@@ -537,14 +548,6 @@ fn files_left_out(
 /// manifest's `build` names most. A package is the folder above its src/,
 /// tests/, examples/ or benches/.
 fn scripted(files: &[File]) -> Vec<bool> {
-    let package = |path: &str| -> String {
-        let parts: Vec<&str> = path.split('/').collect();
-        let at = parts
-            .iter()
-            .position(|part| matches!(*part, "src" | "tests" | "examples" | "benches"))
-            .unwrap_or(parts.len() - 1);
-        parts[..at].join("/")
-    };
     let scripts: HashSet<String> = files
         .iter()
         .filter_map(|f| {
@@ -558,7 +561,7 @@ fn scripted(files: &[File]) -> Vec<bool> {
         .collect();
     files
         .iter()
-        .map(|f| scripts.contains(&package(f.path)))
+        .map(|f| scripts.contains(cargo::package(f.path)))
         .collect()
 }
 
@@ -931,32 +934,52 @@ struct Index<'a> {
     /// of the walk, once looked up: libc's modules, joined by chains of
     /// `pub use self::x::*;`, were walked again for every name and path.
     /// With it, whether the lookup met a use item the host's build leaves
-    /// out.
-    brought: RefCell<HashMap<Brought, (Found, bool)>>,
+    /// out, one its features decide, and one that brings the name in from
+    /// outside the crate (`touched`, `featured`, `outside`).
+    brought: RefCell<HashMap<Brought, (Found, [bool; 3])>>,
     /// Each file's branches' parents, as `nesting` gives them: its items
     /// under a `#[cfg(..)]` a build on some host may leave out.
     parents: Vec<Vec<Option<usize>>>,
-    /// Whether the host's build leaves out what each file's branches hold.
-    left_out: Vec<Vec<bool>>,
-    /// Whether the host's build leaves out each file.
-    file_left_out: Vec<bool>,
-    /// Whether the host's build leaves out each file for another it is a
-    /// module with: what it defines is not the module's there.
-    superseded: Vec<bool>,
-    /// Whether the lookups under way are of code the host's build leaves
-    /// out, which another build compiles: every use item counts there.
-    elsewhere: Cell<bool>,
-    /// Whether the lookup under way met a use item the host's build leaves
-    /// out.
+    /// Whether each of the host's builds, `Reading::Host`'s and
+    /// `Reading::Unfeatured`'s, leaves out what each file's branches hold.
+    left_out: [Vec<Vec<bool>>; 2],
+    /// Whether each of them leaves out each file.
+    file_left_out: [Vec<bool>; 2],
+    /// Whether each of them leaves out each file for another it is a module
+    /// with: what it defines is not the module's there.
+    superseded: [Vec<bool>; 2],
+    /// The build the lookups under way are read under.
+    reading: Cell<Reading>,
+    /// Whether the lookup under way met a use item or a file one of the
+    /// host's builds leaves out.
     touched: Cell<bool>,
+    /// Whether it met one the host's builds differ on: one its features
+    /// decide.
+    featured: Cell<bool>,
+    /// Whether it met a use item that brings the name in from outside the
+    /// crate, in every build: one whose path the host's features do not
+    /// decide.
+    outside: Cell<bool>,
+}
+
+/// The build that compiles the code a lookup is of, as graff reads it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Reading {
+    /// The host's, with the features its packages' manifests enable.
+    Host,
+    /// The host's with its features unknown: of code the first leaves out
+    /// for its features alone, which the host's build with others compiles.
+    Unfeatured,
+    /// Some other host's: of code the host's builds leave out, where every
+    /// use item counts, as graff does not tell which build compiles it.
+    Every,
 }
 
 /// What a lookup of what use items and globs bring in is kept by: the
 /// module, the name, the depth, for a file another file is a module with,
-/// that file, which sees none of the other's definitions, and whether it
-/// read every use item, for code the host's build leaves out, if that
-/// changed what it met.
-type Brought = (Scope, String, usize, Option<usize>, bool);
+/// that file, which sees none of the other's definitions, and the build it
+/// was read under, if that changed what it met (else `Reading::Host`).
+type Brought = (Scope, String, usize, Option<usize>, Reading);
 
 #[derive(Default)]
 struct Imports<'a> {
@@ -964,11 +987,11 @@ struct Imports<'a> {
     globs: Vec<Imported<'a>>,
 }
 
-/// A use item's path, and whether the host's build compiles it.
+/// A use item's path, and whether each of the host's builds compiles it.
 #[derive(Clone, Copy)]
 struct Imported<'a> {
     path: &'a str,
-    hosted: bool,
+    hosted: [bool; 2],
 }
 
 const TYPES: [Kind; 5] = [
@@ -980,7 +1003,7 @@ const TYPES: [Kind; 5] = [
 ];
 
 impl<'a> Index<'a> {
-    fn new(files: &'a [File<'a>], libraries: &[Library]) -> Index<'a> {
+    fn new(files: &'a [File<'a>], libraries: &[Library], features: &Features) -> Index<'a> {
         let libs = libs(files.iter().map(|f| f.path));
         let mut index = Index {
             files,
@@ -1002,11 +1025,13 @@ impl<'a> Index<'a> {
             imports: HashMap::new(),
             brought: RefCell::new(HashMap::new()),
             parents: Vec::new(),
-            left_out: Vec::new(),
-            file_left_out: Vec::new(),
-            superseded: Vec::new(),
-            elsewhere: Cell::new(false),
+            left_out: Default::default(),
+            file_left_out: Default::default(),
+            superseded: Default::default(),
+            reading: Cell::new(Reading::Host),
             touched: Cell::new(false),
+            featured: Cell::new(false),
+            outside: Cell::new(false),
         };
         index.parents = files
             .iter()
@@ -1014,38 +1039,58 @@ impl<'a> Index<'a> {
             .collect();
         let scripted = scripted(files);
         let applied = applied(files, &index.places);
-        index.left_out = (0..files.len())
-            .map(|f| {
-                let crate_name = &index.places.of(f).0;
-                let rust = files[f].language == Language::Rust;
-                // `name!`: the items a macro of the crate is given.
-                let value = |condition: &str| match condition.strip_suffix('!').filter(|_| rust) {
-                    Some(name) => {
-                        let applied = applied.get(&(crate_name.clone(), name))?;
-                        cfg::value(applied.as_ref()?, scripted[f])
-                    }
-                    None => cfg::value(condition, scripted[f]),
-                };
-                left_out(&files[f].extraction.branches, &index.parents[f], value)
-            })
-            .collect();
-        index.file_left_out = files_left_out(
-            files,
-            &index.places,
-            &index.parents,
-            &index.left_out,
-            &scripted,
-        );
-        index.superseded = (0..files.len())
-            .map(|f| {
-                index.file_left_out[f]
-                    && index
-                        .places
-                        .alternatives(f)
-                        .iter()
-                        .any(|&g| !index.file_left_out[g])
-            })
-            .collect();
+        for (b, features) in [
+            (Reading::Host, features),
+            (Reading::Unfeatured, &Features::default()),
+        ] {
+            let b = b as usize;
+            let builds: Vec<Build> = scripted
+                .iter()
+                .zip(files)
+                .map(|(&scripted, file)| Build {
+                    scripted,
+                    features: features.of(file.path),
+                })
+                .collect();
+            index.left_out[b] = (0..files.len())
+                .map(|f| {
+                    let crate_name = &index.places.of(f).0;
+                    let rust = files[f].language == Language::Rust;
+                    // `name!`: the items a macro of the crate is given.
+                    let value = |condition: &str| match condition.strip_suffix('!').filter(|_| rust)
+                    {
+                        Some(name) => {
+                            let applied = applied.get(&(crate_name.clone(), name))?;
+                            cfg::value(applied.as_ref()?, builds[f])
+                        }
+                        None => cfg::value(condition, builds[f]),
+                    };
+                    left_out(&files[f].extraction.branches, &index.parents[f], value)
+                })
+                .collect();
+            let skipped: Vec<bool> = files
+                .iter()
+                .map(|file| features.skipped(file.path))
+                .collect();
+            index.file_left_out[b] = files_left_out(
+                files,
+                &index.places,
+                &index.parents,
+                &index.left_out[b],
+                &builds,
+                &skipped,
+            );
+            index.superseded[b] = (0..files.len())
+                .map(|f| {
+                    index.file_left_out[b][f]
+                        && index
+                            .places
+                            .alternatives(f)
+                            .iter()
+                            .any(|&g| !index.file_left_out[b][g])
+                })
+                .collect();
+        }
         let mut waiting = Vec::new();
         for (f, file) in files.iter().enumerate() {
             let inline: HashMap<String, &Symbol> = file
@@ -1065,10 +1110,13 @@ impl<'a> Index<'a> {
             for import in file.extraction.imports.iter().filter(|i| i.via.is_none()) {
                 let branches = &file.extraction.branches;
                 let branch = around(branches, &index.parents[f], import.line).next();
+                let hosted = |b: usize| {
+                    !(index.file_left_out[b][f]
+                        || branch.is_some_and(|at| index.left_out[b][f][at]))
+                };
                 let imported = Imported {
                     path: &import.path,
-                    hosted: !(index.file_left_out[f]
-                        || branch.is_some_and(|b| index.left_out[f][b])),
+                    hosted: [hosted(0), hosted(1)],
                 };
                 // In each module the file is, as its definitions are.
                 for place in index.places.all(f).to_vec() {
@@ -1092,6 +1140,7 @@ impl<'a> Index<'a> {
             .into_iter()
             .map(|d| index.place_associated(d))
             .collect();
+        index.reading.set(Reading::Host);
         for (d, types, traits) in placed {
             let symbol = index.symbol(d);
             // Each crate the file is in.
@@ -1198,6 +1247,8 @@ impl<'a> Index<'a> {
     /// traits it implements; else the type, trait or enum that holds it.
     fn place_associated(&self, d: Definition) -> (Definition, Vec<Definition>, Vec<Definition>) {
         let symbol = self.symbol(d);
+        // The types it names, as the build that compiles it reads them.
+        self.read_under(d.file, symbol.start);
         if symbol.kind != Kind::Impl {
             return (d, self.self_types(d.file, &symbol.qualified), Vec::new());
         }
@@ -1440,16 +1491,26 @@ impl<'a> Index<'a> {
     /// another the module is, as `#[cfg_attr(windows, path = "windows.rs")]`
     /// leaves windows.rs out on Linux.
     fn built(&self, found: Vec<Definition>) -> Vec<Definition> {
-        if found.iter().all(|d| !self.superseded[d.file]) {
+        if found
+            .iter()
+            .all(|d| !self.superseded[0][d.file] && !self.superseded[1][d.file])
+        {
             return found;
         }
         self.touched.set(true);
-        if self.elsewhere.get() {
-            return found;
+        if found
+            .iter()
+            .any(|d| self.superseded[0][d.file] != self.superseded[1][d.file])
+        {
+            self.featured.set(true);
         }
+        let b = match self.reading.get() {
+            Reading::Every => return found,
+            b => b as usize,
+        };
         found
             .into_iter()
-            .filter(|d| !self.superseded[d.file])
+            .filter(|d| !self.superseded[b][d.file])
             .collect()
     }
 
@@ -1485,53 +1546,84 @@ impl<'a> Index<'a> {
             return None;
         }
         let alone = self.places.alternatives(file).is_empty();
-        let elsewhere = self.elsewhere.get();
+        let reading = self.reading.get();
         let mut key = (
             scope.clone(),
             name.to_string(),
             depth,
             (!alone).then_some(file),
-            false,
+            Reading::Host,
         );
-        // A lookup that met no use item the host's build leaves out is the
-        // same for code it leaves out.
-        for every in [false, elsewhere] {
-            key.4 = every;
-            if let Some((found, touched)) = self.brought.borrow().get(&key)
-                && (every == elsewhere || !touched)
+        // A lookup that met no use item or file the host's builds leave out
+        // is the same for any build.
+        for read in [Reading::Host, reading] {
+            key.4 = read;
+            if let Some((found, met)) = self.brought.borrow().get(&key)
+                && (read == reading || !met[0])
             {
-                self.touched.set(self.touched.get() || *touched);
+                self.meet(*met);
                 return found.clone();
             }
         }
-        let outer = self.touched.replace(false);
+        let outer = self.met();
+        self.touched.set(false);
+        self.featured.set(false);
+        self.outside.set(false);
         let found = self.brought_in(file, scope, name, depth);
-        let touched = self.touched.get();
-        self.touched.set(outer || touched);
-        key.4 = elsewhere && touched;
-        self.brought
-            .borrow_mut()
-            .insert(key, (found.clone(), touched));
+        let met = self.met();
+        self.touched.set(outer[0]);
+        self.featured.set(outer[1]);
+        self.outside.set(outer[2]);
+        self.meet(met);
+        key.4 = if met[0] { reading } else { Reading::Host };
+        self.brought.borrow_mut().insert(key, (found.clone(), met));
         found
     }
 
+    /// What the lookup under way met: `touched`, `featured`, `outside`.
+    fn met(&self) -> [bool; 3] {
+        [self.touched.get(), self.featured.get(), self.outside.get()]
+    }
+
+    /// Adds to what the lookup under way met what another did.
+    fn meet(&self, met: [bool; 3]) {
+        self.touched.set(self.touched.get() || met[0]);
+        self.featured.set(self.featured.get() || met[1]);
+        self.outside.set(self.outside.get() || met[2]);
+    }
+
     /// Reads the lookups that follow as the build that compiles a line of a
-    /// file does: the host's, unless it leaves the line out; then, as graff
-    /// does not tell which build compiles it, every use item counts.
+    /// file does: the host's, unless it leaves the line out; then the
+    /// host's with other features, unless that leaves it out too; then, as
+    /// graff does not tell which build compiles it, every use item counts.
     fn read_under(&self, file: usize, line: u32) {
         let branches = &self.files[file].extraction.branches;
         let innermost = around(branches, &self.parents[file], line).next();
-        self.elsewhere
-            .set(self.file_left_out[file] || innermost.is_some_and(|b| self.left_out[file][b]));
+        let left_out = |b: usize| {
+            self.file_left_out[b][file] || innermost.is_some_and(|at| self.left_out[b][file][at])
+        };
+        self.reading.set(if !left_out(0) {
+            Reading::Host
+        } else if !left_out(1) {
+            Reading::Unfeatured
+        } else {
+            Reading::Every
+        });
     }
 
     /// Whether the build the lookups are read under compiles a use item.
     fn compiled(&self, import: &Imported) -> bool {
-        if import.hosted {
+        if import.hosted == [true, true] {
             return true;
         }
         self.touched.set(true);
-        self.elsewhere.get()
+        if import.hosted[0] != import.hosted[1] {
+            self.featured.set(true);
+        }
+        match self.reading.get() {
+            Reading::Every => true,
+            b => import.hosted[b as usize],
+        }
     }
 
     /// A name a module's use items or globs bring in, those the build the
@@ -1548,14 +1640,23 @@ impl<'a> Index<'a> {
             .filter(|i| self.compiled(i))
             .collect();
         if !named.is_empty() {
+            let mut outside = false;
             for import in named {
-                if let Some((found, _)) =
-                    self.path(file, scope, &segments(import.path), None, depth + 1)
+                let outer = self.featured.replace(false);
+                let found = self.path(file, scope, &segments(import.path), None, depth + 1);
+                let featured = self.featured.replace(outer);
+                self.featured.set(outer || featured);
+                if let Some((found, _)) = found
                     && !found.is_empty()
                 {
                     return Some((found, Rule::Import));
                 }
+                // A path that finds nothing in the crate whatever its
+                // features leads outside it; one their absence empties may
+                // lead to the crate's own item.
+                outside |= !featured;
             }
+            self.outside.set(self.outside.get() || outside);
             // Brought in from outside the crate: no definition of it here counts.
             return Some((Vec::new(), Rule::Import));
         }
@@ -1734,16 +1835,42 @@ impl<'a> Index<'a> {
             Use::Call(CallKind::Macro) => self.unique(file, &scope.0, site.name, |d| {
                 self.symbol(d).kind == Kind::Macro
             }),
-            _ => match site.path.map(segments) {
+            _ => self.or_unfeatured(|| match site.path.map(segments) {
                 Some(parts) if parts.len() > 1 => self.path(file, scope, &parts, site.from, 0),
                 _ => self
                     .visible(file, scope, site.from, site.name, 0)
                     .or_else(|| self.unique(file, &scope.0, site.name, |_| true)),
-            },
+            }),
         };
         found.map_or(Resolution::External, |(definitions, rule)| {
             one(definitions, rule)
         })
+    }
+
+    /// What a lookup finds as the build it is read under, or, if that is
+    /// the host's and it finds nothing for what the host's features left
+    /// out, as the host's build with other features: code the host's build
+    /// compiles names nothing of the crate it leaves out, so the build that
+    /// compiles this code has them -- a test that needs `full`, an item a
+    /// macro puts under a cfg graff does not read.
+    fn or_unfeatured(&self, lookup: impl Fn() -> Found) -> Found {
+        self.featured.set(false);
+        self.outside.set(false);
+        let found = lookup();
+        let nothing = found.as_ref().is_none_or(|(found, _)| found.is_empty());
+        // `use std::sync::Condvar;` where the host's features leave out
+        // `use crate::parking_lot::Condvar;`: std's, as the host builds it.
+        let outside = self.outside.get();
+        if !nothing || outside || !self.featured.get() || self.reading.get() != Reading::Host {
+            return found;
+        }
+        self.reading.set(Reading::Unfeatured);
+        let unfeatured = lookup();
+        self.reading.set(Reading::Host);
+        match unfeatured {
+            Some((other, rule)) if !other.is_empty() => Some((other, rule)),
+            _ => found,
+        }
     }
 
     /// The type a path goes through, as an edge of its own: `Storage` in
@@ -1764,7 +1891,9 @@ impl<'a> Index<'a> {
         if self.module(file, scope, prefix, 0).is_some() {
             return None;
         }
-        let (types, rule) = self.type_of(file, scope, prefix, from, 0);
+        let (types, rule) = self
+            .or_unfeatured(|| Some(self.type_of(file, scope, prefix, from, 0)))
+            .unwrap_or((Vec::new(), Rule::Path));
         if types.is_empty() && !segment.starts_with(char::is_uppercase) {
             return None;
         }
@@ -1836,9 +1965,9 @@ struct Site<'a> {
 /// Every call and reference of the files, each use item and each type a
 /// path goes through, and what each reaches: each language's files among
 /// themselves. `libraries` names the packages' libraries, for their other
-/// crates' paths.
-pub fn resolve(files: &[File], libraries: &[Library]) -> Vec<Edge> {
-    resolve_placed(files, libraries, None)
+/// crates' paths, and `features` gives the features their builds enable.
+pub fn resolve(files: &[File], libraries: &[Library], features: &Features) -> Vec<Edge> {
+    resolve_placed(files, libraries, features, None)
 }
 
 /// What `resolve` does, the Nix options where `placement` has them, when
@@ -1847,6 +1976,7 @@ pub fn resolve(files: &[File], libraries: &[Library]) -> Vec<Edge> {
 pub fn resolve_placed(
     files: &[File],
     libraries: &[Library],
+    features: &Features,
     placement: Option<&nix::Placement>,
 ) -> Vec<Edge> {
     let rust: Vec<usize> = (0..files.len())
@@ -1864,7 +1994,7 @@ pub fn resolve_placed(
         file: rust[d.file],
         symbol: d.symbol,
     };
-    let mut edges: Vec<Edge> = resolve_rust(&crates, libraries)
+    let mut edges: Vec<Edge> = resolve_rust(&crates, libraries, features)
         .into_iter()
         .map(|edge| Edge {
             file: rust[edge.file],
@@ -1890,8 +2020,8 @@ pub fn resolve_placed(
 }
 
 /// What `resolve` does for a crate's files.
-fn resolve_rust(files: &[File], libraries: &[Library]) -> Vec<Edge> {
-    let index = Index::new(files, libraries);
+fn resolve_rust(files: &[File], libraries: &[Library], features: &Features) -> Vec<Edge> {
+    let index = Index::new(files, libraries, features);
     let mut edges = Vec::new();
     for (f, file) in files.iter().enumerate() {
         let calls = file.extraction.calls.iter().map(|c| Site {
@@ -2096,13 +2226,19 @@ fn render() {}
         edges_of(PACKAGE)
     }
 
-    /// Each edge of a package's files, as `edges` gives them.
+    /// Each edge of a package's files, as `edges` gives them; a file
+    /// other than a .rs, its Cargo.toml, is read as `cargo::features` reads
+    /// it.
     fn edges_of(package: &[(&str, &str)]) -> Vec<(String, u32, String, String, String)> {
-        let extractions: Vec<Extraction> = package
+        let rust: Vec<&(&str, &str)> = package
+            .iter()
+            .filter(|(path, _)| path.ends_with(".rs"))
+            .collect();
+        let extractions: Vec<Extraction> = rust
             .iter()
             .map(|(_, source)| extract::extract(Language::Rust, source.as_bytes()))
             .collect();
-        let files: Vec<File> = package
+        let files: Vec<File> = rust
             .iter()
             .zip(&extractions)
             .map(|((path, _), extraction)| File {
@@ -2115,7 +2251,13 @@ fn render() {}
             package: "",
             name: "demo",
         }];
-        resolve(&files, &libraries)
+        let read = |path: &str| {
+            package
+                .iter()
+                .find(|(p, _)| *p == path)
+                .map(|(_, text)| text.to_string())
+        };
+        resolve(&files, &libraries, &cargo::features(&files, &read))
             .into_iter()
             .map(|edge| {
                 let reached = match &edge.resolution {
@@ -2193,7 +2335,7 @@ fn render() {}
             language: Language::Rust,
             extraction: &extraction,
         }];
-        let task = resolve(&files, &[])
+        let task = resolve(&files, &[], &cargo::Features::default())
             .into_iter()
             .find(|edge| edge.line == 11 && edge.name == "Task")
             .expect("the use of `Task` in f");
@@ -2756,6 +2898,158 @@ fn render() {}
         assert_eq!(
             reaches(&edges, "src/lib.rs:14", "open", "call free"),
             format!("{live} open (glob)")
+        );
+    }
+
+    #[test]
+    fn the_features_the_manifest_enables_by_default_pick_the_build() {
+        // mio's src/sys/mod.rs: `os-poll`, off by default, picks the unix
+        // module's glob over the shell's.
+        let package = |default: &'static str| {
+            [
+                (
+                    "Cargo.toml",
+                    format!("[package]\nname = \"demo\"\n\n[features]\ndefault = [{default}]\nos-poll = []\n"),
+                ),
+                (
+                    "src/lib.rs",
+                    "macro_rules! cfg_os_poll {\n    ($($item:item)*) => { $( #[cfg(feature = \"os-poll\")] $item )* }\n}\nmod sys;\nmod a { pub fn pick() {} }\nmod b { pub fn pick() {} }\n#[cfg(feature = \"os-poll\")]\nuse a::pick;\n#[cfg(not(feature = \"os-poll\"))]\nuse b::pick;\npub fn f(s: sys::Selector) {\n    pick();\n}\n".to_string(),
+                ),
+                (
+                    "src/sys/mod.rs",
+                    "cfg_os_poll! {\n    mod unix;\n    pub use self::unix::*;\n}\nmod shell;\npub use self::shell::*;\n".to_string(),
+                ),
+                ("src/sys/unix.rs", "pub struct Selector;\n".to_string()),
+                ("src/sys/shell.rs", "pub struct Selector;\n".to_string()),
+            ]
+        };
+        for (default, selector, pick) in [
+            ("", "src/sys/shell.rs", "src/lib.rs b::pick"),
+            ("\"os-poll\"", "src/sys/unix.rs", "src/lib.rs a::pick"),
+        ] {
+            let files = package(default);
+            let files: Vec<(&str, &str)> = files.iter().map(|(p, t)| (*p, t.as_str())).collect();
+            let edges = edges_of(&files);
+            assert!(
+                reaches(&edges, "src/lib.rs:11", "Selector", "reference type")
+                    .starts_with(selector),
+                "{default}: {edges:?}"
+            );
+            assert!(
+                reaches(&edges, "src/lib.rs:12", "pick", "call free").starts_with(pick),
+                "{default}: {edges:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn code_a_feature_leaves_out_is_the_hosts_build_with_other_features() {
+        // Code a feature leaves out is the host's build with other features:
+        // rustix's `#[cfg(feature = "event")] mod event;`, whose files
+        // reach `crate::backend::fd`, which the target picks.
+        let host = if cfg!(windows) {
+            "src/lib.rs win::Sock"
+        } else {
+            "src/lib.rs unix::Fd"
+        };
+        let edges = edges_of(&[
+            (
+                "Cargo.toml",
+                "[package]\nname = \"demo\"\n\n[features]\nevent = []\n",
+            ),
+            (
+                "src/lib.rs",
+                "#[cfg(feature = \"event\")]\nmod event;\nmod win { pub struct Sock; }\nmod unix { pub struct Fd; }\n#[cfg(windows)]\nmod fd {\n    pub use crate::win::Sock as Fd;\n}\n#[cfg(not(windows))]\nmod fd {\n    pub use crate::unix::*;\n}\n",
+            ),
+            ("src/event.rs", "use crate::fd::Fd;\npub fn f(x: Fd) {}\n"),
+        ]);
+        assert!(
+            reaches(&edges, "src/event.rs:2", "Fd", "reference type").starts_with(host),
+            "{edges:?}"
+        );
+        // And so are the types its impls name: syn's src/gen/debug.rs, whose
+        // `impl crate::Item` only `full` brings in.
+        let edges = edges_of(&[
+            (
+                "Cargo.toml",
+                "[package]\nname = \"demo\"\n\n[features]\nfull = []\n",
+            ),
+            (
+                "src/lib.rs",
+                "#[cfg(feature = \"full\")]\nmod item;\n#[cfg(feature = \"full\")]\npub use crate::item::Item;\nmod debug;\n",
+            ),
+            ("src/item.rs", "pub struct Item;\n"),
+            (
+                "src/debug.rs",
+                "#[cfg(feature = \"full\")]\nimpl crate::Item {\n    fn show(&self) {\n        self.debug();\n    }\n    fn debug(&self) {}\n}\n",
+            ),
+        ]);
+        assert!(
+            reaches(&edges, "src/debug.rs:4", "debug", "call method").starts_with("src/debug.rs"),
+            "{edges:?}"
+        );
+    }
+
+    #[test]
+    fn a_name_only_other_features_bring_in_is_read_as_their_build() {
+        // syn's tests/common/visit.rs names `syn::visit_mut::VisitMut`, which
+        // only `visit-mut` brings in; its tests are run with it on. But
+        // tokio's `Condvar` is std's where `parking_lot` is off.
+        let edges = edges_of(&[
+            (
+                "Cargo.toml",
+                "[package]\nname = \"demo\"\n\n[features]\nvisit-mut = []\nparking_lot = []\n",
+            ),
+            (
+                "src/lib.rs",
+                "mod gen {\n    #[cfg(feature = \"visit-mut\")]\n    pub mod visit_mut;\n}\n#[cfg(feature = \"visit-mut\")]\npub use crate::gen::visit_mut;\nmod parking_lot;\nmod sync {\n    #[cfg(feature = \"parking_lot\")]\n    pub use crate::parking_lot::Condvar;\n    #[cfg(not(feature = \"parking_lot\"))]\n    pub use std::sync::Condvar;\n}\nuse crate::sync::Condvar;\npub fn wait(c: Condvar) {}\n",
+            ),
+            ("src/gen/visit_mut.rs", "pub trait VisitMut {}\n"),
+            ("src/parking_lot.rs", "pub struct Condvar;\n"),
+            (
+                "tests/visit.rs",
+                "use demo::visit_mut::VisitMut;\npub fn f(v: &dyn VisitMut) {}\n",
+            ),
+        ]);
+        assert_eq!(
+            reaches(&edges, "tests/visit.rs:1", "VisitMut", "import"),
+            "src/gen/visit_mut.rs VisitMut (path)"
+        );
+        assert_eq!(
+            reaches(&edges, "tests/visit.rs:2", "VisitMut", "reference type"),
+            "src/gen/visit_mut.rs VisitMut (import)"
+        );
+        assert_eq!(
+            reaches(&edges, "src/lib.rs:14", "Condvar", "import"),
+            "external"
+        );
+        assert_eq!(
+            reaches(&edges, "src/lib.rs:15", "Condvar", "reference type"),
+            "external"
+        );
+    }
+
+    #[test]
+    fn a_target_its_required_features_leave_out_is_the_hosts_build_with_other_features() {
+        // A bench Cargo builds only with `full` on, as syn's benches/file.rs,
+        // is the host's build with other features too: `demo::File`, which
+        // only `full` brings in, is the library's.
+        let edges = edges_of(&[
+            (
+                "Cargo.toml",
+                "[package]\nname = \"demo\"\n\n[features]\nfull = []\n\n[[bench]]\nname = \"file\"\nrequired-features = [\"full\"]\n",
+            ),
+            (
+                "src/lib.rs",
+                "#[cfg(feature = \"full\")]\nmod file;\n#[cfg(feature = \"full\")]\npub use crate::file::File;\n",
+            ),
+            ("src/file.rs", "pub struct File;\n"),
+            ("benches/file.rs", "fn parse(f: demo::File) {}\n"),
+        ]);
+        assert!(
+            reaches(&edges, "benches/file.rs:1", "File", "reference type")
+                .starts_with("src/file.rs File"),
+            "{edges:?}"
         );
     }
 

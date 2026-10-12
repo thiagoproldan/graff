@@ -4,14 +4,18 @@
 //! `target_os`, `target_family`, `target_arch`, `target_pointer_width`,
 //! `target_endian`, `target_env`, `target_vendor`, `target_has_atomic` --
 //! is known, and so is `all`, `any` and `not` of what is known, `true` and
-//! `false`. What a build picks -- `feature`, `test`, `debug_assertions`,
-//! `miri`, `doc`, `panic`, `target_feature`, and every other name rustc
-//! knows (its `--check-cfg` list) -- stays unknown. A name rustc does not
-//! know is set only by `--cfg`: from a build script's `cargo::rustc-cfg`,
-//! so unknown in a package that has one, else false, as no build sets it
-//! but by RUSTFLAGS, which graff does not read (semver's
-//! `test_node_semver`, which only its CI sets). Conditions are written
-//! without spaces outside their strings, as the extraction keeps them.
+//! `false`. A `feature` is known where the package's manifest was read: on
+//! if the worktree's default build enables it (`cargo`), else off. What
+//! else a build picks -- `test`, `debug_assertions`, `miri`, `doc`,
+//! `panic`, `target_feature`, and every other name rustc knows (its
+//! `--check-cfg` list) -- stays unknown. A name rustc does not know is
+//! set only by `--cfg`: from a build script's `cargo::rustc-cfg`, so
+//! unknown in a package that has one, else false, as no build sets it but
+//! by RUSTFLAGS, which graff does not read (semver's `test_node_semver`,
+//! which only its CI sets). Conditions are written without spaces outside
+//! their strings, as the extraction keeps them.
+
+use std::collections::HashSet;
 
 /// The names the host's target sets, which `host` reads.
 const TARGET: &[&str] = &[
@@ -28,10 +32,9 @@ const TARGET: &[&str] = &[
 ];
 
 /// Whether a build on some host may read a condition as false, rather than
-/// unknown on every host: it names something the target sets, or a name
-/// rustc does not know, or is a literal (`any()`, `false`). One that names
-/// only what a build picks, `feature = "std"` or `all(test, not(miri))`,
-/// is not.
+/// unknown on every host: it names something the target sets, a feature,
+/// or a name rustc does not know, or is a literal (`any()`, `false`). One
+/// that names only what a build picks, `all(test, not(miri))`, is not.
 pub(crate) fn decidable(text: &str) -> bool {
     let mut quoted = false;
     let names = text.split(|c: char| {
@@ -40,7 +43,7 @@ pub(crate) fn decidable(text: &str) -> bool {
     });
     !names
         .filter(|name| !name.is_empty() && !matches!(*name, "all" | "any" | "not"))
-        .all(|name| KNOWN.contains(&name) && !TARGET.contains(&name))
+        .all(|name| KNOWN.contains(&name) && !TARGET.contains(&name) && name != "feature")
         || text.contains("()")
 }
 
@@ -143,23 +146,31 @@ fn predicate(text: &str) -> Option<(Predicate<'_>, &str)> {
     Some((predicate, rest))
 }
 
-/// What a condition is on the host, none if unknown. `scripted`: the
-/// crate's package has a build script, which may set any name.
-pub(super) fn value(text: &str, scripted: bool) -> Option<bool> {
+/// What a build of a crate's package sets beyond the host's target.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct Build<'a> {
+    /// The package has a build script, which may set any name.
+    pub scripted: bool,
+    /// The features the build enables, none if its manifest was not read.
+    pub features: Option<&'a HashSet<String>>,
+}
+
+/// What a condition is on the host, none if unknown.
+pub(crate) fn value(text: &str, build: Build) -> Option<bool> {
     match predicate(text)? {
-        (predicate, "") => value_of(&predicate, scripted),
+        (predicate, "") => value_of(&predicate, build),
         _ => None,
     }
 }
 
-fn value_of(predicate: &Predicate, scripted: bool) -> Option<bool> {
+fn value_of(predicate: &Predicate, build: Build) -> Option<bool> {
     let values = |parts: &[Predicate]| -> Vec<Option<bool>> {
-        parts.iter().map(|p| value_of(p, scripted)).collect()
+        parts.iter().map(|p| value_of(p, build)).collect()
     };
     match predicate {
         Predicate::Literal(holds) => Some(*holds),
-        Predicate::Option(name, value) => host(name, *value, scripted),
-        Predicate::Not(inner) => value_of(inner, scripted).map(|holds| !holds),
+        Predicate::Option(name, value) => host(name, *value, build),
+        Predicate::Not(inner) => value_of(inner, build).map(|holds| !holds),
         // Kleene's: one false part makes `all` false, one true part `any` true.
         Predicate::All(parts) => {
             let values = values(parts);
@@ -181,7 +192,7 @@ fn value_of(predicate: &Predicate, scripted: bool) -> Option<bool> {
 }
 
 /// A name, or a name and a value, as a build on the host has it.
-fn host(name: &str, value: Option<&str>, scripted: bool) -> Option<bool> {
+fn host(name: &str, value: Option<&str>, build: Build) -> Option<bool> {
     let is = |set: Option<&str>| Some(set? == value?);
     match name {
         "unix" | "windows" if value.is_none() => Some(std::env::consts::FAMILY == name),
@@ -208,8 +219,9 @@ fn host(name: &str, value: Option<&str>, scripted: bool) -> Option<bool> {
             "ptr" => Some(cfg!(target_has_atomic = "ptr")),
             _ => None,
         },
+        "feature" => Some(build.features?.contains(value?)),
         name if KNOWN.contains(&name) => None,
-        _ if scripted => None,
+        _ if build.scripted => None,
         _ => Some(false),
     }
 }
@@ -289,7 +301,7 @@ mod tests {
             ("all(unix", None),
             ("", None),
         ] {
-            assert_eq!(value(text, false), expected, "{text}");
+            assert_eq!(value(text, Build::default()), expected, "{text}");
         }
     }
 
@@ -302,9 +314,10 @@ mod tests {
             ("tokio_unstable", true),
             ("any()", true),
             ("false", true),
-            ("feature=\"std\"", false),
+            ("feature=\"std\"", true),
+            ("any(debug_assertions,feature=\"unix\")", true),
             ("all(test,not(miri))", false),
-            ("any(debug_assertions,feature=\"unix\")", false),
+            ("any(debug_assertions,doc)", false),
         ] {
             assert_eq!(decidable(text), expected, "{text}");
         }
@@ -312,8 +325,34 @@ mod tests {
 
     #[test]
     fn a_package_with_a_build_script_may_set_any_name() {
-        assert_eq!(value("test_node_semver", true), None);
-        assert_eq!(value("not(has_atomics)", true), None);
-        assert_eq!(value("test_node_semver", false), Some(false));
+        let scripted = Build {
+            scripted: true,
+            features: None,
+        };
+        assert_eq!(value("test_node_semver", scripted), None);
+        assert_eq!(value("not(has_atomics)", scripted), None);
+        assert_eq!(value("test_node_semver", Build::default()), Some(false));
+    }
+
+    #[test]
+    fn a_feature_is_known_where_the_manifest_was_read() {
+        let enabled: HashSet<String> = ["std".to_string()].into();
+        let read = Build {
+            scripted: false,
+            features: Some(&enabled),
+        };
+        for (text, expected) in [
+            ("feature=\"std\"", Some(true)),
+            ("feature=\"os-poll\"", Some(false)),
+            ("not(feature=\"os-poll\")", Some(true)),
+            ("all(feature=\"std\",test)", None),
+            ("any(feature=\"std\",test)", Some(true)),
+            // A bare `feature`, which Cargo never sets, as rustc's
+            // `--check-cfg` knows it.
+            ("feature", None),
+        ] {
+            assert_eq!(value(text, read), expected, "{text}");
+        }
+        assert_eq!(value("feature=\"std\"", Build::default()), None);
     }
 }

@@ -637,6 +637,18 @@ fn a_map_reads_its_graph_back_until_a_file_changes() {
     let text = fs::read_to_string(&lib).unwrap();
     fs::write(&lib, format!("{text}\n")).unwrap();
     assert_eq!(demo.ask(&["map"]), map);
+    // And so it is when the manifest enables other features, which no
+    // file graff reads shows.
+    index.execute("UPDATE graphs SET edges = x''", []).unwrap();
+    assert_eq!(demo.ask(&["map"]), flat);
+    let manifest = demo.repo.join("Cargo.toml");
+    let text = fs::read_to_string(&manifest).unwrap();
+    fs::write(
+        &manifest,
+        format!("{text}\n[features]\ndefault = [\"fast\"]\nfast = []\n"),
+    )
+    .unwrap();
+    assert_eq!(demo.ask(&["map"]), map);
 }
 
 #[test]

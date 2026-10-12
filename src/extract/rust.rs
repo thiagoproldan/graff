@@ -2133,7 +2133,8 @@ fn k() {
             .iter()
             .map(|b| (b.start, b.end, b.condition.as_str()))
             .collect();
-        // What only a build's picks decide, `feature` and `test`, is none.
+        // What only a build's picks decide, `test` and `debug_assertions`,
+        // is none; a `feature` is the package's manifest's.
         assert_eq!(
             got,
             vec![
@@ -2144,6 +2145,7 @@ fn k() {
                 (11, 11, "windows"),
                 (13, 20, "windows"),
                 (13, 20, "target_env=\"msvc\""),
+                (16, 18, "feature=\"x\""),
                 // A macro's own name: the resolver reads the cfg its body applies.
                 (16, 18, "m!"),
                 (22, 25, "any(miri,target_os=\"none\")"),

@@ -117,7 +117,10 @@ fn main() {
     let edges = if markdown {
         resolve::markdown::resolve(&files)
     } else {
-        resolve::resolve(&files, &libraries)
+        let features = resolve::cargo::features(&files, &|path| {
+            std::fs::read_to_string(root.join(path)).ok()
+        });
+        resolve::resolve(&files, &libraries, &features)
     };
     eprintln!(
         "{} files, {left} named in no language graff reads; {} edges resolved in {:.1} ms",

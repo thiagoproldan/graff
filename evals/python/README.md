@@ -10,7 +10,10 @@ import is found through its package, and an absolute one as decision 108
 settled: in the folders a `sys.path.insert` adds, evaluated from
 `__file__`, then the importing file's folder and those above it, the
 worktree's `src/`, and those a `sys.path.append` adds; a package's module
-looks in the top and `src/` before its own folder. A path is followed
+looks in the top and `src/` before its own folder; and a module's
+submodule is also the module its top puts in `sys.modules` under its
+own name, `sys.modules['collections.abc'] = _collections_abc`, where no
+file is so named. A path is followed
 through modules and classes, and through a variable assigned a name or a
 path and nothing else, `Pen = Turtle`, as through what that names, a
 base and a type included, and through a function's local so assigned,
@@ -619,3 +622,50 @@ calls those of task 124's run (`--calls`), on TLP's balanced profile:
   load 1.3, 38% slower; 5.2% more edges. The subclasses are read once,
   when a use first asks; what a class's subclasses reach is kept by the
   class, the method, the name and the branch the use is in.
+
+### Result, 2026-10-12 (tasks 461 and 419)
+
+Task 461 profiled examples/resolve on the library (perf 7.2.9, frame
+pointers, 10 kHz) and made it as fast as before task 383, its edges the
+same line by line on the library and the three small corpora. Task 419
+reads `sys.modules['collections.abc'] = _collections_abc` in
+collections/__init__.py as that package's submodule. Measured against
+main 4cd348a:
+
+|                                 | before 383, ddbfed4 | main, 4cd348a           | with both               |
+| ------------------------------- | ------------------- | ----------------------- | ----------------------- |
+| resolution of the library       | 336.8-346.2 ms      | 464.8-475.1 ms, 147,722 | 338.5-344.5 ms, 147,726 |
+| monitoring, the library         |                     | 0.917, recall 0.774     | 0.917, recall 0.774     |
+| ..., calls tied right           |                     | 4,260 of 4,646 (4,472)  | 4,263 of 4,650 (4,475)  |
+| pyright.py, the library         |                     | 0.992, recall 0.946     | 0.992, recall 0.946     |
+| ..., names tied right           |                     | 84,568 of 85,223        | 84,610 of 85,331        |
+
+- **Where the time went (task 461)**: the override work cost ~75 ms of
+  ~470, most of it SipHash and `format!` in the member lookups of each
+  subclass, done again for every method a use is in; and `top` and
+  `submodule`, unchanged since before, made three paths per lookup, a
+  sixth of all resolution. Now a class's members map a name to its
+  symbol, a scope's names are found by (scope, name), what each
+  subclass reads by a name is kept by class, name and branch, and a
+  folder's modules by (folder, name). The override work still costs
+  ~37 ms (examples/resolve with it turned off by a scratch switch,
+  314.9-320.6 ms against 352.5-357.5 ms, six runs each alternating):
+  reading every class's bases for the subclasses, and each subclass's
+  method resolution order.
+- **Timing**: 10 runs each, the three builds alternating, on AC, boost
+  off, EPP balance_power, load 5.9 at the start and 1.4 at the end.
+- **What `collections.abc` brings (task 419)**: 107 edges change and 4
+  are new. `from collections.abc import X` reaches `_collections_abc`'s
+  X, and through a base so named the override monitoring.py's run asked
+  for: MutableMapping.clear's `self.popitem()` reaches
+  RawConfigParser.popitem. os.py's `sys.modules['os.path'] = path` ties
+  `import os.path` and the module of `from os.path import ..` to
+  posixpath.py; before, only the names such an import brings were
+  found, through os's `path`.
+- **pyright.py's 66 new wrong ties** are each a module pyright reads in
+  typeshed's stub, outside the corpus: 43 to `_collections_abc.py`, 23
+  to `posixpath.py`. CPython runs those two files (collections/__init__.py
+  line 32, os.py line 103 on Linux).
+- **Calls**: of monitoring.py's, 3 more right and 1 more wrong,
+  Mapping.__eq__'s `self.items()` to RawConfigParser.items, an override
+  no test ran there.

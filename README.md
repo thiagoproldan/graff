@@ -61,7 +61,9 @@ it to or a star import brings. A relative import is found through its
 package, and an absolute one in the folders a `sys.path.insert` adds,
 evaluated from `__file__`, then the importing file's folder and those above
 it, the worktree's `src/`, and those a `sys.path.append` adds, a package's
-module looking in the top and `src/` before its own folder. A path is
+module looking in the top and `src/` before its own folder; a module's
+submodule is also what its top puts in `sys.modules` under its name,
+`collections.abc` in Python 3.14. A path is
 followed through modules and classes, and through a variable a module or a
 class assigns a name or a path and nothing else, `Pen = Turtle`, as through
 what that names, a class's base and a type included, and through a

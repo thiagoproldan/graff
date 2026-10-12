@@ -104,6 +104,7 @@ class Trace:
     def __init__(self, pairs, root, files):
         self.calls = collections.defaultdict(set)  # (file, line, name) -> {(file, name, line)}
         self.at_line = collections.defaultdict(set)  # (file, line) -> names called there
+        self.defined_at = collections.defaultdict(set)  # (file, line) -> {(file, name, line)} called there
         self.placeless = collections.Counter()  # calls with no place in the files, by why
         files = set(files)
 
@@ -126,6 +127,7 @@ class Trace:
                     self.placeless["outside the files"] += 1
                     continue
                 self.at_line[caller, line].add(name)
+                self.defined_at[caller, line].add((defined, name, first))
                 self.calls[caller, line, name].add((defined, name, first))
 
 
@@ -160,15 +162,41 @@ def meet(index, path, line, name, accepted, spread=SPREAD):
     return None
 
 
+def pointed(trace, texts, path, at):
+    """What the trace says was called at a line by a name the lines around
+    it do not write: through a pointer, which a field's name does not tell."""
+    text = "\n".join(texts[path][max(at - 1 - SPREAD, 0):at + SPREAD])
+    return {d for d in trace.defined_at.get((path, at), ()) if not word(d[1], text)}
+
+
 def score(edges, trace, texts):
     """graff's edges against the trace's calls; `texts` holds each file's
-    lines, which tell a call whose function is not named near its line."""
+    lines, which tell a call whose function is not named near its line. A
+    call through a struct's field is judged against what the trace shows
+    called by a name not written near its line."""
     judged = collections.defaultdict(collections.Counter)
     wrong = []
     for edge in edges:
         if not edge["use"].startswith("call") or edge["resolution"] != "resolved":
             continue
         if edge["target"]["kind"] not in CALLABLE:
+            continue
+        if edge["use"] == "call method":
+            ran = set()
+            for distance in range(SPREAD + 1):
+                for at in (edge["line"] - distance, edge["line"] + distance) if distance else (edge["line"],):
+                    ran = pointed(trace, texts, edge["path"], at)
+                    if ran:
+                        break
+                if ran:
+                    break
+            if not ran:
+                judged[edge["rule"]]["unjudged"] += 1
+            elif any(reaches(edge["target"], definition) for definition in ran):
+                judged[edge["rule"]]["correct"] += 1
+            else:
+                judged[edge["rule"]]["wrong"] += 1
+                wrong.append((edge, ran))
             continue
         at = meet(trace.calls, edge["path"], edge["line"], edge["name"], bool)
         if at is None:
@@ -182,9 +210,12 @@ def score(edges, trace, texts):
             wrong.append((edge, ran))
     tied = collections.defaultdict(list)
     lines = collections.defaultdict(list)
+    through = collections.defaultdict(list)
     for edge in edges:
         tied[edge["path"], edge["line"], edge["name"]].append(edge)
         lines[edge["path"], edge["line"]].append(edge)
+        if edge["use"] == "call method":
+            through[edge["path"], edge["line"], ""].append(edge)
     found, missed, shifted = collections.Counter(), [], 0
     for key, reached in sorted(trace.calls.items(), key=lambda item: (item[0], sorted(map(str, item[1])))):
         path, line, name = key
@@ -200,6 +231,10 @@ def score(edges, trace, texts):
                 continue
             near = meet(tied, path, line, name, bool)
             text = "\n".join(texts[path][max(line - 1 - SPREAD, 0):line + SPREAD])
+            if not word(name, text) and meet(through, path, line, "", right) is not None:
+                found["found"] += 1
+                found["through a field"] += 1
+                continue
             if definition[0] is None:
                 how = "a function outside the files"
             elif near is not None:
@@ -225,7 +260,7 @@ def how_tied(edge):
 def summary(judged, found):
     correct = sum(c["correct"] for c in judged.values())
     wrong = sum(c["wrong"] for c in judged.values())
-    truth = sum(n for how, n in found.items() if how != "a function outside the files")
+    truth = sum(n for how, n in found.items() if how not in ("a function outside the files", "through a field"))
     return {"precision": ratio(correct, correct + wrong), "correct": correct, "wrong": wrong,
             "unjudged": sum(c["unjudged"] for c in judged.values()),
             "recall": ratio(found["found"], truth), "found": found["found"], "truth": truth}
@@ -302,12 +337,12 @@ def main():
         f"broken resolver: precision {broken['precision']:.3f}, recall {broken['recall']:.3f}",
         f"graff: precision {real['precision']:.3f} ({real['correct']} of {real['correct'] + real['wrong']} judged; "
         f"{real['unjudged']} unjudged), recall {real['recall']:.3f} ({real['found']} of {real['truth']} calls "
-        f"of a function of the files; {shifted} met off their own line)",
+        f"of a function of the files; {shifted} met off their own line, {found['through a field']} through a struct's field)",
         "by rule: " + ", ".join(
             f"{rule} {c['correct']}/{c['correct'] + c['wrong']} ({c['unjudged']} unjudged)"
             for rule, c in sorted(judged.items())),
         "missed, by what graff did: " + ", ".join(
-            f"{n} {how}" for how, n in sorted(found.items()) if how != "found"),
+            f"{n} {how}" for how, n in sorted(found.items()) if how not in ("found", "through a field")),
     ]
     details = ["", "wrong edges:"]
     for edge, reached in wrong:

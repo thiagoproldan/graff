@@ -1,26 +1,14 @@
 run 2026-10-12
-graff eeb0cc8 with uncommitted changes
+graff 416d5b2 with uncommitted changes
 corpus kimi: a git repository at ac1584a (git archive), 32 C files
 truth: `make test` with CC building -O0 -g -fno-inline -finstrument-functions -fno-pie -no-pie and cyg.c, gcc (GCC) 16.2.0, OMP_NUM_THREADS 4; exit 0, the build said: ALL WEIGHTLESS TESTS PASSED
   9 programs ran, 1057 pairs of function and call, 0 lost; 771 calls placed in 19 of the files; 12 from a library
 
 broken resolver: precision 0.000, recall 0.000
-graff: precision 1.000 (802 of 802 judged; 496 unjudged), recall 0.992 (765 of 771 calls of a function of the files; 4 met off their own line)
-by rule: include 196/196 (229 unjudged), scope 606/606 (267 unjudged)
-missed, by what graff did: 6 not named near its line, through a pointer
+graff: precision 1.000 (808 of 808 judged; 502 unjudged), recall 1.000 (771 of 771 calls of a function of the files; 4 met off their own line, 6 through a struct's field)
+by rule: field 6/6 (6 unjudged), include 196/196 (229 unjudged), scope 606/606 (267 unjudged)
+missed, by what graff did: 
 
 wrong edges:
 
 missed calls:
-src/model/k3_bind.c:342 find_in_layer -> src/io/k3_trunk.c:90 find_in_layer; graff: not named near its line, through a pointer
-    if (src->find(src->ctx, q->name, &off, &nb, &dt) != 0) {
-tests/unit/test_cache.c:122 cache_get -> src/cache/k3_cache.c:236 cache_get; graff: not named near its line, through a pointer
-    if (cache.src.get(&cache.src, 0, e, &q) != 0) { bad++; continue; }
-tests/unit/test_cache.c:139 cache_getmany -> src/cache/k3_cache.c:132 cache_getmany; graff: not named near its line, through a pointer
-    cache.src.getmany(&cache.src, 0, ids, c.topk);
-tests/unit/test_cache.c:143 cache_get -> src/cache/k3_cache.c:236 cache_get; graff: not named near its line, through a pointer
-    if (cache.src.get(&cache.src, 0, ids[j], &q) != 0) { bad2++; continue; }
-tests/unit/test_cache.c:173 cache_getmany -> src/cache/k3_cache.c:132 cache_getmany; graff: not named near its line, through a pointer
-    cache.src.getmany(&cache.src, 0, ids, 4);
-tests/unit/test_cache.c:176 cache_get -> src/cache/k3_cache.c:236 cache_get; graff: not named near its line, through a pointer
-    if (cache.src.get(&cache.src, 0, e, &q) != 0) { bad3++; continue; }

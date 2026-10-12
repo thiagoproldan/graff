@@ -339,7 +339,11 @@ with flags of their own, which the wrapper's follow too.
   the one the build took;
 - **recall**: of the calls the trace shows of a function of the corpus,
   the share graff ties so. One whose function is named on no line near its
-  own was made through a pointer, or by a macro graff ties the line to.
+  own was made through a pointer, or by a macro graff ties the line to. A
+  call through a struct's field is judged on what the trace shows called
+  near its line by a name not written there (task 385): precision, if the
+  function graff ties it to is one of those; recall, if graff ties some
+  call near the line to the one the trace shows.
 
 GCC places a call inside another's arguments of several lines at the line
 the outer call starts, `printf("..",\n dt_name(t->dtype))`: an edge meets
@@ -360,24 +364,33 @@ pairs of function and call, none lost; 771 calls of 19 of the 32 files.
 |                            | kimi, 32 files        |
 | -------------------------- | --------------------- |
 | broken resolver, precision | 0.000                 |
-| precision                  | 1.000, 802 of 802     |
-| not judged                 | 496                   |
-| recall                     | 0.992, 765 of 771     |
+| precision                  | 1.000, 808 of 808     |
+| not judged                 | 502                   |
+| recall                     | 1.000, 771 of 771     |
 | met off their own line     | 4                     |
+| met through a field        | 6                     |
 
-By rule: `include` 196 of 196, `scope` 606 of 606.
+By rule: `field` 6 of 6, `include` 196 of 196, `scope` 606 of 606.
 
 - **Of two definitions in an `#if`'s branches, the one the build took**:
   src/io/k3_portable_io.h defines `k3_set_direct` for macOS and twice
   more for the other systems; graff ties k3_st.c's and k3_trunk.c's calls
   to one Linux runs, the trace's.
-- **The 6 missed are calls through a pointer**, which no name tells and
-  graff calls external, by design (`call method`, `get` and `find`): a
-  struct's field holding a function, `cache.src.get(..)` and
-  `cache.src.getmany(..)` in tests/unit/test_cache.c (5) reaching
-  k3_cache.c's `cache_get` and `cache_getmany`, and `src->find(..)` in
-  k3_bind.c reaching k3_trunk.c's `find_in_layer`. Only a run tells.
-- **Not judged**: 496 calls tied to a function at lines no test ran.
+- **The 6 calls through a pointer, which a field's name does not tell,
+  were missed before task 385** (graff called a `call method` external by
+  design) and are all found now: a struct's field holding a function,
+  `cache.src.get(..)` and `cache.src.getmany(..)` in tests/unit/test_cache.c
+  (5) reaching k3_cache.c's `cache_get` and `cache_getmany`, and
+  `src->find(..)` in k3_bind.c reaching k3_trunk.c's `find_in_layer`, each
+  the only function the worktree gives a field of that name (`.get =`,
+  `c->src.getmany = cond ? NULL : cache_getmany`, `src.find = ..`). Only
+  a run tells that they are right, and the checker now asks it of every
+  such call (`field` 6 of 6). Where several structs share a field's name
+  the call is ambiguous among what each gives it, as sqlite's amalgamation
+  shows: its 214,512 edges are the same in number; of its calls through a
+  field, 16 resolved to one function, 243 are ambiguous and 606 external
+  (a field a positional initializer fills, or no function is given).
+- **Not judged**: 502 calls tied to a function at lines no test ran.
 - **Cost**: with OpenMP's 16 threads, a first run took 6.6 min, 56 min of
   CPU, under a load of 11 to 18, the threads waiting on each other at
   -O0; with OMP_NUM_THREADS=4 the whole check, the build included, took

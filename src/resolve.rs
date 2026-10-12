@@ -251,6 +251,9 @@ pub enum Rule {
     /// C: a definition of a file the file includes, or of one that
     /// includes it; or the definition a prototype found there declares.
     Include,
+    /// C: the only function the worktree gives to a struct's field of the
+    /// name a call goes through.
+    Field,
     /// Markdown: what a link's fragment names, a section by its anchor or
     /// code by its line, or a path's `:line` or `:Name`.
     Anchor,
@@ -275,6 +278,7 @@ impl Rule {
             Rule::Environment => "environment",
             Rule::Caller => "caller",
             Rule::Include => "include",
+            Rule::Field => "field",
             Rule::Anchor => "anchor",
         }
     }

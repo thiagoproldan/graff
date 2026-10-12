@@ -13,7 +13,10 @@
 //! of a struct's field, `ops->run(x)`, a method call through it; any other
 //! name read outside a function's own -- a global, an enum's constant, a
 //! macro, a function passed along -- is a reference, and a type named is
-//! a type. A macro's body is read off its tokens: a name followed by `(`
+//! a type. A function given to a struct's field, `.get = cache_get`,
+//! `s->get = &cache_get` or either branch of `test ? NULL : cache_get`, is
+//! a reference that names the field (`typed`). A macro's body is read off
+//! its tokens: a name followed by `(`
 //! is a call, any other a reference, but the macro's parameters. A quoted
 //! `#include` is an import; one of `<..>` is the system's, an import too
 //! (`system`), which no edge follows.
@@ -1129,6 +1132,46 @@ impl<'s, 't> Reader<'s, 't> {
         });
     }
 
+    /// What is given to a struct's field: a name, or its address, is a
+    /// reference that says which field it is stored in (`typed`); any other
+    /// value is read as a use.
+    fn stored(&mut self, value: Node<'t>, field: &str, depth: usize) {
+        if depth > MAX_DEPTH {
+            self.out.too_deep = true;
+            return;
+        }
+        // Either branch of `test ? NULL : cache_getmany` may be what the
+        // field holds.
+        if value.kind() == "conditional_expression" {
+            if let Some(test) = value.child_by_field_name("condition") {
+                self.uses(test, depth + 1);
+            }
+            for branch in ["consequence", "alternative"] {
+                if let Some(branch) = value.child_by_field_name(branch) {
+                    self.stored(branch, field, depth + 1);
+                }
+            }
+            return;
+        }
+        let mut name = value;
+        if name.kind() == "pointer_expression"
+            && self.text(name).starts_with('&')
+            && let Some(argument) = name.child_by_field_name("argument")
+        {
+            name = argument;
+        }
+        if name.kind() == "identifier" && !self.locals.contains(self.text(name)) {
+            let at = self.out.references.len();
+            let text = self.text(name);
+            self.reference(name, text, RefKind::Value);
+            if self.out.references.len() > at {
+                self.out.references[at].typed = Some(field.to_string());
+            }
+        } else {
+            self.uses(value, depth);
+        }
+    }
+
     /// A struct's, a union's or an enum's tag, `struct k3_tensor`: a name
     /// apart from a typedef's, which the path, as written, tells.
     fn tag_reference(&mut self, specifier: Node, tag: Node) {
@@ -1275,6 +1318,54 @@ impl<'s, 't> Reader<'s, 't> {
             "field_expression" => {
                 if let Some(argument) = node.child_by_field_name("argument") {
                     self.uses(argument, depth + 1);
+                }
+            }
+            // A function given to a struct's field, `.get = cache_get` or
+            // `s->find = find_in_layer`, is what a call through the field
+            // may call.
+            "assignment_expression" => {
+                let left = node.child_by_field_name("left");
+                let right = node.child_by_field_name("right");
+                let field = left
+                    .filter(|l| l.kind() == "field_expression")
+                    .and_then(|l| l.child_by_field_name("field"))
+                    .map(|f| self.text(f));
+                let plain = node
+                    .child_by_field_name("operator")
+                    .is_some_and(|o| self.text(o) == "=");
+                if let Some(left) = left {
+                    self.uses(left, depth + 1);
+                }
+                if let Some(right) = right {
+                    match field {
+                        Some(field) if plain => self.stored(right, field, depth + 1),
+                        _ => self.uses(right, depth + 1),
+                    }
+                }
+            }
+            "initializer_pair" => {
+                let designators: Vec<Node> = fields(node)
+                    .into_iter()
+                    .filter(|(f, _)| *f == Some("designator"))
+                    .map(|(_, c)| c)
+                    .collect();
+                let field = match designators[..] {
+                    [d] if d.kind() == "field_designator" => d
+                        .named_child(0)
+                        .filter(|f| f.kind() == "field_identifier")
+                        .map(|f| self.text(f)),
+                    _ => None,
+                };
+                for &designator in &designators {
+                    if designator.kind() != "field_designator" {
+                        self.uses(designator, depth + 1);
+                    }
+                }
+                if let Some(value) = node.child_by_field_name("value") {
+                    match field {
+                        Some(field) => self.stored(value, field, depth + 1),
+                        None => self.uses(value, depth + 1),
+                    }
                 }
             }
             "enumerator" => {
@@ -1889,5 +1980,33 @@ static int kept(void) { return 1; }
         );
         assert!(out.syntax_error);
         assert_eq!(symbols(&out)[1..], [("kept", Kind::Function, 4, 4, true)]);
+    }
+
+    #[test]
+    fn a_function_given_to_a_struct_s_field_says_which_field() {
+        let out = extract(
+            b"static struct ops table = { .get = cache_get, .put = &cache_put, .n = limit, .both = a ? NULL : cache_both, [1] = other };\n\
+              void init(struct ops *s, int local) {\n    s->find = find_in_layer;\n    s->run = local;\n    s->count += bump;\n    s->name = name;\n}\n",
+        );
+        let stored: Vec<(&str, &str)> = out
+            .references
+            .iter()
+            .filter_map(|r| Some((r.name.as_str(), r.typed.as_deref()?)))
+            .collect();
+        assert_eq!(
+            stored,
+            [
+                ("cache_get", "get"),
+                ("cache_put", "put"),
+                ("limit", "n"),
+                ("cache_both", "both"),
+                ("find_in_layer", "find"),
+                ("name", "name"),
+            ]
+        );
+        // Each name is still one reference, and what is not stored is read as before.
+        let names: Vec<&str> = out.references.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names.iter().filter(|n| **n == "cache_get").count(), 1);
+        assert!(names.contains(&"other") && names.contains(&"bump") && !names.contains(&"local"));
     }
 }

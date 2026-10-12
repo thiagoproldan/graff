@@ -19,6 +19,13 @@
 //! or a library the build links. A name no definition has that is a
 //! header's include guard reaches that header (`file`).
 //!
+//! A call through a struct's field, `cache.src.get(..)`, calls the function
+//! the field holds, which its name does not tell and its type, unread here,
+//! would. It reaches the functions the worktree gives to a field of that
+//! name, `.get = cache_get` or `s->get = cache_get`, the one (`field`) or
+//! several (ambiguous), whichever struct holds the field; none given, as of
+//! a field a positional initializer fills, it is external.
+//!
 //! A definition in a branch of a conditional the build leaves out is no
 //! candidate for a use in code it reads, as a compiler sees none. Where a
 //! use's file is read, a macro is defined if the host's compiler predefines
@@ -425,6 +432,10 @@ impl<'a> Index<'a> {
 pub fn resolve(files: &[File]) -> Vec<Edge> {
     let index = Index::new(files);
     let mut edges = Vec::new();
+    // The functions given to each field name, and the calls through a field
+    // that wait for them.
+    let mut given: HashMap<&str, Vec<Definition>> = HashMap::new();
+    let mut through = Vec::new();
     for (f, file) in files.iter().enumerate() {
         if file.language != Language::C {
             continue;
@@ -432,10 +443,20 @@ pub fn resolve(files: &[File]) -> Vec<Edge> {
         let sight = Sight::new(&index, f);
         let extraction = file.extraction;
         for call in &extraction.calls {
+            if call.kind == CallKind::Method {
+                through.push(edges.len());
+            }
             edges.push(edge_of_call(&index, &sight, call));
         }
         for reference in &extraction.references {
-            edges.push(edge_of_reference(&index, &sight, reference));
+            let edge = edge_of_reference(&index, &sight, reference);
+            if let (Some(field), Resolution::Resolved(d, _)) =
+                (reference.typed.as_deref(), &edge.resolution)
+                && index.symbol(*d).kind == Kind::Function
+            {
+                given.entry(field).or_default().push(*d);
+            }
+            edges.push(edge);
         }
         for import in &extraction.imports {
             if import.via.as_deref() == Some("include") {
@@ -443,13 +464,26 @@ pub fn resolve(files: &[File]) -> Vec<Edge> {
             }
         }
     }
+    for found in given.values_mut() {
+        found.sort();
+        found.dedup();
+    }
+    for at in through {
+        let edge = &mut edges[at];
+        edge.resolution = match given.get(edge.name.as_str()).map(|found| &found[..]) {
+            None | Some([]) => Resolution::External,
+            Some(&[d]) => Resolution::Resolved(d, Rule::Field),
+            Some(found) => Resolution::Ambiguous(found.to_vec()),
+        };
+    }
     edges
 }
 
 fn edge_of_call(index: &Index, sight: &Sight, call: &Call) -> Edge {
     let file = sight.file;
     // A call through a struct's field calls the function it points to,
-    // which no name tells.
+    // which no name tells: `resolve` ties it to the functions given to a
+    // field of its name.
     let resolution = if call.kind == CallKind::Method {
         Resolution::External
     } else {
@@ -2306,5 +2340,35 @@ mod tests {
         ] {
             assert_eq!(host(name), expected, "{name}");
         }
+    }
+
+    #[test]
+    fn a_call_through_a_struct_s_field_reaches_the_functions_given_to_that_field() {
+        let mut found = edges(&[
+            (
+                "src/cache.c",
+                "#include \"cache.h\"\nstatic int cache_get(int x) { return x; }\nstatic int cache_put(int x) { return x; }\nstatic int other_put(int x) { return x; }\nvoid init(struct src *s) {\n    s->get = cache_get;\n    s->put = cache_put;\n}\nstruct src table = { .put = other_put };\n",
+            ),
+            (
+                "src/use.c",
+                "int use(struct src *s) {\n    s->get(1);\n    s->put(2);\n    return s->none(3);\n}\n",
+            ),
+        ]);
+        found.sort();
+        let calls: Vec<_> = found.into_iter().filter(|e| e.3 == "call method").collect();
+        assert_eq!(
+            calls,
+            vec![
+                edge(
+                    "src/use.c",
+                    2,
+                    "get",
+                    "call method",
+                    "src/cache.c cache_get (field)"
+                ),
+                edge("src/use.c", 3, "put", "call method", "ambiguous, 2"),
+                edge("src/use.c", 4, "none", "call method", "external"),
+            ]
+        );
     }
 }

@@ -16,7 +16,7 @@ use crate::lang::Language;
 
 /// Bumped whenever what an extractor produces changes, so that results kept
 /// from an older extractor are read again rather than trusted.
-pub const VERSION: u32 = 21;
+pub const VERSION: u32 = 22;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Extraction {
@@ -225,7 +225,8 @@ pub struct Reference {
     /// start of the path, is bound to, when one is.
     pub local: Option<String>,
     /// Python: the class the start of the path is an instance of, as for
-    /// a call.
+    /// a call. C: the struct's field a function is given to, `get` in
+    /// `.get = cache_get` and `s->get = cache_get`.
     #[serde(default)]
     pub typed: Option<String>,
 }

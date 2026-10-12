@@ -126,6 +126,32 @@ def test_score_meets_a_call_lines_off_and_tells_a_pointer_from_a_macro():
     assert instrumented.summary(*instrumented.score(broken, trace, {"a.c": lines})[:2])["correct"] == 0
 
 
+def test_a_call_through_a_field_is_judged_against_what_ran_there_by_a_name_not_written():
+    trace = instrumented.Trace({}, "/", [])
+    get, put = ("a.c", "cache_get", 100), ("a.c", "cache_put", 110)
+    for line, name, defined in [(5, "cache_get", get), (20, "cache_put", put), (40, "cache_get", get)]:
+        trace.calls["a.c", line, name].add(defined)
+        trace.defined_at["a.c", line].add(defined)
+    lines = [""] * 90
+    lines[4], lines[19], lines[39] = "s->get(1);", "s->put(2);", "cache_get(3);"
+    edges = [
+        edge(5, "get", target("cache_get", 100, 102), use="call method", rule="field"),
+        # Tied to a function that did not run there.
+        edge(20, "put", target("cache_get", 100, 102), use="call method", rule="field"),
+        # A line no run reached.
+        edge(70, "get", target("cache_get", 100, 102), use="call method", rule="field"),
+        # A call named on its line is judged by its name, not as a pointer's.
+        edge(40, "cache_get", target("cache_get", 100, 102)),
+    ]
+    judged, found, wrong, missed, shifted = instrumented.score(edges, trace, {"a.c": lines})
+    assert dict(judged["field"]) == {"correct": 1, "wrong": 1, "unjudged": 1}, judged
+    assert judged["scope"]["correct"] == 1, judged
+    assert found["found"] == 2 and found["through a field"] == 1, found
+    assert [key[1] for key, _, _ in missed] == [20], missed
+    summary = instrumented.summary(judged, found)
+    assert (summary["found"], summary["truth"]) == (2, 3), summary
+
+
 if __name__ == "__main__":
     tests = [value for name, value in sorted(globals().items()) if name.startswith("test_")]
     for test in tests:

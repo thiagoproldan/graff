@@ -1,17 +1,17 @@
 run 2026-10-12
-graff 7e9b6d4 with uncommitted changes
+graff 416d5b2 with uncommitted changes
 corpus kimi: a git repository at ac1584a (git archive), 32 C files, 17 translation units
 truth: clangd version 21.1.8 (nixpkgs), CMake's compile_commands.json (cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON), --background-index=false, every file opened and built first
   4697 names asked, 4109 answered; 12 names not found on their line; 315 in the 22 regions of 8 files clangd says the build leaves out, not judged
 
 broken resolver: precision 0.000, recall 0.000
-graff: precision 1.000 (2425 of 2425 judged; 30 unjudged), recall 1.000 (2322 of 2322 names clangd places in the corpus)
-by rule: file 60/60 (0 unjudged), include 940/940 (5 unjudged), scope 1425/1425 (25 unjudged)
+graff: precision 1.000 (2425 of 2425 judged; 42 unjudged), recall 1.000 (2322 of 2322 names clangd places in the corpus)
+by rule: field 0/0 (12 unjudged), file 60/60 (0 unjudged), include 940/940 (5 unjudged), scope 1425/1425 (25 unjudged)
 missed, by what graff did: 
 graff's untied edges, by clangd's place: external no place 607, external outside 1996
 
 calls only, graff's and graphify's (its graph.json built at ac1584a): precision of the ties clangd judges, recall of the 1277 calls it places in the corpus and of the 553 pairs of caller and callee they make
-  graff: precision 1.000 (1328 of 1328 judged; 9 unjudged), recall 1.000 (1277), of pairs 1.000 (553)
+  graff: precision 1.000 (1328 of 1328 judged; 21 unjudged), recall 1.000 (1277), of pairs 1.000 (553)
   graphify: precision 0.989 (524 of 530 judged; 6 unjudged), recall 0.410 (524), of pairs 0.948 (524)
   graphify EXTRACTED: precision 0.996 (283 of 284 judged; 2 unjudged), recall 0.222 (283), of pairs 0.512 (283)
   graphify INFERRED: precision 0.980 (241 of 246 judged; 4 unjudged), recall 0.189 (241), of pairs 0.436 (241)

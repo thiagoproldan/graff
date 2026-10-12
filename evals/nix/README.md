@@ -299,8 +299,9 @@ their first two lines.
   688-714 ms against 668-693 (five alternating runs, 2026-10-12, TLP's
   balanced profile, a load of 8 to 15 from other sessions); extracting
   every .nix file of nixpkgs, 38-44 s against 36-53 s, within that noise.
-  Step 2 (instance.rs) sees through `with` and `let` too but follows no
-  helper of a file's own; ~/NixOS at 428b233 has none.
+  Step 2 (instance.rs) sees through `with` and `let` too, and takes a call
+  of such a helper, as the extractor counts the arguments it wants (task
+  215); ~/NixOS at 428b233 has none.
 - **What a `let` binds that only data takes sets no option either** (task
   157). Task 144 saw what a function of its list is given where the call
   writes it; data built under a `let` name and handed over elsewhere,

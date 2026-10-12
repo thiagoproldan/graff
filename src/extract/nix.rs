@@ -53,7 +53,7 @@ pub(crate) const WRAPPERS: &[&str] = &[
 ];
 
 /// What a binding calls to declare an option, by the end of its path.
-const OPTION_MAKERS: &[&str] = &[
+pub(crate) const OPTION_MAKERS: &[&str] = &[
     "mkOption",
     "mkEnableOption",
     "mkPackageOption",
@@ -418,15 +418,6 @@ pub(crate) fn value_call(value: Node) -> Option<Node> {
         value = unwrapped(inner);
     }
     (value.kind() == "apply_expression").then_some(value)
-}
-
-/// Whether a value declares an option: `lib.mkOption { .. }`,
-/// `mkEnableOption ".." // { default = true; }`, or either under a `with`
-/// or a `let`.
-pub(crate) fn declares_option(source: &[u8], value: Node) -> bool {
-    value_call(value).is_some_and(|call| {
-        function_name(source, applied(call).0).is_some_and(|name| OPTION_MAKERS.contains(&name))
-    })
 }
 
 /// Whether a name may stand unquoted in a path.

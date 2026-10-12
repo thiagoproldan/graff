@@ -34,7 +34,7 @@ use tree_sitter::{Node, Tree};
 
 use super::{Index, joined};
 use crate::extract::nix::{
-    WRAPPERS, applied, binding_set, declares_option, function_name, named_children, parser,
+    OPTION_MAKERS, WRAPPERS, applied, binding_set, function_name, named_children, parser,
     plain_name, segments, unwrapped,
 };
 use crate::extract::{Extraction, Kind, Symbol, end_line, line};
@@ -1267,7 +1267,7 @@ impl<'i, 't> Walk<'i, 't> {
                     .field(origin, "expression")
                     .is_some_and(|value| unwrapped(value.node) == at.node);
                 if members.is_empty() && whole {
-                    self.leaf(path, origin);
+                    self.leaf(path, origin, env);
                 }
                 for member in &members {
                     self.place_member(member, path);
@@ -1306,10 +1306,10 @@ impl<'i, 't> Walk<'i, 't> {
                 let name = self.field(at, "name").map_or("", |name| self.text(name));
                 match self.lookup(name, env) {
                     Some(value) => self.place_value(value, path, origin),
-                    None => self.leaf(path, origin),
+                    None => self.leaf(path, origin, env),
                 }
             }
-            _ => self.leaf(path, origin),
+            _ => self.leaf(path, origin, env),
         }
     }
 
@@ -1319,7 +1319,7 @@ impl<'i, 't> Walk<'i, 't> {
                 // What the call gives is placed where the call writes it.
                 let origin = match thunk.binding {
                     Some(binding) if thunk.argument => {
-                        self.emit(path, self.kind_of(binding), binding);
+                        self.emit(path, self.kind_of(binding, &thunk.env), binding);
                         binding
                     }
                     _ => origin,
@@ -1337,7 +1337,7 @@ impl<'i, 't> Walk<'i, 't> {
                     self.place(body, &inner, path, origin);
                 }
             }
-            _ => self.leaf(path, origin),
+            _ => self.leaf(path, origin, &None),
         }
     }
 
@@ -1352,7 +1352,7 @@ impl<'i, 't> Walk<'i, 't> {
                 };
                 let mut path = path.to_vec();
                 path.extend(self.names(attrpath, &member.env).into_iter().skip(skip));
-                let kind = self.kind_of(binding);
+                let kind = self.kind_of(binding, &member.env);
                 // What the call writes is a binding of the module where it stands.
                 if binding.file == self.site || kind == Kind::Option {
                     self.emit(&path, kind, binding);
@@ -1377,7 +1377,7 @@ impl<'i, 't> Walk<'i, 't> {
                 };
                 match value {
                     Some(value) => self.place_value(value, &path, attr),
-                    None => self.leaf(&path, attr),
+                    None => self.leaf(&path, attr, &member.env),
                 }
             }
         }
@@ -1388,7 +1388,7 @@ impl<'i, 't> Walk<'i, 't> {
     fn place_applied(&self, at: At<'t>, env: &Env<'t>, path: &[String], origin: At<'t>) {
         let (function, arguments) = applied(at.node);
         let Some((&last, earlier)) = arguments.split_last() else {
-            return self.leaf(path, origin);
+            return self.leaf(path, origin, env);
         };
         let last = At { node: last, ..at };
         let function = At {
@@ -1443,7 +1443,7 @@ impl<'i, 't> Walk<'i, 't> {
             && thunk.argument
             && let Some(binding) = thunk.binding
         {
-            self.emit(path, self.kind_of(binding), binding);
+            self.emit(path, self.kind_of(binding, &thunk.env), binding);
             origin = binding;
         }
         let mut value = self.function(function, env);
@@ -1464,19 +1464,19 @@ impl<'i, 't> Walk<'i, 't> {
                     .and_then(|root| root.child_by_field_name("expression"))
                 {
                     Some(node) => self.place(At { file, node }, &None, path, origin),
-                    None => self.leaf(path, origin),
+                    None => self.leaf(path, origin, env),
                 },
-                _ => self.leaf(path, origin),
+                _ => self.leaf(path, origin, env),
             },
             other => match self.force(other) {
                 Value::Lambda(lambda, closure) => {
                     let (body, inner) = self.bind(lambda, closure, self.thunk(last, env));
                     match body {
                         Some(body) => self.place(body, &inner, path, origin),
-                        None => self.leaf(path, origin),
+                        None => self.leaf(path, origin, env),
                     }
                 }
-                Value::Unknown => self.leaf(path, origin),
+                Value::Unknown => self.leaf(path, origin, env),
                 // What is known to be no function is never applied: the
                 // branch of `if builtins.isFunction body` an attrset skips.
                 _ => {}
@@ -1485,8 +1485,8 @@ impl<'i, 't> Walk<'i, 't> {
     }
 
     /// A value the walk goes no further into: a binding of the module.
-    fn leaf(&self, path: &[String], origin: At<'t>) {
-        self.emit(path, self.kind_of(origin), origin);
+    fn leaf(&self, path: &[String], origin: At<'t>, env: &Env<'t>) {
+        self.emit(path, self.kind_of(origin, env), origin);
     }
 
     fn emit(&self, path: &[String], kind: Kind, origin: At<'t>) {
@@ -1508,24 +1508,100 @@ impl<'i, 't> Walk<'i, 't> {
     }
 
     /// The kind of definition a binding is, by its value, as the extractor
-    /// tells, but for a call of a helper of the file's own that declares an
-    /// option, which the extractor follows and this does not; any other node
-    /// is an attribute.
-    fn kind_of(&self, at: At<'t>) -> Kind {
+    /// tells, with the names its value is read with, `env`: a call of a
+    /// helper that declares an option, as `mkOpt` in `mkOpt types.str ".."`
+    /// with `mkOpt = type: description: mkOption { .. };`, is an option;
+    /// any other node is an attribute.
+    fn kind_of(&self, at: At<'t>, env: &Env<'t>) -> Kind {
         if at.node.kind() != "binding" {
             return Kind::Attribute;
         }
         let Some(value) = self.field(at, "expression") else {
             return Kind::Attribute;
         };
-        let source = self.source(at.file).unwrap_or(b"");
-        if declares_option(source, value.node) {
+        if self.wanting(value, env) == Some(0) {
             Kind::Option
         } else if unwrapped(value.node).kind() == "function_expression" {
             Kind::Function
         } else {
             Kind::Attribute
         }
+    }
+
+    /// How many arguments a value wants more before it declares an option,
+    /// as the extractor counts them: none for a call of mkOption or the
+    /// like, two for `type: description: mkOption { .. }`, one for `mkOpt
+    /// types.str` with `mkOpt` that; no count for a value no arguments make
+    /// one. A helper is a name `env` binds.
+    fn wanting(&self, at: At<'t>, env: &Env<'t>) -> Option<usize> {
+        if !self.enter() {
+            return None;
+        }
+        let wants = self.wanting_of(
+            At {
+                node: unwrapped(at.node),
+                ..at
+            },
+            env,
+        );
+        self.leave();
+        wants
+    }
+
+    fn wanting_of(&self, at: At<'t>, env: &Env<'t>) -> Option<usize> {
+        if at.node.kind() == "function_expression" {
+            let mut parameters = 0;
+            let mut body = at;
+            while body.node.kind() == "function_expression" {
+                parameters += 1;
+                body = self.field(body, "body")?;
+                body.node = unwrapped(body.node);
+            }
+            return self.wanting(body, env).map(|more| parameters + more);
+        }
+        // A call under `//`, a `with` or a `let`, which binds what it calls.
+        let mut inner = env.clone();
+        let mut call = at;
+        loop {
+            match call.node.kind() {
+                "binary_expression" => call = self.field(call, "left")?,
+                "with_expression" => call = self.field(call, "body")?,
+                "let_expression" => {
+                    inner = self.frame(call, &inner);
+                    call = self.field(call, "body")?;
+                }
+                _ => break,
+            }
+            call.node = unwrapped(call.node);
+        }
+        let (function, given) = if call.node.kind() == "apply_expression" {
+            let (function, arguments) = applied(call.node);
+            let source = self.source(at.file).unwrap_or(b"");
+            if function_name(source, function).is_some_and(|name| OPTION_MAKERS.contains(&name)) {
+                return Some(0);
+            }
+            (
+                At {
+                    node: function,
+                    ..at
+                },
+                arguments.len(),
+            )
+        } else {
+            (at, 0)
+        };
+        if function.node.kind() != "variable_expression" {
+            return None;
+        }
+        let name = self.text(self.field(function, "name")?);
+        let wants = match self.lookup(name, &inner)? {
+            Value::Thunk(thunk) => self.wanting(thunk.value, &thunk.env),
+            Value::Lambda(lambda, closure) => self.wanting(lambda, &closure),
+            _ => None,
+        }
+        // What a name binds that wants nothing declares an option already, and is no helper.
+        .filter(|&wants| wants > 0)?;
+        Some(wants.saturating_sub(given))
     }
 
     /// The name a binding's path ends with, as the extractor writes it; an
@@ -1574,6 +1650,7 @@ let
   self = import ./module.nix { inherit lib; } // {
     mkSys = import ./sys.nix { inherit lib; };
     mkUser = import ./user.nix { inherit lib; };
+    mkNet = import ./net.nix { inherit lib; };
   };
 in
 self
@@ -1640,6 +1717,30 @@ myLib.mkSys {
     networking.wg.ips = [ cfg.address ];
     home-manager.sharedModules = [ { programs.wg.enable = true; } ];
   };
+}
+"#,
+        ),
+        (
+            "lib/net.nix",
+            r#"{ lib }:
+let
+  mkOpt = type: description: lib.mkOption { inherit type description; };
+in
+{ config, name }: {
+  options.net.${name} = {
+    port = mkOpt lib.types.port "The port.";
+    half = mkOpt lib.types.str;
+    plain = { port = 1; };
+  };
+}
+"#,
+        ),
+        (
+            "modules/net.nix",
+            r#"{ config, myLib, ... }:
+myLib.mkNet {
+  inherit config;
+  name = "eth";
 }
 "#,
         ),
@@ -2049,6 +2150,20 @@ myLib.mkSys {
                 "users/bob.nix name",
                 "users/bob.nix unused",
                 "users/bob.nix unused.a"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_call_of_a_helpers_own_option_maker_is_an_option_where_it_is_placed() {
+        let (made, _) = made();
+        // Given one argument of two, `mkOpt lib.types.str` declares nothing yet.
+        assert_eq!(
+            of(&made, "modules/net.nix"),
+            [
+                "modules/net.nix:2-5 attribute options.net.eth.half < lib/net.nix:8-8",
+                "modules/net.nix:2-5 attribute options.net.eth.plain.port < lib/net.nix:9-9",
+                "modules/net.nix:2-5 option options.net.eth.port < lib/net.nix:7-7",
             ]
         );
     }

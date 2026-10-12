@@ -683,7 +683,8 @@ log() { helper; echo "$1" >>"$LOG_FILE"; }
     }
 
     /// A completion script that sources a library of helpers, which read
-    /// and set the locals of the functions that call them.
+    /// and set the locals of the functions that call them; and one that
+    /// calls them with no `.`, as the shell loads the library first.
     const DYNAMIC: &[(&str, &str)] = &[
         (
             "bin/complete",
@@ -708,6 +709,14 @@ _middle() { _split; }
 _lone() { echo "$cur"; }
 _lone
 _set() { level=1; }
+"#,
+        ),
+        (
+            "completions/tool",
+            r#"_comp_cmd_tool() {
+  local mode
+  _split
+}
 "#,
         ),
     ];
@@ -766,9 +775,14 @@ _set() { level=1; }
                     "prev",
                     "bin/complete _comp_cmd.prev or lib/split.sh prev"
                 ),
-                // _other alone declares mode, and the other path ends at a
-                // function nothing calls, which defines no mode.
-                edge(3, "mode", "bin/complete _other.mode (caller)"),
+                // _other declares mode, and so does the completion that
+                // sources nothing; the other path ends at a function nothing
+                // calls, which defines no mode.
+                edge(
+                    3,
+                    "mode",
+                    "bin/complete _other.mode or completions/tool _comp_cmd_tool.mode"
+                ),
                 // Called from top-level code: no local of any function.
                 edge(5, "cur", "external"),
                 // A function's first assignment defines the file's variable

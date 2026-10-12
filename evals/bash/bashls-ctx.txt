@@ -1,13 +1,13 @@
 run 2026-10-12
-graff 4997fd5 with uncommitted changes
+graff 8a21340 with uncommitted changes
 corpus ctx: a git repository at 6a6d80a (git archive), 24 Bash files
 truth: bash-language-server 5.8.1 (nixpkgs), INCLUDE_ALL_WORKSPACE_SYMBOLS=true SHELLCHECK_PATH= BACKGROUND_ANALYSIS_MAX_FILES=0, every Bash file opened
   4655 names asked, 3389 answered in the corpus; 0 names not found on their line
 
-against /tmp/graff-102/main/examples: precision 1.000 (3566 of 3567 judged; 103 unjudged), recall 0.994 (3357 of 3378 answers)
-  by rule: environment 21/21 (12 unjudged), scope 3425/3426 (87 unjudged), source 120/120 (4 unjudged)
+against /tmp/graff-362/main/target/release/examples: precision 1.000 (3573 of 3574 judged; 103 unjudged), recall 0.996 (3363 of 3378 answers)
+  by rule: environment 21/21 (12 unjudged), scope 3432/3433 (87 unjudged), source 120/120 (4 unjudged)
 
-broken resolver: precision 0.058, recall 0.056
+broken resolver: precision 0.057, recall 0.056
 graff: precision 1.000 (3573 of 3574 judged; 103 unjudged), recall 0.996 (3363 of 3378 answers)
 graff but its caller rule: precision 1.000 (3573 of 3574 judged)
 by rule: environment 21/21 (12 unjudged), scope 3432/3433 (87 unjudged), source 120/120 (4 unjudged)

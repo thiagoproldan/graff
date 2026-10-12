@@ -236,6 +236,14 @@ nix develop -c python3 evals/bash/test_dynamic.py
 - **named**, **used**: of the binders Bash used, the share graff names; of
   those graff names, the share Bash used.
 
+The broken resolver ties each edge, and each candidate of an ambiguous
+one, to the definition after it in its file (`resolve --broken
+--broken-candidates`); the check stops unless its exact and its covered
+shares are each under half of graff's. Until task 362 it shifted resolved
+edges alone and was gated on exact alone: where graff's answers are
+mostly ambiguous it kept them whole, and scored covered 0.425 against
+graff's 0.772 -- over half.
+
 ### Result, 2026-10-12
 
 Bash 5.3.15, 521 completions run, none past 10 s, 104,669 distinct
@@ -262,6 +270,63 @@ Main judged on its own edges has 315 uses, 171 of them `COMPREPLY`.
 - **Named is low by design**: making every local a definition would add
   4,330 symbols to bash-completion's 1,618, and a helper's `cur` would be
   one of some 400; the control that names them all is exact at 0.234.
+
+### Result, 2026-10-12 (task 362): callers' locals in files with no `.`
+
+A local is now a definition also where its function may call a function
+of another file: it runs a command that is neither a function of its file
+nor a builtin that runs none (`eval`, `trap`, `compgen`, `mapfile`,
+`readarray` and `bind` may run one), or one named by no plain word, or it
+calls a function of its file that does (decision 421). A completion file's
+`local cur prev words cword comp_args` is so a binder graff holds, and a
+helper's `cur` is one of its callers' locals across files. The other way
+to weigh, answering "a local of its callers, N functions" with no
+definition named, was left: it needs a new kind of answer in the store and
+the queries, and gives no `callers _comp_cmd_2to3.cur`, which now lists the
+six helpers that may read it.
+
+Main's build at a2b1a3c against the branch's, one run each, the same
+trace (dynamic.py) and the same bash-language-server answers (bashls.py),
+balanced profile, load 13 to 16:
+
+|                                    | uses | exact     | covered    | named | used  |
+| ---------------------------------- | ---- | --------- | ---------- | ----- | ----- |
+| broken resolver, candidates too    | 167  | 0.150     | 0.150      | 0.004 | 0.003 |
+| main                               | 167  | 0.503, 84 | 0.731, 122 | 0.050 | 0.300 |
+| task 362                           | 167  | 0.503, 84 | 0.772, 129 | 0.928 | 0.667 |
+| bound by a caller, main            | 127  | 0.346, 44 | 0.646, 82  | 0.045 | 0.275 |
+| bound by a caller, task 362        | 127  | 0.354, 45 | 0.701, 89  | 0.928 | 0.665 |
+
+- **Named** goes from 306 to 6,320 of the 6,812 binders Bash used, and
+  **used** from 0.275 to 0.665: the binders graff names now are mostly
+  ones Bash used, where before they were bash_completion's own.
+- **What it misses** (38 uses not covered): 21 have a binder in a function
+  tree-sitter-bash loses to an extglob pattern in a `case` item (task 403:
+  32 of the corpus's 3,664 functions, `_comp_command_offset` and
+  `_comp_complete_longopt` among them), 2 of these one of the next kind
+  too; 2 more run through such a function (bash_completion:1717 is in
+  `_comp_compgen_help`, 2982's caller is `_comp_command_offset`); 12 are
+  bound by `_comp_compgen__call_generator`, or reached through
+  `_comp_compgen -x`, by calls whose name only the run knows (task 411);
+  and 3 are uses Bash found unbound, which graff, naming
+  `_comp_compgen__call_generator`'s local, does not list as the global
+  (bash_completion:619, 693, 694).
+- **Symbols**: bash-completion's 523 files hold 5,862 definitions, from
+  2,080: 4,301 locals of the 4,330 its functions declare (519 before). ctx
+  holds 590, from 538: 123 locals of 129. The rule leaves out about 1%:
+  locals of functions that run only builtins and their file's functions.
+- **bashls.py**: the same on both builds, as bash-language-server judges
+  no ambiguous edge. bash-completion precision 0.995 (4,747 of 4,773),
+  recall 0.919 (4,705 of 5,117); ctx precision 1.000 (3,573 of 3,574),
+  recall 0.996. Of bash-completion's 11,289 edges, 79 change, each to an
+  ambiguous one with more candidates (16 of them were external); ctx's
+  4,963 are the same.
+- **Time**, a git copy of bash-completion (1,105 files), warm index, five
+  runs each interleaved, balanced profile, load 5 to 8: `callers cur` 76-78
+  ms against 156-164, `def cur` 32-35 against 53-64, `callers
+  _comp_initialize` 67-70 against 78-84, `outline bash_completion` 27-30
+  against 37-38, `map` 39-40 against 54-58 (first runs aside). Resolving
+  the 523 files: 16.6-21.0 ms against 20.2-21.0, three runs each.
 
 ## Sections
 

@@ -46,7 +46,9 @@ that name in the worktree; a variable to its file's, those files', or one
 another script exports to the commands it runs. Bash's scope is dynamic: a
 variable a function uses with no `local` of its own is tied to the local of
 the nearest functions up its callers that declare it, `F.x`, a definition
-where another function may reach it. A path is evaluated where it
+where another function may reach it: one of its file that uses the name,
+or one of another file, where its file sources one or F runs a command its
+file does not define. A path is evaluated where it
 names the script's own folder (`dirname "$0"`, `${BASH_SOURCE%/*}`, `$(cd ..
 && pwd)`) or named by a `# shellcheck source=` directive
 (`src/extract/bash.rs`, `src/resolve/bash.rs`). In Python, a file with no

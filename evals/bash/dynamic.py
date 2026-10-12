@@ -34,12 +34,12 @@ script's variable as the global; tied to one, or ambiguous among several.
   saw bind them.
 
 The same is scored for another build's edges with --against FOLDER, and for
-two controls. graff's resolver broken on purpose (each target the next
-definition of its file), as the other checks run: the check stops unless
-its exact share is under half of graff's. And every function anywhere that
-declares the name local, with the global, which is what a check that reads
-no calls, as ShellCheck's, would name: it names every binder, at the cost
-of naming many.
+two controls. graff's resolver broken on purpose (each target, and each
+candidate of an ambiguous edge, the next definition of its file): the
+check stops unless its exact and covered shares are each under half of
+graff's. And every function anywhere that declares the name local, with
+the global, which is what a check that reads no calls, as ShellCheck's,
+would name: it names every binder, at the cost of naming many.
 
 With --trace FILE, what the completions' runs gave is kept in FILE, and read
 from it when it is there, to score another build without running them again.
@@ -344,7 +344,7 @@ def main():
     listed = "\n".join(files) + "\n"
 
     def edges_of(resolve, broken=False):
-        command = [resolve, root] + (["--broken"] if broken else [])
+        command = [resolve, root] + (["--broken", "--broken-candidates"] if broken else [])
         return [json.loads(line) for line in run(command, stdin=listed).stdout.splitlines()]
 
     edges = edges_of(binaries["resolve"])
@@ -372,9 +372,10 @@ def main():
     counts, missed = score(edges, seen)
     controlled = score(control(edges, declared), seen)[0]
     wrecked = score(broken, seen)[0]
-    exact = [ratio(c["every use"]["exact"], c["every use"]["uses"]) for c in (wrecked, counts)]
-    if exact[0] >= exact[1] / 2:
-        sys.exit(f"the broken resolver scores like graff: {wrecked} against {counts}")
+    for share in ("exact", "covered"):
+        broke, good = (ratio(c["every use"][share], c["every use"]["uses"]) for c in (wrecked, counts))
+        if broke >= good / 2:
+            sys.exit(f"the broken resolver's {share} share is like graff's: {wrecked} against {counts}")
     lines = [
         f"run {datetime.date.today().isoformat()}",
         graff_version(),

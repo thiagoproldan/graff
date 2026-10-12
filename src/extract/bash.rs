@@ -14,9 +14,12 @@
 //! that call it, and bash-completion's helpers read and set their callers'
 //! `cur` and `prev` so. A function's symbol holds the names it declares
 //! local; a local is a definition of its own, `F.x`, which resolution ties
-//! such a use to through the calls, where another function of its file uses
-//! the name with no local of its own, or where its file sources another,
-//! whose functions may.
+//! such a use to through the calls, where another function may see it:
+//! where one of its file uses the name with no local of its own, where its
+//! file sources another, or where F may call a function of another file --
+//! it runs a command that is neither its file's function nor a builtin that
+//! runs none, as completion files call bash_completion's helpers with no
+//! `.`, or calls a function of its file that does.
 //!
 //! A path `.` sources, or a command runs -- as its name, or as the script an
 //! interpreter or a wrapper is given, `exec python3 "$here/x.py"` -- is an
@@ -103,6 +106,18 @@ const BASH_VARIABLES: &[&str] = &[
     "UID",
 ];
 
+/// Bash's builtins that run no function: a function that runs only these
+/// and its file's functions calls none of another file. `eval`, `trap`,
+/// `compgen` (`-F`), `mapfile` and `readarray` (`-C`) and `bind` (`-x`) may.
+const BUILTINS: &[&str] = &[
+    ":", "[", "alias", "bg", "break", "builtin", "caller", "cd", "command", "complete", "compopt",
+    "continue", "declare", "dirs", "disown", "echo", "enable", "exec", "exit", "export", "false",
+    "fc", "fg", "getopts", "hash", "help", "history", "jobs", "kill", "let", "local", "logout",
+    "popd", "printf", "pushd", "pwd", "read", "readonly", "return", "set", "shift", "shopt",
+    "suspend", "test", "times", "true", "type", "typeset", "ulimit", "umask", "unalias", "unset",
+    "wait",
+];
+
 /// Programs given a script to run as their first argument that is not an
 /// option: `python3 x.py`.
 const INTERPRETERS: &[&str] = &["bash", "sh", "dash", "python", "python3", "perl", "node"];
@@ -168,6 +183,7 @@ pub fn extract(source: &[u8]) -> Extraction {
         reads: Vec::new(),
         parents: HashMap::new(),
         sources: false,
+        commands: Vec::new(),
         stack: Vec::new(),
         too_deep: false,
     };
@@ -224,6 +240,9 @@ struct Scan<'s, 't> {
     parents: HashMap<usize, usize>,
     /// Whether the file sources another, with `.` or `source`.
     sources: bool,
+    /// Each command a function runs, by the innermost one's node id: its
+    /// name, or none for one only the run knows, `"${generator[@]}"`.
+    commands: Vec<(Option<&'s str>, usize)>,
     /// The functions the walk is in, by node id.
     stack: Vec<usize>,
     too_deep: bool,
@@ -277,21 +296,65 @@ impl<'s, 't> Scan<'s, 't> {
         false
     }
 
-    /// The names a function declares local that another function may read
-    /// or set by Bash's dynamic scope: one of the file that uses it with no
-    /// local of its own, or, in a file that sources another, any.
-    fn shared(&self) -> HashSet<String> {
-        let declared: HashSet<&str> = self.declared.iter().map(|(_, n, _)| n.as_str()).collect();
-        if self.sources {
-            return declared.into_iter().map(String::from).collect();
+    /// The functions that may call one of another file, which then sees
+    /// their locals: those that run a command that is neither a function of
+    /// this file nor a builtin that runs none, or one whose name only the
+    /// run knows; and those that call a function of this file that may.
+    fn escaping(&self) -> HashSet<usize> {
+        let mut named: HashMap<&str, Vec<usize>> = HashMap::new();
+        for function in &self.functions {
+            if let Some(name) = function.child_by_field_name("name") {
+                named
+                    .entry(self.text(name))
+                    .or_default()
+                    .push(function.id());
+            }
         }
+        let mut escaping = HashSet::new();
+        let mut calls: Vec<(usize, usize)> = Vec::new();
+        for &(name, function) in &self.commands {
+            match name.map(|n| (n, named.get(n))) {
+                Some((_, Some(callees))) => calls.extend(callees.iter().map(|&c| (function, c))),
+                Some((name, None)) if BUILTINS.contains(&name) => {}
+                _ => {
+                    escaping.insert(function);
+                }
+            }
+        }
+        let mut grew = true;
+        while grew {
+            grew = false;
+            for &(caller, callee) in &calls {
+                if escaping.contains(&callee) && escaping.insert(caller) {
+                    grew = true;
+                }
+            }
+        }
+        escaping
+    }
+
+    /// The locals, by function and name, that another function may read or
+    /// set by Bash's dynamic scope: in a file that sources another, any;
+    /// else those of a name a function of the file uses with no local of
+    /// its own, and those of a function that may call one of another file.
+    fn shared(&self) -> HashSet<(usize, String)> {
+        let declared = self.declared.iter().map(|(f, n, _)| (*f, n.clone()));
+        if self.sources {
+            return declared.collect();
+        }
+        let names: HashSet<&str> = self.declared.iter().map(|(_, n, _)| n.as_str()).collect();
         let uses = self.reads.iter().map(|(n, f)| (n.as_str(), *f)).chain(
             self.sites
                 .iter()
                 .filter_map(|s| Some((s.name.as_str(), s.function?))),
         );
-        uses.filter(|&(name, function)| declared.contains(name) && !self.binds(function, name))
-            .map(|(name, _)| name.to_string())
+        let used: HashSet<&str> = uses
+            .filter(|&(name, function)| names.contains(name) && !self.binds(function, name))
+            .map(|(name, _)| name)
+            .collect();
+        let escaping = self.escaping();
+        declared
+            .filter(|(f, n)| used.contains(n.as_str()) || escaping.contains(f))
             .collect()
     }
 
@@ -428,6 +491,12 @@ impl<'s, 't> Scan<'s, 't> {
                 how,
                 prefix.node.child_by_field_name("value"),
             );
+        }
+        if let (Some(node), Some(&function)) = (name, self.stack.last()) {
+            match plain(self.source, node) {
+                Some(word) if word.contains('/') || RESERVED.contains(&word) => {}
+                word => self.commands.push((word, function)),
+            }
         }
         let Some(name) = name.and_then(|name| plain(self.source, name)) else {
             return;
@@ -834,7 +903,7 @@ struct Reader<'s, 't> {
     /// Names the file binds only as a local is bound: no references.
     bound: HashSet<String>,
     /// Names a function declares local that another may use by dynamic
-    /// scope: each such local is a definition.
+    /// scope, where that local is a definition.
     shared: HashSet<String>,
     /// Where `read`, `for` and the like bind a variable, by node id: a set
     /// of one the file assigns too.
@@ -887,7 +956,8 @@ impl<'s, 't> Reader<'s, 't> {
     /// The file, its sections, functions and variables, each named in the
     /// order they are written.
     fn symbols(&mut self, root: Node<'t>) {
-        self.shared = self.scan.shared();
+        let shared = self.scan.shared();
+        self.shared = shared.iter().map(|(_, name)| name.clone()).collect();
         let mut pending: Vec<Pending> = Vec::new();
         for &function in &self.scan.functions {
             let Some(name) = function.child_by_field_name("name") else {
@@ -912,7 +982,7 @@ impl<'s, 't> Reader<'s, 't> {
         }
         // Each shared local, at the statement that declares it.
         for (function, name, statement) in &self.scan.declared {
-            if self.shared.contains(name) {
+            if shared.contains(&(*function, name.clone())) {
                 pending.push(Pending {
                     name: name.clone(),
                     kind: Kind::Variable,
@@ -1958,19 +2028,44 @@ _split() {
     }
 
     #[test]
-    fn a_local_of_a_file_that_sources_another_is_a_definition() {
-        let sourcing = extract(b". ./lib.sh\nrun() {\n  local level=1 mode\n  helper\n}\n");
-        let alone = extract(b"run() {\n  local level=1 mode\n  helper\n}\n");
-        let locals = |out: &Extraction| -> Vec<String> {
-            out.symbols
+    fn a_local_another_file_may_see_is_a_definition() {
+        let locals = |source: &[u8]| -> Vec<String> {
+            extract(source)
+                .symbols
                 .iter()
                 .filter(|s| s.kind == Kind::Variable)
                 .map(|s| s.qualified.clone())
                 .collect()
         };
-        assert_eq!(locals(&sourcing), vec!["run.level", "run.mode"]);
-        assert!(locals(&alone).is_empty());
-        assert_eq!(symbol(&alone, "run").value.as_deref(), Some("level mode"));
+        // A file that sources another: any local.
+        assert_eq!(
+            locals(b". ./lib.sh\nrun() {\n  local level=1 mode\n  echo\n}\n"),
+            vec!["run.level", "run.mode"]
+        );
+        // A function that runs a command its file does not define, as
+        // completion files call bash_completion's helpers with no `.`; one
+        // whose name only the run knows; or one of its file's that does.
+        assert_eq!(
+            locals(b"run() {\n  local level=1 mode\n  helper\n}\n"),
+            vec!["run.level", "run.mode"]
+        );
+        assert_eq!(
+            locals(b"run() {\n  local level\n  \"${generator[@]}\"\n}\n"),
+            vec!["run.level"]
+        );
+        assert_eq!(
+            locals(b"run() {\n  local level\n  step\n}\nstep() {\n  local i\n  eval \"$1\"\n}\n"),
+            vec!["run.level", "step.i"]
+        );
+        // One that runs only builtins and its file's functions that do too,
+        // or a script by its path, which sees no local: no other file's
+        // function sees its locals.
+        let alone = b"run() {\n  local level=1 mode\n  printf '%s' x\n  step\n  ./tool.sh\n}\nstep() {\n  local i\n  [ -n \"$i\" ] && return\n}\n";
+        assert!(locals(alone).is_empty(), "{:?}", locals(alone));
+        assert_eq!(
+            symbol(&extract(alone), "run").value.as_deref(),
+            Some("level mode")
+        );
     }
 
     #[test]

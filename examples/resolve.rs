@@ -13,8 +13,10 @@
 //! after the right one in its file: a resolver wrong on purpose, for a check
 //! of resolution to tell from the real one. With --markdown, only the edges
 //! Markdown files write, which graff resolves apart from every other
-//! language's: what the Markdown checks compare. On stderr, how long
-//! resolution took, extraction aside.
+//! language's: what the Markdown checks compare. With --broken-candidates,
+//! each candidate of an ambiguous edge is the definition after it too, for
+//! a check that scores candidates. On stderr, how long resolution took,
+//! extraction aside.
 
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
@@ -29,10 +31,11 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let root = PathBuf::from(
         args.next()
-            .expect("usage: resolve PACKAGE [--broken] [--markdown]"),
+            .expect("usage: resolve PACKAGE [--broken] [--broken-candidates] [--markdown]"),
     );
     let flags: Vec<String> = args.collect();
     let broken = flags.iter().any(|f| f == "--broken");
+    let shifted = flags.iter().any(|f| f == "--broken-candidates");
     let markdown = flags.iter().any(|f| f == "--markdown");
     let named: Vec<String> = io::stdin()
         .lock()
@@ -158,7 +161,12 @@ fn main() {
             Resolution::Ambiguous(candidates) => candidates
                 .iter()
                 .map(|d| {
-                    let symbol = &files[d.file].extraction.symbols[d.symbol];
+                    let symbols = &files[d.file].extraction.symbols;
+                    let symbol = &symbols[if shifted {
+                        (d.symbol + 1) % symbols.len()
+                    } else {
+                        d.symbol
+                    }];
                     json!({
                         "path": files[d.file].path,
                         "qualified": symbol.qualified,

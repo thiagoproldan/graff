@@ -18,6 +18,9 @@ const TOLERANCE: f64 = 1e-6;
 /// The most steps the walk takes before it stops, settled or not.
 const STEPS: usize = 100;
 
+/// The bytes of a kept edge: its two nodes and its weight.
+const KEPT: usize = 16;
+
 /// A weighted graph of a fixed number of nodes.
 pub struct Graph {
     nodes: usize,
@@ -44,6 +47,41 @@ impl Graph {
         if from != to && weight > 0.0 {
             *self.edges.entry((from, to)).or_default() += weight;
         }
+    }
+
+    /// The edges as the index keeps them: each its two nodes and its weight,
+    /// little-endian, in the nodes' order.
+    pub fn kept(&self) -> Vec<u8> {
+        let mut edges: Vec<(&(usize, usize), &f64)> = self.edges.iter().collect();
+        edges.sort_by_key(|&(&nodes, _)| nodes);
+        let mut bytes = Vec::with_capacity(edges.len() * KEPT);
+        for (&(from, to), &w) in edges {
+            bytes.extend_from_slice(&(from as u32).to_le_bytes());
+            bytes.extend_from_slice(&(to as u32).to_le_bytes());
+            bytes.extend_from_slice(&w.to_le_bytes());
+        }
+        bytes
+    }
+
+    /// The graph of `nodes` nodes whose edges `kept` gave; none when they
+    /// are not whole or reach past its nodes.
+    pub fn from_kept(nodes: usize, bytes: &[u8]) -> Option<Graph> {
+        let (edges, rest) = bytes.as_chunks::<KEPT>();
+        if !rest.is_empty() {
+            return None;
+        }
+        let mut graph = Graph::new(nodes);
+        graph.edges.reserve(edges.len());
+        for edge in edges {
+            let from = u32::from_le_bytes(edge[0..4].try_into().ok()?) as usize;
+            let to = u32::from_le_bytes(edge[4..8].try_into().ok()?) as usize;
+            let w = f64::from_le_bytes(edge[8..16].try_into().ok()?);
+            if from >= nodes || to >= nodes {
+                return None;
+            }
+            graph.edges.insert((from, to), w);
+        }
+        Some(graph)
     }
 
     /// Each node's edges, by the node they reach, with what a weight holds
@@ -174,5 +212,23 @@ mod tests {
         // What is less than one stays as it is.
         graph.add(1, 0, 0.25);
         assert_eq!(graph.out()[1], [(0, 0.25)]);
+    }
+
+    #[test]
+    fn a_kept_graph_reads_back_as_it_was() {
+        let mut graph = Graph::new(4);
+        graph.add(3, 0, 1.0);
+        graph.add(0, 1, 0.1 / 3.0);
+        graph.add(0, 1, 2.0);
+        graph.add(2, 3, 0.25);
+        let kept = graph.kept();
+        let back = Graph::from_kept(4, &kept).unwrap();
+        assert_eq!(back.edges, graph.edges);
+        assert_eq!(back.kept(), kept);
+        assert_eq!(back.rank(None), graph.rank(None));
+        // Cut short, or reaching past its nodes, it is none.
+        assert!(Graph::from_kept(4, &kept[..kept.len() - 1]).is_none());
+        assert!(Graph::from_kept(3, &kept).is_none());
+        assert!(Graph::from_kept(4, &[]).unwrap().edges.is_empty());
     }
 }

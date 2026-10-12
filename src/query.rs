@@ -910,7 +910,7 @@ impl<'s> Code<'s> {
         let mut worktree = store.read(root)?;
         // A Nix helper a module's file calls makes the module there. What the
         // walk made is kept, for the Nix files and the build that made it.
-        let key = build().map(|build| format!("{build}\n{}", worktree.digest(Language::Nix)));
+        let key = build().map(|build| format!("{build}\n{}", worktree.digest(&[Language::Nix])));
         let kept = match &key {
             Some(key) => store.instances(&worktree, key)?,
             None => None,
@@ -1076,19 +1076,42 @@ impl<'s> Code<'s> {
     /// weighs a name five files define, shared among them; one that may
     /// reach a type of std or of Python's library, none, as the uses of a
     /// name those types have too, `.len()`, are mostly theirs.
+    ///
+    /// Resolving every use of the worktree takes most of a map's time, so
+    /// the edges are kept, for the worktree's files, its libraries' names
+    /// and the build that made them.
     fn graph(&mut self) -> Result<Graph, Error> {
-        let edges = self.edges(Sites::All)?;
         let mut first = Vec::with_capacity(self.worktree.files.len());
         let mut definitions = 0;
         for (_, extraction) in &self.worktree.files {
             first.push(definitions);
             definitions += extraction.symbols.len();
         }
+        let nodes = definitions + first.len();
+        let key = build().map(|build| {
+            let mut key = format!("{build}\n{}", self.worktree.digest(&Language::ALL));
+            for (package, name) in &self.libraries {
+                key.push_str(&format!("\n{package} {name}"));
+            }
+            key
+        });
+        let kept = match &key {
+            Some(key) => self.store.graph(&self.worktree, key)?,
+            None => None,
+        };
+        if let Some(walk) = kept.and_then(|edges| rank::Graph::from_kept(nodes, &edges)) {
+            return Ok(Graph {
+                walk,
+                first,
+                definitions,
+            });
+        }
         let mut graph = Graph {
-            walk: rank::Graph::new(definitions + first.len()),
+            walk: rank::Graph::new(nodes),
             first,
             definitions,
         };
+        let edges = self.edges(Sites::All)?;
         for edge in &edges {
             let from = match self.caller(edge) {
                 Caller::In(d) => graph.node(d),
@@ -1106,6 +1129,10 @@ impl<'s> Code<'s> {
                 }
                 _ => {}
             }
+        }
+        if let Some(key) = &key {
+            self.store
+                .keep_graph(&self.worktree, key, &graph.walk.kept())?;
         }
         Ok(graph)
     }

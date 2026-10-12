@@ -27,7 +27,7 @@ use crate::lang::Language;
 
 /// Bumped whenever the tables change: an index of another version is dropped
 /// and built again, as a cache may be.
-const SCHEMA: i64 = 11;
+const SCHEMA: i64 = 12;
 
 /// A file written this close before graff saw it may be written again within
 /// the same tick of the file system's clock and keep its stat, so it is hashed
@@ -137,6 +137,13 @@ const TABLES: &str = "
         key TEXT NOT NULL,
         made TEXT NOT NULL,
         placement TEXT
+    );
+    -- The graph of the uses that tie a worktree's definitions, which a
+    -- rank walks, kept under a key that says what it was made from.
+    CREATE TABLE graphs (
+        worktree INTEGER PRIMARY KEY REFERENCES worktrees (id) ON DELETE CASCADE,
+        key TEXT NOT NULL,
+        edges BLOB NOT NULL
     );
 ";
 
@@ -899,6 +906,34 @@ impl Store {
         Ok(())
     }
 
+    /// The edges of the worktree's graph, as `keep_graph` kept them, when
+    /// they were kept under this key.
+    pub fn graph(&self, worktree: &Worktree, key: &str) -> Result<Option<Vec<u8>>, Error> {
+        Ok(self
+            .connection
+            .query_row(
+                "SELECT edges FROM graphs WHERE worktree = ?1 AND key = ?2",
+                params![worktree.id, key],
+                |row| row.get(0),
+            )
+            .optional()?)
+    }
+
+    /// Keeps the edges of the worktree's graph under a key that says what
+    /// they were made from, in place of what was kept before.
+    pub fn keep_graph(&self, worktree: &Worktree, key: &str, edges: &[u8]) -> Result<(), Error> {
+        // A worktree no check has recorded holds no file graff reads.
+        if worktree.id < 0 {
+            return Ok(());
+        }
+        self.connection.execute(
+            "INSERT INTO graphs (worktree, key, edges) VALUES (?1, ?2, ?3)
+             ON CONFLICT (worktree) DO UPDATE SET key = excluded.key, edges = excluded.edges",
+            params![worktree.id, key, edges],
+        )?;
+        Ok(())
+    }
+
     /// What the worktree at `root` last saw of each file, by path.
     fn records(&self, root: &str) -> Result<HashMap<String, Record>, Error> {
         let mut query = self.connection.prepare(
@@ -940,12 +975,12 @@ impl Store {
 }
 
 impl Worktree {
-    /// One id for the worktree's files in a language, their paths and their
-    /// contents: the SHA-1 of each one's path and blob id.
-    pub fn digest(&self, language: Language) -> String {
+    /// One id for the worktree's files in these languages, their paths and
+    /// their contents: the SHA-1 of each one's path and blob id.
+    pub fn digest(&self, languages: &[Language]) -> String {
         let mut sha = sha1_smol::Sha1::new();
         let files = self.files.iter().zip(&self.languages).zip(&self.blobs);
-        for (((path, _), _), blob) in files.filter(|((_, l), _)| **l == language) {
+        for (((path, _), _), blob) in files.filter(|((_, l), _)| languages.contains(l)) {
             sha.update(path.as_bytes());
             sha.update(b"\0");
             sha.update(blob.as_bytes());
@@ -1287,23 +1322,30 @@ mod tests {
     }
 
     #[test]
-    fn a_digest_of_a_language_changes_with_its_files_alone() {
+    fn a_digest_changes_with_the_files_of_its_languages_alone() {
         let folder = Folder::new();
         let root = repository(folder.0.join("repo"));
         write(&root, "a.nix", "{ a = 1; }\n", OLD);
         let mut store = Store::open(&folder.0.join("index.db")).unwrap();
         let mut digest = || {
             store.check(&root).unwrap();
-            store.read(&root).unwrap().digest(Language::Nix)
+            let worktree = store.read(&root).unwrap();
+            (
+                worktree.digest(&[Language::Nix]),
+                worktree.digest(&Language::ALL),
+            )
         };
         let first = digest();
         write(&root, "src/a.rs", "fn a2() {}\n", OLD);
-        assert_eq!(digest(), first);
+        let rust = digest();
+        assert_eq!(rust.0, first.0);
+        assert_ne!(rust.1, first.1);
         write(&root, "a.nix", "{ a = 2; }\n", OLD);
         let second = digest();
-        assert_ne!(second, first);
+        assert_ne!(second.0, first.0);
+        assert_ne!(second.1, rust.1);
         write(&root, "b.nix", "{ a = 2; }\n", OLD);
-        assert_ne!(digest(), second);
+        assert_ne!(digest().0, second.0);
     }
 
     #[test]
@@ -1337,6 +1379,31 @@ mod tests {
         fs::remove_dir_all(&first).unwrap();
         store.check(&second).unwrap();
         assert_eq!(count(&store, "SELECT count(*) FROM instances"), 0);
+    }
+
+    #[test]
+    fn a_graph_is_kept_under_one_key_and_goes_with_its_worktree() {
+        let folder = Folder::new();
+        let first = repository(folder.0.join("first"));
+        let second = repository(folder.0.join("second"));
+        let mut store = Store::open(&folder.0.join("index.db")).unwrap();
+        store.check(&first).unwrap();
+        let worktree = store.read(&first).unwrap();
+        assert_eq!(store.graph(&worktree, "one").unwrap(), None);
+        store.keep_graph(&worktree, "one", &[1, 2]).unwrap();
+        assert_eq!(store.graph(&worktree, "one").unwrap(), Some(vec![1, 2]));
+        assert_eq!(store.graph(&worktree, "two").unwrap(), None);
+        store.keep_graph(&worktree, "two", &[3]).unwrap();
+        assert_eq!(store.graph(&worktree, "one").unwrap(), None);
+        assert_eq!(store.graph(&worktree, "two").unwrap(), Some(vec![3]));
+        // A worktree no check has recorded keeps nothing.
+        let unknown = store.read(&second).unwrap();
+        store.keep_graph(&unknown, "one", &[1]).unwrap();
+        assert_eq!(store.graph(&unknown, "one").unwrap(), None);
+        // One whose folder is gone goes, and what was kept for it.
+        fs::remove_dir_all(&first).unwrap();
+        store.check(&second).unwrap();
+        assert_eq!(count(&store, "SELECT count(*) FROM graphs"), 0);
     }
 
     #[test]

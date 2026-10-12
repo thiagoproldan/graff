@@ -599,6 +599,27 @@ src/store.rs:
 }
 
 #[test]
+fn a_map_reads_its_graph_back_until_a_file_changes() {
+    let demo = Demo::new("map-kept");
+    let map = demo.ask(&["map"]);
+    // The second map reads the graph the first kept: one of no edges,
+    // written over it, ranks by the files' order alone.
+    let index = rusqlite::Connection::open(demo.top.join("cache/graff/index.db")).unwrap();
+    index.execute("UPDATE graphs SET edges = x''", []).unwrap();
+    let flat = demo.ask(&["map"]);
+    assert_ne!(flat, map);
+    assert!(
+        flat.find("src/lib.rs:") < flat.find("src/store.rs:"),
+        "{flat}"
+    );
+    // A file changed, the graph is made again.
+    let lib = demo.repo.join("src/lib.rs");
+    let text = fs::read_to_string(&lib).unwrap();
+    fs::write(&lib, format!("{text}\n")).unwrap();
+    assert_eq!(demo.ask(&["map"]), map);
+}
+
+#[test]
 fn an_answer_fits_its_budget_and_says_what_it_left_out() {
     let demo = Demo::new("budget");
     let whole = demo.ask(&["callers", "Storage"]);

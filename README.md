@@ -130,13 +130,20 @@ or of Python's library none (`src/rank.rs`); each by its signature under its
 file's path, the files best first, cut to 1,024 tokens unless `--budget`
 says otherwise. Named files and symbols are its focus, which it leaves out:
 the walk jumps to them rather than anywhere, so the map gives what they
-lean on. On ekko at f9564f4 (4,799 definitions) it took 0.35 to 0.36 s,
-on kmux at 5377be7 (15,984) 1.49 to 1.52 s, on Python 3.14's library
-(33,403) 1.04 to 1.06 s, and on nixpkgs's nixos/modules at 71dd4e4
-(116,641) 2.35 to 2.41 s, against 0.04, 0.11, 0.16 and 0.40 s for
-`outline` (five runs each, 2026-10-12, on AC with TLP's balanced profile,
-the CPU's boost off, the load at 6 to 10 from other sessions): resolving
-every use of the worktree takes most of it. `search` does not use the graph: on the
+lean on. Resolving every use of the worktree takes most of a first map,
+so the graph is kept in the index, for the worktree's files and the build,
+and read back by the next map until a file changes. On ekko at f9564f4
+(4,799 definitions) a map took 0.09 to 0.11 s with the graph kept and
+0.38 to 0.40 s making it, on kmux at 5377be7 (15,984) 0.27 s and 1.56 to
+1.58 s, on Python 3.14's library (33,403) 0.41 to 0.42 s and 1.10 to
+1.11 s, and on nixpkgs's nixos/modules at 71dd4e4 (116,641) 1.29 to
+1.32 s and 2.43 to 2.49 s, against 0.36 to 0.38, 1.49 to 1.52, 1.04 to
+1.05 and 2.37 to 2.45 s before the graph was kept, and 0.05, 0.11, 0.15
+and 0.41 to 0.42 s for `outline` (five runs each, interleaved,
+2026-10-12, on AC with TLP's balanced profile, the CPU's boost off, the
+load at 5 to 16 from other sessions). On nixos/modules most of what is
+left is writing a line for each of its definitions before the budget cuts
+them. `search` does not use the graph: on the
 probe of `evals/search/`, ordering its results by a walk from them, or
 adding their rank to their score, did no better than BM25 alone.
 An answer is cut to `--budget` tokens, 2,000 unless told, counted as 4

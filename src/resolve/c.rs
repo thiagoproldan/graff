@@ -96,7 +96,16 @@ struct Index<'a> {
     /// The branch each branch of a file is in, by their places among the
     /// file's.
     parents: Vec<Vec<Option<usize>>>,
+    /// What `function_around` reads, built once: per file, the line each
+    /// qualified name's first definition starts at, and the lines of each
+    /// function in the file's order; and what it found, by file and line.
+    starts: Vec<HashMap<&'a str, u32>>,
+    functions: Vec<Vec<Lines>>,
+    around: RefCell<HashMap<(usize, u32), Option<Lines>>>,
 }
+
+/// A definition's first and last lines.
+type Lines = (u32, u32);
 
 impl<'a> Index<'a> {
     fn new(files: &'a [File<'a>]) -> Index<'a> {
@@ -110,6 +119,9 @@ impl<'a> Index<'a> {
             guarded: HashMap::new(),
             system: vec![Vec::new(); n],
             parents: vec![Vec::new(); n],
+            starts: vec![HashMap::new(); n],
+            functions: vec![Vec::new(); n],
+            around: RefCell::new(HashMap::new()),
         };
         for (f, file) in files.iter().enumerate() {
             if file.language != Language::C {
@@ -124,6 +136,12 @@ impl<'a> Index<'a> {
                 if symbol.kind != Kind::File {
                     let d = Definition { file: f, symbol: s };
                     index.named.entry(&symbol.name).or_default().push(d);
+                }
+                index.starts[f]
+                    .entry(&symbol.qualified)
+                    .or_insert(symbol.start);
+                if symbol.kind == Kind::Function {
+                    index.functions[f].push((symbol.start, symbol.end));
                 }
             }
         }
@@ -231,16 +249,18 @@ impl<'a> Index<'a> {
 
     /// The lines of the function a use is in, read off the definition it
     /// is in: that function, or a macro defined inside it.
-    fn function_around(&self, file: usize, from: Option<&str>) -> Option<(u32, u32)> {
-        let symbols = &self.files[file].extraction.symbols;
-        let at = symbols
-            .iter()
-            .find(|s| Some(s.qualified.as_str()) == from)?
-            .start;
-        symbols
-            .iter()
-            .find(|s| s.kind == Kind::Function && s.start <= at && at <= s.end)
-            .map(|s| (s.start, s.end))
+    fn function_around(&self, file: usize, from: Option<&str>) -> Option<Lines> {
+        let at = *self.starts[file].get(from?)?;
+        *self
+            .around
+            .borrow_mut()
+            .entry((file, at))
+            .or_insert_with(|| {
+                self.functions[file]
+                    .iter()
+                    .copied()
+                    .find(|&(start, end)| start <= at && at <= end)
+            })
     }
 
     /// What a name used on a line reaches from the file `sight` reads;

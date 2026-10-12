@@ -12,13 +12,20 @@ line with a changed range of its file.
 
     nix develop -c python3 evals/search/probe.py /projects/kmux --sample 60
     nix develop -c python3 evals/search/probe.py REPO --graff BIN --sample N --seed S
+    nix develop -c python3 evals/search/probe.py /projects/kmux --asked-of /projects/nixdk
     nix develop -c python3 evals/search/test_probe.py
+
+With --asked-of OTHER (task 295) the same subjects are asked of another
+repository, at its HEAD, which holds no answer to them: what counts there
+is how many answers give no definition. --frame asks each subject inside a
+question, `where does the code {}`, as a question in prose would be.
 
 The commits drawn are those with a parent, a subject of 4 words or more,
 and changes in 1 to 3 files graff reads, out of tests, of at most 80
 changed lines; --sample N draws N of them with random.Random(SEED). The
 report starts with what ran: graff's binary and commit, the repository's
-commit, the seed and the flags.
+commit, the seed, the flags, and the GRAFF_ variables of the environment,
+which a build under trial may read its parameters from.
 """
 
 import argparse
@@ -160,6 +167,9 @@ def main():
     parser.add_argument("--sample", type=int, default=60)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--work", default="/tmp/graff-17/probe")
+    parser.add_argument("--asked-of", metavar="OTHER",
+                        help="ask the subjects of another repository, at its HEAD, which holds no answer to them")
+    parser.add_argument("--frame", default="{}", help="the question a subject is asked in: 'where does the code {}'")
     args = parser.parse_args()
     repo = os.path.abspath(args.repo)
     name = os.path.basename(repo.rstrip("/"))
@@ -168,6 +178,7 @@ def main():
         build = hashlib.sha1(f.read()).hexdigest()[:12]
     head = run(["git", "rev-parse", "--short", "HEAD"], cwd=repo).stdout.strip()
     ours = run(["git", "describe", "--always", "--dirty"], cwd=GRAFF).stdout.strip()
+    tuned = " ".join(f"{k}={v}" for k, v in sorted(os.environ.items()) if k.startswith("GRAFF_"))
 
     # A clone of its own, so the repository itself is left as it is.
     worktree = os.path.join(args.work, name)
@@ -178,17 +189,35 @@ def main():
     drawn = random.Random(args.seed).sample(pool, min(args.sample, len(pool)))
 
     print(f"probe.py on {name} at {head}: graff {graff} (sha1 {build[:12]}), its tree {ours}")
-    print(f"--sample {args.sample} --seed {args.seed}: {len(drawn)} of {len(pool)} commits")
-    ranks = []
+    print(f"--sample {args.sample} --seed {args.seed} --frame {args.frame!r}: {len(drawn)} of {len(pool)} commits;"
+          f" environment {tuned or 'none'}")
+    if args.asked_of:
+        # Each subject asked where it has no answer: what counts is saying nothing.
+        other = os.path.abspath(args.asked_of)
+        there = os.path.join(args.work, os.path.basename(other.rstrip("/")))
+        if not os.path.isdir(there):
+            run(["git", "clone", "-q", "--no-checkout", other, there])
+        tip = run(["git", "rev-parse", "HEAD"], cwd=other).stdout.strip()
+        run(["git", "checkout", "-q", "--detach", tip], cwd=there)
+        print(f"asked of {os.path.basename(there)} at {tip[:7]}")
+        empty = 0
+        for probe in drawn:
+            results = ask(graff, there, cache, args.frame.format(probe["subject"]))
+            empty += not results
+            print(f"{probe['commit'][:7]} {len(results):>2} {probe['subject']}")
+        print(f"said nothing {empty} of {len(drawn)}")
+        return 0
+    ranks, empty = [], 0
     for probe in drawn:
         run(["git", "checkout", "-q", "--detach", probe["commit"]], cwd=worktree)
-        results = ask(graff, worktree, cache, probe["subject"])
+        results = ask(graff, worktree, cache, args.frame.format(probe["subject"]))
+        empty += not results
         r = rank_found(results, probe["truth"])
         ranks.append(r)
         print(f"{probe['commit'][:7]} {r or '-':>2} {probe['subject']}")
     shares, mrr = score(ranks)
     found = ", ".join(f"@{k} {shares[k]:.2f}" for k in CUTS)
-    print(f"found {found}; MRR@10 {mrr:.3f}")
+    print(f"found {found}; MRR@10 {mrr:.3f}; said nothing {empty} of {len(drawn)}")
     return 0
 
 

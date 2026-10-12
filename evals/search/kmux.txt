@@ -1,5 +1,5 @@
-probe.py on kmux at 5377be7: graff /projects/graff/.claude/worktrees/task-17/target/release/graff (sha1 287be610fcc9), its tree e87d5df-dirty
---sample 60 --seed 0: 60 of 99 commits
+probe.py on kmux at 5377be7: graff /projects/graff/.claude/worktrees/task-295/target/release/graff (sha1 92fdfaa36a49), its tree f3889c4-dirty
+--sample 60 --seed 0 --frame '{}': 60 of 99 commits; environment none
 66712b6  - refactor(memory): paste_buffer -> Box ownership
 a913e33  1 feat: cyberpunk --help / -h screen for ztmux
 50f04c5  1 refactor(memory): status_line_entry.expanded -> owned CString
@@ -14,7 +14,7 @@ a5bab50  - docs: sync stale version/count references
 886dfcd  1 feat: a single @ztmux-zellij-mode setting, applied instantly
 2c2a7fa  4 key-bindings: four default bindings that were simply absent
 64d37f1  - copy-mode: fix next-word skipping whole lines (mis-ported De Morgan)
-4219845  4 README: drop self-ranking superlatives
+4219845  - README: drop self-ranking superlatives
 784e32d  - Remove the obscured redraw fallback; it is no longer needed
 01c8d99  3 fix: retheme status-format[0] + pane-border-format defaults to next-3.7
 1edd521  1 fix(ci): move record_table_drop into extensions, restore rustfmt
@@ -60,4 +60,4 @@ a002335  - docs: ztmux logo, README banner, favicon, and user and developer deck
 caba091  1 feat: hint bar shows note-less (user-rebound) keys via their command
 9613516  1 fix: default-terminal defaults to tmux-256color (match tmux build default)
 68ed63e  1 parity: verify_one.sh said OK for a case file it never read
-found @1 0.30, @3 0.48, @5 0.53, @10 0.57; MRR@10 0.392
+found @1 0.30, @3 0.48, @5 0.52, @10 0.55; MRR@10 0.388; said nothing 5 of 60

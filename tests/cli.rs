@@ -490,6 +490,26 @@ src/store.rs:2 const MAX
         demo.ask(&["search", "nowhere"]),
         demo.rooted("search nowhere in ROOT\n0 of 17 definitions match\n")
     );
+    // A question whose best match holds too little of it finds nothing, and
+    // says what the best holds and what no definition does.
+    assert_eq!(
+        demo.ask(&["search", "where", "does", "the", "pager", "open"]),
+        demo.rooted(
+            "search where does the pager open in ROOT
+0 of 17 definitions match enough of its words: the best of the 4 that hold one holds only `open`; none holds `pager`
+"
+        )
+    );
+    let nothing: serde_json::Value = serde_json::from_str(
+        &demo.ask(&["search", "where", "does", "the", "pager", "open", "--json"]),
+    )
+    .unwrap();
+    assert_eq!(
+        nothing["results"][0],
+        serde_json::json!({"matched": 0, "definitions": 17, "limit": 20, "holding": 4,
+                           "best_holds": ["open"], "absent": ["pager"]})
+    );
+    assert_eq!(nothing["results"].as_array().unwrap().len(), 1);
     let json: serde_json::Value =
         serde_json::from_str(&demo.ask(&["search", "open", "--limit", "1", "--json"])).unwrap();
     assert_eq!(

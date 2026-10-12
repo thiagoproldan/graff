@@ -63,7 +63,7 @@ Reach for it before grep or reading whole files when the question is about a nam
 - callers, callees: what reaches it and what it reaches, tied by the language's rules for names rather than by text, so another definition of the same name is not counted; uses it cannot tie to one definition come apart, as possible.
 - impact: callers of callers, before changing something.
 - outline: what a file defines, nested, with lines: Read only the range needed.
-- search: definitions by words, when the name is unknown.
+- search: definitions by words, when the name is unknown; it says it found nothing when its best match holds too little of them.
 - map: what matters most in the worktree, or around files and symbols, for a first look.
 
 grep does better for text that is not a definition's name (strings, messages, comments, config values), for every place a word is written, in languages graff does not read, and in files git ignores.";
@@ -471,7 +471,7 @@ pub fn tool_definitions() -> Value {
         },
         {
             "name": "search",
-            "description": "The definitions some words find, best first: ranked by BM25 over their names, split at underscores and case, their paths and their docs.",
+            "description": "The definitions some words find, best first: ranked by BM25 over their names, split at underscores and case, their paths and their docs. None when the best holds too little of the words, and then it says which words no definition holds, to ask in others.",
             "inputSchema": object(
                 json!({
                     "words": {"type": "string", "description": "Words, names or both: storage file, parseMap, open_store"},

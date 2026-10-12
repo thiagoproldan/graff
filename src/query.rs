@@ -596,7 +596,8 @@ pub fn search(
             });
         }
     }
-    let ranked = search::rank(query, &documents);
+    let answer = search::answer(query, &documents);
+    let ranked = answer.ranked;
     let mut text = format!(
         "{} of {} match",
         ranked.len(),
@@ -605,7 +606,29 @@ pub fn search(
     if ranked.len() > limit {
         text.push_str(&format!("; the first {limit} by score"));
     }
-    let item = json!({"matched": ranked.len(), "definitions": documents.len(), "limit": limit});
+    let mut item = json!({"matched": ranked.len(), "definitions": documents.len(), "limit": limit});
+    if ranked.is_empty() && answer.holding > 0 {
+        // Some hold a word, but the best too little of the question: say what
+        // it holds and what none does, the words to ask in otherwise.
+        let quoted = |words: &[String]| {
+            words
+                .iter()
+                .map(|w| format!("`{w}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        text.push_str(&format!(
+            " enough of its words: the best of the {} that hold one holds only {}",
+            answer.holding,
+            quoted(&answer.best_holds)
+        ));
+        if !answer.absent.is_empty() {
+            text.push_str(&format!("; none holds {}", quoted(&answer.absent)));
+        }
+        item["holding"] = json!(answer.holding);
+        item["best_holds"] = json!(answer.best_holds);
+        item["absent"] = json!(answer.absent);
+    }
     let mut lines = vec![Line::new(text, item, rank(6, 0), "headers")];
     for (n, &(i, score)) in ranked.iter().take(limit).enumerate() {
         let d = held[i];

@@ -124,7 +124,11 @@ of their qualified names, their paths and their docs, an identifier split
 at underscores and where its case says a word starts and kept whole too, a
 word in a name counting five times, as Zoekt counts one, and test code
 keeping half its score (`src/search.rs`); it gives 20 unless `--limit` says
-how many. `map` is Aider's repository map: the worktree's definitions
+how many. It finds nothing, rather than what shares a common word with the
+question, when its best match holds too little of it: two of the
+question's words, or all when it has fewer, or words that weigh by idf as
+much as one only a definition alone holds, stop words aside; the answer
+then names the words the best holds and those none does. `map` is Aider's repository map: the worktree's definitions
 ranked by PageRank over the graph of the uses that tie them, from the
 definition a use is in to the one it reaches, a use that may reach one of
 several definitions weighing a tenth and one that may reach a type of std
@@ -222,7 +226,8 @@ What graff does so far is measured there too:
   the whole worktree resolved, the same for each of ekko's 3,228 definitions
   in every language it reads.
 - `evals/search/`: how often `search` finds where a commit's change went,
-  asked its subject, on two repositories the question set does not hold.
+  asked its subject, on two repositories the question set does not hold,
+  and how often it finds nothing asked the other's.
 - `evals/nix/`: Nix against nix's evaluation of a NixOS host (options
   declared and set, the module graph) and against nil's ties of names, on a
   NixOS flake and on nixpkgs.

@@ -237,6 +237,22 @@ their first two lines.
   on AC under TLP's performance profile, boost on); on the flake it costs
   nothing measurable, 17-18 ms; `def` and `outline` take the same time as
   before.
+- **A helper's `${name}` option is read where the helper reads it** (task
+  163). `callers` of a declaration under an interpolated name keeps the
+  uses whose paths have the names the question writes, so that
+  `sys.audio.enable` names the audio module's alone; but a question that
+  named the declaration by its line, `lib/mkSys.nix:20`, or by its full
+  name, whose `options` no use writes, kept none, and missed the helper's
+  own read, `config.sys.${name}.enable`. Only the names written for the
+  option's own path narrow it now. On the flake at 428b233,
+  evals/query/check.py finds 576 of 576 definitions with the edges
+  examples/resolve gives them, against 574 at d0e05b7, the two options of
+  this kind. Of the flake's 9,764 questions (`def`, `callers`, `impact`
+  of each definition), 10 answer otherwise, all of declarations under
+  `${name}`: the 6 on those two options gain the read (and `impact` what
+  reaches it), and the 4 on `sops.secrets."${name}-password".neededForUsers`
+  gain a possible caller, a Markdown mention of `neededForUsers` that may
+  be one of 3, as it would for a name with no `${`.
 - **What counts as wrong, read by hand**: 6 settings at each step. 3 at
   step 1 and 4 at step 2 sit under a `mkIf` the host's configuration makes
   false, which step 2 does not evaluate: it decides a condition on the

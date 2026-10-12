@@ -1450,9 +1450,16 @@ impl<'s> Code<'s> {
 /// reaches stands for many: a Nix declaration under an interpolated name,
 /// `options.sys.${name}.enable`, is reached by `sys.audio.enable` and by
 /// `sys.video.enable`, and `sys.audio.enable` names only the first. A path
-/// may go on past what it uses, into the option's value.
+/// may go on past what it uses, into the option's value. Only the names
+/// written for the option's own path narrow it: not an `options` before it,
+/// which no use writes, nor a question that names the declaration by its
+/// line, `lib/mkSys.nix:5`.
 fn as_named(edge: &Edge, qualified: &str, written: &[&str]) -> bool {
     if !qualified.contains("${") {
+        return true;
+    }
+    let written = option_named(written, qualified);
+    if written.iter().all(|w| w.starts_with("${")) {
         return true;
     }
     let Some(path) = &edge.path else {
@@ -1465,6 +1472,22 @@ fn as_named(edge: &Edge, qualified: &str, written: &[&str]) -> bool {
             .zip(&used[end - written.len()..end])
             .all(|(w, u)| w == u || w.starts_with("${"))
     })
+}
+
+/// The names of a written name that name an option's path, those past the
+/// declaration's last `options`: `sys`, `audio`, `enable` of
+/// `options.sys.audio.enable` against `options.sys.${name}.enable`; none
+/// when they do not name the declaration, as a line does.
+fn option_named<'w>(written: &'w [&'w str], qualified: &str) -> &'w [&'w str] {
+    let full = resolve::segments(qualified);
+    if written.len() > full.len() || !names_run(written, &full[full.len() - written.len()..]) {
+        return &[];
+    }
+    let own = full
+        .iter()
+        .rposition(|segment| segment.split('#').next() == Some("options"))
+        .map_or(full.len(), |i| full.len() - i - 1);
+    &written[written.len().saturating_sub(own)..]
 }
 
 fn reaches(edge: &Edge, target: Definition) -> bool {

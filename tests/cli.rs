@@ -800,6 +800,33 @@ modules/video.nix:2-5 option options.sys.video.enable, written at lib/mkSys.nix:
 "
         )
     );
+    // The helper's own declaration is read where it reads `${name}` back,
+    // whether named by its line or by its full name: neither fills the
+    // interpolation, so neither narrows the uses to one name.
+    for written in [
+        "lib/mkSys.nix:5",
+        "lib/mkSys.nix:options.sys.${name}.enable",
+        "sys.${name}.enable",
+    ] {
+        assert_eq!(
+            demo.ask(&["callers", written]),
+            demo.rooted(&format!(
+                "callers {written} in ROOT
+lib/mkSys.nix:5 option options.sys.${{name}}.enable: 1 caller, 0 possible
+  lib/mkSys.nix:6 attribute config: ref 6
+"
+            )),
+            "{written}"
+        );
+    }
+    assert_eq!(
+        demo.ask(&["callers", "sys.radio.enable"]),
+        demo.rooted(
+            "callers sys.radio.enable in ROOT
+lib/mkSys.nix:5 option options.sys.${name}.enable: 0 callers, 0 possible
+"
+        )
+    );
     // A folder `importDir` lists with builtins.readDir imports each module in it.
     assert_eq!(
         demo.ask(&["callers", "modules/audio.nix"]),

@@ -114,3 +114,24 @@ The one different is `parseAddr.ipv4` in
 modules/tasks/network-interfaces-scripted.nix: full resolution ties the
 calls at lines 78 and 79, `parseAddr.${v} ..`, to it, and `callers` gives
 none. The report is nixos-modules.txt; one draw is a sample, not the whole.
+
+## Result, 2026-10-12 (task 163)
+
+`callers` of a Nix declaration under an interpolated name,
+`options.sys.${name}.enable`, kept only the uses whose paths have the
+names the question writes; asked by its line or by its full name, as this
+check asks it, it kept none, and missed the helper's own read,
+`config.sys.${name}.enable`. Only the names written for the option's own
+path narrow it now. examples/resolve also leaves out what git lists that
+is no regular file, as the index leaves it out: the flake now holds a git
+submodule, which it tried to read as a file and stopped on.
+
+|                   | the flake, d0e05b7       | the flake, task 163's tree |
+| ----------------- | ------------------------ | -------------------------- |
+| files graff reads | 203, 28 of them Markdown | 203, 28 of them Markdown   |
+| control           | 17 of 576 the same       | 17 of 576 the same         |
+| same edges        | 574 of 576 definitions   | 576 of 576                 |
+| edges             | 1,172, 69 from Markdown  | 1,172, 69 from Markdown    |
+
+The flake is at 428b233; d0e05b7's run had examples/resolve's change
+alone, and its 2 different are the two options task 163 names.

@@ -40,10 +40,14 @@ fn main() {
         .map_while(Result::ok)
         .filter(|p| !p.is_empty())
         .collect();
-    // A file in no language graff reads is left out, as the index leaves it.
+    // A file in no language graff reads is left out, as the index leaves it,
+    // and so is what is no regular file, as a submodule or a symbolic link.
     let (mut paths, mut languages, mut extractions) = (Vec::new(), Vec::new(), Vec::new());
     for path in &named {
         if Language::of(path, b"").is_none() && !Language::told_by_head(path) {
+            continue;
+        }
+        if !std::fs::symlink_metadata(root.join(path)).is_ok_and(|m| m.is_file()) {
             continue;
         }
         let source = std::fs::read(root.join(path)).unwrap_or_else(|e| panic!("{path}: {e}"));

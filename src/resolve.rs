@@ -10,17 +10,23 @@
 //! candidate is ambiguous and says how many; what has none in the crate is
 //! external: std's, or a dependency's.
 //!
+//! A use item under a `#[cfg(..)]` the build leaves out brings in nothing:
+//! the build is one on the host graff runs on, its picks unknown (`cfg`).
+//! In code the host's build leaves out, every use item counts, as graff
+//! does not tell which build compiles it.
+//!
 //! Besides the calls and references read out of the files, each use item is
 //! an edge, and so is the type a path goes through: `Storage` in
 //! `Storage::open()`.
 
 pub mod bash;
 pub mod c;
+pub(crate) mod cfg;
 pub mod markdown;
 pub mod nix;
 pub mod python;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::LazyLock;
 
@@ -425,6 +431,89 @@ fn libs<'p>(paths: impl Iterator<Item = &'p str>) -> HashSet<String> {
         .collect()
 }
 
+/// Whether the host's build leaves out what each of a file's branches
+/// holds: it or a branch around it is false there.
+fn left_out(branches: &[Branch], parents: &[Option<usize>], scripted: bool) -> Vec<bool> {
+    let mut out: Vec<bool> = Vec::with_capacity(branches.len());
+    for (branch, parent) in branches.iter().zip(parents) {
+        let around = parent.is_some_and(|p| out[p]);
+        out.push(around || cfg::value(&branch.condition, scripted) == Some(false));
+    }
+    out
+}
+
+/// Whether the host's build leaves out each file: every `mod` item that
+/// loads it is in code it leaves out, `#[cfg(windows)] mod imp;` on Linux,
+/// or in a file it leaves out. A file no item loads is a crate's root, or
+/// one where Cargo's layout puts it: built.
+fn files_left_out(
+    files: &[File],
+    places: &Places,
+    parents: &[Vec<Option<usize>>],
+    left_out: &[Vec<bool>],
+) -> Vec<bool> {
+    fn visit(
+        f: usize,
+        out: &mut [Option<bool>],
+        files: &[File],
+        places: &Places,
+        parents: &[Vec<Option<usize>>],
+        left_out: &[Vec<bool>],
+    ) -> bool {
+        if let Some(known) = out[f] {
+            return known;
+        }
+        // A file that loads itself, in turn, is built.
+        out[f] = Some(false);
+        let loaders = places.loaders(f);
+        let mut all = !loaders.is_empty();
+        for d in loaders {
+            let (g, branches) = (d.file, &files[d.file].extraction.branches);
+            let line = files[g].extraction.symbols[d.symbol].start;
+            let here = around(branches, &parents[g], line)
+                .next()
+                .is_some_and(|b| left_out[g][b]);
+            all = all && (here || visit(g, out, files, places, parents, left_out));
+        }
+        out[f] = Some(all);
+        all
+    }
+    let mut out = vec![None; files.len()];
+    (0..files.len())
+        .map(|f| visit(f, &mut out, files, places, parents, left_out))
+        .collect()
+}
+
+/// Whether each file's package has a build script: a build.rs in its
+/// folder, or a build/ folder's main.rs or build.rs, the places a
+/// manifest's `build` names most. A package is the folder above its src/,
+/// tests/, examples/ or benches/.
+fn scripted(files: &[File]) -> Vec<bool> {
+    let package = |path: &str| -> String {
+        let parts: Vec<&str> = path.split('/').collect();
+        let at = parts
+            .iter()
+            .position(|part| matches!(*part, "src" | "tests" | "examples" | "benches"))
+            .unwrap_or(parts.len() - 1);
+        parts[..at].join("/")
+    };
+    let scripts: HashSet<String> = files
+        .iter()
+        .filter_map(|f| {
+            let (folder, name) = f.path.rsplit_once('/').unwrap_or(("", f.path));
+            match (folder.rsplit_once('/').unwrap_or(("", folder)), name) {
+                ((above, "build"), "main.rs" | "build.rs") => Some(above.to_string()),
+                (_, "build.rs") => Some(folder.to_string()),
+                _ => None,
+            }
+        })
+        .collect();
+    files
+        .iter()
+        .map(|f| scripts.contains(&package(f.path)))
+        .collect()
+}
+
 /// Whether a Rust file is a crate's root by Cargo's layout: src/lib.rs,
 /// src/main.rs, a file of src/bin/, tests/, examples/ or benches/ or a
 /// folder's main.rs there. A file outside them, as build.rs, is a root
@@ -763,18 +852,42 @@ struct Index<'a> {
     /// What a module's use items and globs bring in of a name, at a depth
     /// of the walk, once looked up: libc's modules, joined by chains of
     /// `pub use self::x::*;`, were walked again for every name and path.
-    brought: RefCell<HashMap<Brought, Found>>,
+    /// With it, whether the lookup met a use item the host's build leaves
+    /// out.
+    brought: RefCell<HashMap<Brought, (Found, bool)>>,
+    /// Each file's branches' parents, as `nesting` gives them: its items
+    /// under a `#[cfg(..)]` a build on some host may leave out.
+    parents: Vec<Vec<Option<usize>>>,
+    /// Whether the host's build leaves out what each file's branches hold.
+    left_out: Vec<Vec<bool>>,
+    /// Whether the host's build leaves out each file.
+    file_left_out: Vec<bool>,
+    /// Whether the lookups under way are of code the host's build leaves
+    /// out, which another build compiles: every use item counts there.
+    elsewhere: Cell<bool>,
+    /// Whether the lookup under way met a use item the host's build leaves
+    /// out.
+    touched: Cell<bool>,
 }
 
 /// What a lookup of what use items and globs bring in is kept by: the
-/// module, the name, the depth, and for a file another file is a module
-/// with, that file, which sees none of the other's definitions.
-type Brought = (Scope, String, usize, Option<usize>);
+/// module, the name, the depth, for a file another file is a module with,
+/// that file, which sees none of the other's definitions, and whether it
+/// read every use item, for code the host's build leaves out, if that
+/// changed what it met.
+type Brought = (Scope, String, usize, Option<usize>, bool);
 
 #[derive(Default)]
 struct Imports<'a> {
-    named: HashMap<&'a str, Vec<&'a str>>,
-    globs: Vec<&'a str>,
+    named: HashMap<&'a str, Vec<Imported<'a>>>,
+    globs: Vec<Imported<'a>>,
+}
+
+/// A use item's path, and whether the host's build compiles it.
+#[derive(Clone, Copy)]
+struct Imported<'a> {
+    path: &'a str,
+    hosted: bool,
 }
 
 const TYPES: [Kind; 5] = [
@@ -807,7 +920,23 @@ impl<'a> Index<'a> {
             items_named: HashMap::new(),
             imports: HashMap::new(),
             brought: RefCell::new(HashMap::new()),
+            parents: Vec::new(),
+            left_out: Vec::new(),
+            file_left_out: Vec::new(),
+            elsewhere: Cell::new(false),
+            touched: Cell::new(false),
         };
+        index.parents = files
+            .iter()
+            .map(|f| nesting(&f.extraction.branches))
+            .collect();
+        index.left_out = files
+            .iter()
+            .zip(&index.parents)
+            .zip(scripted(files))
+            .map(|((f, parents), scripted)| left_out(&f.extraction.branches, parents, scripted))
+            .collect();
+        index.file_left_out = files_left_out(files, &index.places, &index.parents, &index.left_out);
         let mut waiting = Vec::new();
         for (f, file) in files.iter().enumerate() {
             let inline: HashMap<String, &Symbol> = file
@@ -825,18 +954,25 @@ impl<'a> Index<'a> {
             }
             // Use items; what a `mod` item loads is a file, `Places`'.
             for import in file.extraction.imports.iter().filter(|i| i.via.is_none()) {
+                let branches = &file.extraction.branches;
+                let branch = around(branches, &index.parents[f], import.line).next();
+                let imported = Imported {
+                    path: &import.path,
+                    hosted: !(index.file_left_out[f]
+                        || branch.is_some_and(|b| index.left_out[f][b])),
+                };
                 // In each module the file is, as its definitions are.
                 for place in index.places.all(f).to_vec() {
                     let scope = index.scope_in(f, place, import.line);
                     let imports = index.imports.entry(scope).or_default();
                     if import.glob {
-                        imports.globs.push(&import.path);
+                        imports.globs.push(imported);
                     } else {
                         let local = import
                             .alias
                             .as_deref()
                             .unwrap_or_else(|| last(&import.path));
-                        imports.named.entry(local).or_default().push(&import.path);
+                        imports.named.entry(local).or_default().push(imported);
                     }
                 }
             }
@@ -1222,29 +1358,72 @@ impl<'a> Index<'a> {
             return None;
         }
         let alone = self.places.alternatives(file).is_empty();
-        let key = (
+        let elsewhere = self.elsewhere.get();
+        let mut key = (
             scope.clone(),
             name.to_string(),
             depth,
             (!alone).then_some(file),
+            false,
         );
-        if let Some(found) = self.brought.borrow().get(&key) {
-            return found.clone();
+        // A lookup that met no use item the host's build leaves out is the
+        // same for code it leaves out.
+        for every in [false, elsewhere] {
+            key.4 = every;
+            if let Some((found, touched)) = self.brought.borrow().get(&key)
+                && (every == elsewhere || !touched)
+            {
+                self.touched.set(self.touched.get() || *touched);
+                return found.clone();
+            }
         }
+        let outer = self.touched.replace(false);
         let found = self.brought_in(file, scope, name, depth);
-        self.brought.borrow_mut().insert(key, found.clone());
+        let touched = self.touched.get();
+        self.touched.set(outer || touched);
+        key.4 = elsewhere && touched;
+        self.brought
+            .borrow_mut()
+            .insert(key, (found.clone(), touched));
         found
     }
 
-    /// A name a module's use items or globs bring in. What a lookup finds
-    /// does not hang on the file it starts from, but for a function's own
-    /// items, which no lookup here reaches, and the files it is a module
-    /// with, whose definitions it never sees.
+    /// Reads the lookups that follow as the build that compiles a line of a
+    /// file does: the host's, unless it leaves the line out; then, as graff
+    /// does not tell which build compiles it, every use item counts.
+    fn read_under(&self, file: usize, line: u32) {
+        let branches = &self.files[file].extraction.branches;
+        let innermost = around(branches, &self.parents[file], line).next();
+        self.elsewhere
+            .set(self.file_left_out[file] || innermost.is_some_and(|b| self.left_out[file][b]));
+    }
+
+    /// Whether the build the lookups are read under compiles a use item.
+    fn compiled(&self, import: &Imported) -> bool {
+        if import.hosted {
+            return true;
+        }
+        self.touched.set(true);
+        self.elsewhere.get()
+    }
+
+    /// A name a module's use items or globs bring in, those the build the
+    /// lookup is read under compiles. What a lookup finds does not hang on
+    /// the file it starts from, but for a function's own items, which no
+    /// lookup here reaches, and the files it is a module with, whose
+    /// definitions it never sees.
     fn brought_in(&self, file: usize, scope: &Scope, name: &str, depth: usize) -> Found {
         let imports = self.imports.get(scope);
-        if let Some(paths) = imports.and_then(|i| i.named.get(name)) {
-            for path in paths {
-                if let Some((found, _)) = self.path(file, scope, &segments(path), None, depth + 1)
+        let named: Vec<&Imported> = imports
+            .and_then(|i| i.named.get(name))
+            .into_iter()
+            .flatten()
+            .filter(|i| self.compiled(i))
+            .collect();
+        if !named.is_empty() {
+            for import in named {
+                if let Some((found, _)) =
+                    self.path(file, scope, &segments(import.path), None, depth + 1)
                     && !found.is_empty()
                 {
                     return Some((found, Rule::Import));
@@ -1253,8 +1432,9 @@ impl<'a> Index<'a> {
             // Brought in from outside the crate: no definition of it here counts.
             return Some((Vec::new(), Rule::Import));
         }
-        for glob in imports.map(|i| i.globs.as_slice()).unwrap_or_default() {
-            let parts = segments(glob);
+        let globs = imports.map(|i| i.globs.as_slice()).unwrap_or_default();
+        for glob in globs.iter().filter(|i| self.compiled(i)) {
+            let parts = segments(glob.path);
             let found = match self.module(file, scope, &parts, depth + 1) {
                 Some(module) => self
                     .in_module(file, &module, name, depth + 1)
@@ -1623,6 +1803,7 @@ fn resolve_rust(files: &[File], libraries: &[Library]) -> Vec<Edge> {
             .filter(|i| i.glob && i.via.is_none())
             .map(|i| (i.line, format!("{}::*", i.path)));
         for site in calls.chain(references).chain(imports) {
+            index.read_under(f, site.line);
             let scope = index.scope_of(f, site.from, site.line);
             let resolution = index.resolve(f, &scope, &site);
             // A module is no definition an edge reaches.
@@ -1659,6 +1840,7 @@ fn resolve_rust(files: &[File], libraries: &[Library]) -> Vec<Edge> {
             }
         }
         for (line, path) in globs {
+            index.read_under(f, line);
             let scope = index.scope_at(f, line);
             edges.extend(index.qualifier(f, &scope, &segments(&path), None).map(
                 |(name, resolution)| Edge {
@@ -2243,6 +2425,127 @@ fn render() {}
         assert_eq!(
             reaches(&edges, "tests/a.rs:3", "helper", "call path"),
             "tests/common/mod.rs helper (path)"
+        );
+    }
+
+    #[test]
+    fn a_use_item_under_a_cfg_the_build_leaves_out_brings_in_nothing() {
+        // semver's tests: `test_node`, which no build of the package sets,
+        // leaves out the use items that would shadow the glob's `req`.
+        let package: &[(&str, &str)] = &[
+            (
+                "src/lib.rs",
+                "mod node;\nmod real;\nmod util;\nuse crate::util::*;\n#[cfg(test_node)]\nuse node::{req, Req};\n#[cfg(not(test_node))]\nuse real::Req;\npub fn f(r: Req) {\n    req();\n}\n",
+            ),
+            ("src/node.rs", "pub fn req() {}\npub struct Req;\n"),
+            ("src/real.rs", "pub struct Req;\n"),
+            ("src/util.rs", "pub fn req() {}\n"),
+        ];
+        let edges = edges_of(package);
+        assert_eq!(
+            reaches(&edges, "src/lib.rs:10", "req", "call free"),
+            "src/util.rs req (glob)"
+        );
+        assert_eq!(
+            reaches(&edges, "src/lib.rs:9", "Req", "reference type"),
+            "src/real.rs Req (import)"
+        );
+        // A use item reaches what it names, as the build that takes it does.
+        assert_eq!(
+            reaches(&edges, "src/lib.rs:6", "req", "import"),
+            "src/node.rs req (path)"
+        );
+        // A build script may set any name: then both are read, and the
+        // first use item that reaches something wins over the glob.
+        let mut scripted = package.to_vec();
+        scripted.push(("build.rs", "fn main() {}\n"));
+        let edges = edges_of(&scripted);
+        assert_eq!(
+            reaches(&edges, "src/lib.rs:10", "req", "call free"),
+            "src/node.rs req (import)"
+        );
+        assert_eq!(
+            reaches(&edges, "src/lib.rs:9", "Req", "reference type"),
+            "src/node.rs Req (import)"
+        );
+    }
+
+    #[test]
+    fn a_use_item_is_read_under_the_hosts_target_unless_the_host_leaves_the_code_out() {
+        let live = if cfg!(windows) {
+            "src/win.rs"
+        } else {
+            "src/unix.rs"
+        };
+        let edges = edges_of(&[
+            (
+                "src/lib.rs",
+                "mod unix;\nmod win;\n#[cfg(windows)]\nuse crate::win::open;\n#[cfg(not(windows))]\nuse crate::unix::open;\npub fn f() {\n    open();\n}\n#[cfg(windows)]\nmod w {\n    use crate::win::*;\n    pub fn g() {\n        close();\n    }\n}\n#[cfg(windows)]\nm! {\n    use crate::win::close;\n}\n#[cfg(not(windows))]\nm! {\n    use crate::unix::close;\n}\npub fn h() {\n    close();\n}\n#[cfg(windows)]\nfn k() {\n    open();\n}\n",
+            ),
+            ("src/unix.rs", "pub fn open() {}\npub fn close() {}\n"),
+            ("src/win.rs", "pub fn open() {}\npub fn close() {}\n"),
+        ]);
+        assert_eq!(
+            reaches(&edges, "src/lib.rs:8", "open", "call free"),
+            format!("{live} open (import)")
+        );
+        // A cfg on a macro call holds for the use items in its arguments.
+        assert_eq!(
+            reaches(&edges, "src/lib.rs:26", "close", "call free"),
+            format!("{live} close (import)")
+        );
+        // Code the host's build leaves out reads every use item, the first
+        // that reaches something winning: graff does not tell which build
+        // compiles it.
+        assert_eq!(
+            reaches(&edges, "src/lib.rs:14", "close", "call free"),
+            "src/win.rs close (glob)"
+        );
+        assert_eq!(
+            reaches(&edges, "src/lib.rs:30", "open", "call free"),
+            "src/win.rs open (import)"
+        );
+    }
+
+    #[test]
+    fn a_file_only_code_the_host_leaves_out_loads_reads_every_use_item() {
+        let edges = edges_of(&[
+            (
+                "src/lib.rs",
+                "mod unix;\nmod win;\n#[cfg(windows)]\nmod imp;\n#[cfg(windows)]\npub use crate::win::*;\n#[cfg(not(windows))]\npub use crate::unix::*;\n",
+            ),
+            ("src/unix.rs", "pub fn open() {}\n"),
+            ("src/win.rs", "pub fn open() {}\n"),
+            (
+                "src/imp.rs",
+                "mod deeper;\npub fn g() {\n    crate::open();\n}\n",
+            ),
+            ("src/imp/deeper.rs", "pub fn h() {\n    crate::open();\n}\n"),
+        ]);
+        // Every use item counts, the first that reaches something winning.
+        assert_eq!(
+            reaches(&edges, "src/imp.rs:3", "open", "call path"),
+            "src/win.rs open (path)"
+        );
+        assert_eq!(
+            reaches(&edges, "src/imp/deeper.rs:2", "open", "call path"),
+            "src/win.rs open (path)"
+        );
+    }
+
+    #[test]
+    fn a_module_under_an_inner_cfg_the_build_leaves_out_brings_in_nothing() {
+        let edges = edges_of(&[
+            (
+                "src/lib.rs",
+                "mod a;\nmod b;\nmod imp {\n    #![cfg(target_os = \"none\")]\n    pub use crate::a::*;\n}\nmod other {\n    pub use crate::b::*;\n}\nuse imp::*;\nuse other::*;\npub fn f() {\n    open();\n}\n",
+            ),
+            ("src/a.rs", "pub fn open() {}\n"),
+            ("src/b.rs", "pub fn open() {}\n"),
+        ]);
+        assert_eq!(
+            reaches(&edges, "src/lib.rs:13", "open", "call free"),
+            "src/b.rs open (glob)"
         );
     }
 }

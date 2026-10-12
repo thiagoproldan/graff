@@ -110,6 +110,24 @@ the next definition in its file, and stops unless that scores differently.
   `mod imp;`, sees none of the other's definitions. A file no item loads, a
   crate's root or one only a macro's tokens declare (libc's `cfg_if!`), is
   where Cargo's layout puts it.
+- A use item under a `#[cfg(..)]` the build leaves out brings in nothing,
+  nor one in an item or a module body under one, `#![cfg(..)]` included
+  (task 170): a named import the build drops no longer shadows the glob
+  that brings in the same name. The build is one on the host graff runs
+  on: its target decides `unix`, `windows` and the `target_*` names (on
+  this machine, Linux on x86_64 with glibc); what a build picks --
+  `feature`, `test`, `debug_assertions`, `miri` and rustc's other names --
+  stays unknown, and so read. A name rustc does not know is set only by
+  `--cfg`, from a build script or RUSTFLAGS: unknown in a package with a
+  build script, else false (semver's `test_node_semver`, which only its
+  CI sets, in RUSTFLAGS; graff does not read RUSTFLAGS or
+  .cargo/config.toml). In code the host's build leaves out, as a
+  `#[cfg(windows)] fn f() { .. }` on Linux, or a file only such code
+  loads (`#[cfg(windows)] mod imp;`, a crate whose root is under
+  `#![cfg(windows)]`), every use item counts, as before: graff does not
+  tell which build compiles it. A
+  `cfg` that a macro's expansion applies, as tokio's
+  `cfg_has_atomic_u64! { .. }`, is not read, nor `cfg_if!`'s conditions.
 
 ## What the first run found
 
@@ -213,3 +231,62 @@ and those of the earlier reports:
   `graff callers Runtime::block_on`, the two builds interleaved, ten runs
   each on AC power and the performance profile, median 80.5 ms against
   f6aabd6's 77 ms.
+
+## Use items under a cfg the build leaves out (task 170)
+
+graff read every cfg at once: a named import the build leaves out still
+shadowed the glob that brings in the same name, and of several use items
+of one name the first that reached something won, whichever build
+compiles it. The extractor now keeps, as a branch, each item under a
+`#[cfg(..)]` and each file or module body under a `#![cfg(..)]` whose
+predicate a build on some host may read as false (src/resolve/cfg.rs,
+`decidable`), and the resolver leaves out a use item the host's build
+leaves out, as the rule above says. registry.py, e87d5df's build against
+task 170's, on the same fourteen crates (the last fourteen runs of
+registry.txt):
+
+| crate            | precision, e87d5df | recall | precision, task 170 | recall | wrong only in task 170 |
+| ---------------- | ------------------ | ------ | ------------------- | ------ | ---------------------- |
+| semver 1.0.28    | 0.928              | 0.905  | 0.993               | 0.969  | 0                      |
+| glam 0.31.0      | 0.875              | 0.632  | 0.877               | 0.634  | 0                      |
+| mio 1.2.2        | 0.992              | 0.796  | 0.981               | 0.796  | 3                      |
+| the other eleven | the same           |        | the same            |        | 0                      |
+
+- **semver's 61 wrong edges** of task 134 are right now: no build of the
+  package sets `test_node_semver`, so `req(..)` is the glob's
+  tests/util/mod.rs `req` and `VersionReq` the library's.
+- **glam's 133 more right edges**: names that reached its `neon`
+  modules' types, which the x86_64 host's build leaves out, reach sse2's
+  (`BVec4A` in src/u32/uvec4.rs, one of those read).
+- **mio's 3** (src/waker.rs:79 and :87, `sys::Waker`) went from
+  ambiguous to wrong: the Solaris-only `pub(crate) use self::waker::Waker;`
+  of src/sys/unix/mod.rs is left out on Linux, so the name goes on to
+  `pub(crate) use self::selector::*;`, whose module is any of four files
+  `cfg_attr` paths load (task 134), and poll.rs's `struct Waker` is found
+  first. rust-analyzer, `os-poll` off, has the shell module's. Reading
+  which of a `mod` item's `cfg_attr` paths the host loads is task 205.
+- **tokio's 2** (`AtomicU64`) are unchanged: the cfg that picks
+  atomic_u64_native.rs is in `cfg_has_atomic_u64! { .. }`, a macro of
+  tokio's own, which graff does not expand.
+- **Every crate of the registry**, 725, examples/resolve over each one's
+  .rs and .md files: 705 the same byte for byte, ekko's and graff's too.
+  In 17 crates 3,708 sites reach something else: 3,032 resolved to
+  external (rustix's three versions 2,872, of which 2,862 were their
+  `BorrowedFd`, `OwnedFd` and `RawFd` tied to the `BorrowedSocket`,
+  `OwnedSocket` and `RawSocket` their Windows polyfill brings in under
+  `#[cfg(windows)]`; tokio 118, of which 107 went to its `docsrs` stubs
+  of `std::os`), 657 resolved to another definition (glam's two versions
+  583), 4 resolved to ambiguous, 3 ambiguous to resolved (mio's above),
+  1 external to resolved. With every use item read, as for code the
+  host's build leaves out, the resolver gives e87d5df's edges on rustix
+  byte for byte.
+- **Cost**, the builds interleaved, nine runs each, on AC under the
+  balanced profile (EPP balance_power, boost off): resolution alone of
+  rustix's 317 files, 211 ms against 249 ms, of which 10 ms is the
+  reading of branches (221 ms in the same run with every use item read)
+  and the rest the lookups of names now external; tokio's, 272 against
+  275 ms. `graff def Errno` on rustix 116 against 126 ms, `callers` 119
+  against 129 ms; on tokio `def Runtime::block_on` 70 against 73 ms.
+  Extraction of tokio's 555 files by d0e05b7's build and this one, 1,441
+  against 1,475 ms. Branches kept: rustix 2,545 (119 KB of conditions),
+  tokio 876, windows-sys 0.61.2 1,038, glam 69, semver 5.

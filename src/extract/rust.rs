@@ -11,13 +11,22 @@
 //! tokens: a name followed by parentheses is a call, after `.` a method, after
 //! `::` a path; any other name not bound in the function is a reference.
 //! Items a macro_rules body generates are not seen.
+//!
+//! An item under `#[cfg(..)]`, or a file or module body under `#![cfg(..)]`,
+//! is a branch with its predicate, when a build on some host may leave it
+//! out: `unix`, `target_os = "linux"`, a name rustc does not know; not
+//! `feature = "std"` or `test`, which only a build's picks decide.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::LazyLock;
 
 use tree_sitter::{Node, Parser, Point, Range};
 
+use crate::resolve::cfg::decidable;
+
 use super::{
-    Call, CallKind, Extraction, Import, Kind, MAX_DEPTH, RefKind, Reference, Symbol, end_line, line,
+    Branch, Call, CallKind, Extraction, Import, Kind, MAX_DEPTH, RefKind, Reference, Symbol,
+    end_line, line,
 };
 
 /// Words a macro's tokens can hold that name nothing in the program.
@@ -40,6 +49,38 @@ const ITEM_STARTS: &[&str] = &[
     "#", "pub", "fn", "struct", "enum", "static", "const", "use", "impl", "trait", "type", "mod",
     "unsafe", "extern", "async", "let",
 ];
+
+/// The items whose `#[cfg(..)]` the extraction keeps, as a branch: those
+/// that hold a use item or code that names something.
+const CONDITIONED: &[&str] = &[
+    "use_declaration",
+    "mod_item",
+    "macro_invocation",
+    "expression_statement",
+    "let_declaration",
+    "function_item",
+    "impl_item",
+    "trait_item",
+    "struct_item",
+    "enum_item",
+    "union_item",
+    "type_item",
+    "const_item",
+    "static_item",
+];
+
+/// The kind ids of CONDITIONED, and of a file and a module body, which a
+/// `#![cfg(..)]` holds for.
+static KIND_IDS: LazyLock<(Vec<u16>, Vec<u16>)> = LazyLock::new(|| {
+    let language: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
+    let ids = |kinds: &[&str]| -> Vec<u16> {
+        kinds
+            .iter()
+            .map(|kind| language.id_for_node_kind(kind, true))
+            .collect()
+    };
+    (ids(CONDITIONED), ids(&["source_file", "declaration_list"]))
+});
 
 /// Macros whose arguments are code for somewhere else: quote's templates.
 const TEMPLATES: &[&str] = &[
@@ -125,6 +166,18 @@ fn all_children(node: Node) -> Vec<Node> {
     node.children(&mut cursor).collect()
 }
 
+/// A `cfg` predicate as a branch keeps it, without spaces outside its
+/// strings: `all(unix, not(miri))` reads `all(unix,not(miri))`.
+fn unspaced(text: &str) -> String {
+    let mut quoted = false;
+    text.chars()
+        .filter(|&c| {
+            quoted ^= c == '"';
+            quoted || !c.is_whitespace()
+        })
+        .collect()
+}
+
 /// Text spaced as a path is written: `crate :: ops` reads `crate::ops`.
 fn path_text(text: &str) -> String {
     text.split_whitespace()
@@ -162,9 +215,86 @@ impl<'s> Reader<'s> {
     }
 
     fn children(&mut self, node: Node) {
-        for child in all_children(node) {
-            self.visit(child);
+        let each = |reader: &mut Self| {
+            // The `#[cfg(..)]` attributes read so far, for the item after
+            // them: told as the walk goes, as a node's previous sibling is
+            // found by a walk from its parent's first child.
+            let mut predicates = Vec::new();
+            for child in all_children(node) {
+                match child.kind() {
+                    "attribute_item" => predicates.extend(reader.cfg(child)),
+                    "line_comment" | "block_comment" => {}
+                    _ if !predicates.is_empty() && KIND_IDS.0.contains(&child.kind_id()) => {
+                        let condition = reader.condition(std::mem::take(&mut predicates));
+                        reader.deeper(|reader| match condition {
+                            Some(condition) => {
+                                reader.under(child, condition, |reader| reader.read(child))
+                            }
+                            None => reader.read(child),
+                        });
+                        continue;
+                    }
+                    _ => predicates.clear(),
+                }
+                reader.visit(child);
+            }
+        };
+        // `#![cfg(..)]` holds for the file or the module body it is in.
+        let inner = match KIND_IDS.1.contains(&node.kind_id()) {
+            true => named_children(node)
+                .into_iter()
+                .take_while(|child| {
+                    matches!(
+                        child.kind(),
+                        "inner_attribute_item" | "line_comment" | "block_comment"
+                    )
+                })
+                .filter(|child| child.kind() == "inner_attribute_item")
+                .filter_map(|attribute| self.cfg(attribute))
+                .collect(),
+            false => Vec::new(),
+        };
+        match self.condition(inner) {
+            Some(condition) => self.under(node, condition, each),
+            None => each(self),
         }
+    }
+
+    /// The predicate of a `#[cfg(..)]` or `#![cfg(..)]`, unspaced.
+    fn cfg(&self, attribute: Node) -> Option<String> {
+        let attribute = named_children(attribute).into_iter().next()?;
+        let name = named_children(attribute).into_iter().next()?;
+        if self.text(name) != "cfg" {
+            return None;
+        }
+        let arguments = self.text(attribute.child_by_field_name("arguments")?);
+        let inside = arguments.strip_prefix('(')?.strip_suffix(')')?;
+        Some(unspaced(inside))
+    }
+
+    /// The condition several `cfg` predicates make: each must hold.
+    fn condition(&self, predicates: Vec<String>) -> Option<String> {
+        match predicates.len() {
+            0 => None,
+            1 => predicates.into_iter().next(),
+            _ => Some(format!("all({})", predicates.join(","))),
+        }
+    }
+
+    /// Runs `step` over a node under a condition, which the extraction
+    /// keeps as a branch if a build on some host may leave it out: every
+    /// branch is read before each question (gotcha 177), and one only a
+    /// build's picks decide, `feature = "std"` or `test`, is unknown to the
+    /// resolver on every host.
+    fn under(&mut self, node: Node, condition: String, step: impl FnOnce(&mut Self)) {
+        if decidable(&condition) {
+            self.out.branches.push(Branch {
+                start: line(node),
+                end: end_line(node),
+                condition,
+            });
+        }
+        step(self);
     }
 
     /// Runs `step` a level deeper, unless the walk is as deep as graff reads,
@@ -1727,6 +1857,63 @@ mod tests {
                 ("crate::ops::apply".into(), None, true, true),
                 ("super::item::Item".into(), None, false, false),
                 ("super".into(), None, true, false),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_item_under_a_cfg_a_build_may_leave_out_is_a_branch() {
+        let source = r#"#![cfg(unix)]
+#[cfg(test_node_semver)]
+use node::{req, VersionReq};
+#[cfg(not( test_node_semver ))]
+// A comment between.
+#[cfg(target_os = "linux os")]
+use semver::VersionReq;
+#[cfg(windows)]
+fn f() {}
+#[cfg(windows)]
+mod imp;
+#[cfg(windows)]
+mod w {
+    #![cfg(target_env = "msvc")]
+    #[cfg(feature = "x")]
+    m! {
+        pub use self::x::*;
+    }
+    fn g() {}
+}
+#[cfg(any(miri, target_os = "none"))]
+fn h() {
+    #[cfg(all(test, not(debug_assertions)))]
+    use std::mem;
+}
+#[cfg_attr(miri, cfg(doc))]
+use plain::Item;
+fn k() {
+    #[cfg(windows)]
+    let x = imp::X;
+}
+"#;
+        let out = extract(source.as_bytes());
+        let got: Vec<(u32, u32, &str)> = out
+            .branches
+            .iter()
+            .map(|b| (b.start, b.end, b.condition.as_str()))
+            .collect();
+        // What only a build's picks decide, `feature` and `test`, is none.
+        assert_eq!(
+            got,
+            vec![
+                (1, 31, "unix"),
+                (3, 3, "test_node_semver"),
+                (7, 7, "all(not(test_node_semver),target_os=\"linux os\")"),
+                (9, 9, "windows"),
+                (11, 11, "windows"),
+                (13, 20, "windows"),
+                (13, 20, "target_env=\"msvc\""),
+                (22, 25, "any(miri,target_os=\"none\")"),
+                (30, 30, "windows"),
             ]
         );
     }

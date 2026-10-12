@@ -16,7 +16,7 @@ use crate::lang::Language;
 
 /// Bumped whenever what an extractor produces changes, so that results kept
 /// from an older extractor are read again rather than trusted.
-pub const VERSION: u32 = 15;
+pub const VERSION: u32 = 16;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Extraction {
@@ -273,11 +273,13 @@ pub struct Import {
 /// A branch of a C conditional: `#if`, `#ifdef`, `#ifndef`, `#elif`,
 /// `#elifdef`, `#elifndef` or `#else`, to the next directive of its
 /// conditional. In Python, the block of an `if`, an `elif` or an `else`.
+/// In Rust, an item under `#[cfg(..)]`, or the file or module body under
+/// `#![cfg(..)]`, where a build on some host may leave it out.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Branch {
     /// First and last line, 1-based and inclusive: past its directive's
     /// lines, to the line before the next directive of its conditional; in
-    /// Python, its block's.
+    /// Python, its block's; in Rust, the item's, past its attributes.
     pub start: u32,
     pub end: u32,
     /// The condition under which a compiler reads it, as the directives
@@ -286,6 +288,8 @@ pub struct Branch {
     /// `!(defined(__APPLE__)) && (defined(_WIN32))`. In Python, under which
     /// it runs, on one line: `not (os.name == "nt") and (os.name == "posix")`
     /// for the `elif os.name == "posix":` after an `if os.name == "nt":`.
+    /// In Rust, the `cfg` predicate without spaces outside its strings, an
+    /// item's several in an `all`: `all(unix,not(target_os="linux"))`.
     pub condition: String,
 }
 

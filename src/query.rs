@@ -10,6 +10,7 @@
 //! references it needs: those named as the symbol, for its callers; those
 //! inside it, for its callees.
 
+use std::cell::OnceCell;
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -838,8 +839,8 @@ struct Code<'s> {
     libraries: Vec<(String, String)>,
     /// The features each package's build enables.
     features: resolve::cargo::Features,
-    /// Each file's definitions, by qualified name.
-    defined: Vec<HashMap<String, usize>>,
+    /// Each file's definitions, by qualified name, made when first asked.
+    defined: Vec<OnceCell<HashMap<String, usize>>>,
     /// Each Rust file's crates and module paths, and the `mod` items that
     /// load it.
     places: resolve::Places,
@@ -989,18 +990,7 @@ impl<'s> Code<'s> {
                 ))
             })
             .collect();
-        let defined = worktree
-            .files
-            .iter()
-            .map(|(_, extraction)| {
-                extraction
-                    .symbols
-                    .iter()
-                    .enumerate()
-                    .map(|(s, symbol)| (symbol.qualified.clone(), s))
-                    .collect()
-            })
-            .collect();
+        let defined = worktree.files.iter().map(|_| OnceCell::new()).collect();
         let places = resolve::Places::new(&files(&worktree));
         let features = resolve::cargo::features(&files(&worktree), &|path| {
             fs::read_to_string(root.join(path)).ok()
@@ -1179,6 +1169,18 @@ impl<'s> Code<'s> {
                 .keep_graph(&self.worktree, key, &graph.walk.kept())?;
         }
         Ok(graph)
+    }
+
+    fn defined(&self, file: usize) -> &HashMap<String, usize> {
+        self.defined[file].get_or_init(|| {
+            self.worktree.files[file]
+                .1
+                .symbols
+                .iter()
+                .enumerate()
+                .map(|(s, symbol)| (symbol.qualified.clone(), s))
+                .collect()
+        })
     }
 
     fn symbol(&self, d: Definition) -> &Symbol {
@@ -1625,7 +1627,7 @@ impl<'s> Code<'s> {
         let full = resolve::segments(&symbol.qualified);
         let own = (1..full.len())
             .rev()
-            .find(|&n| self.defined[d.file].contains_key(&full[..n].join(".")))
+            .find(|&n| self.defined(d.file).contains_key(&full[..n].join(".")))
             .unwrap_or(0);
         (parts.len().max(own + 1)..full.len())
             .any(|end| names_run(parts, &full[end - parts.len()..end]))
@@ -1719,7 +1721,7 @@ impl<'s> Code<'s> {
         match edge
             .from
             .as_deref()
-            .and_then(|from| self.defined[file].get(from))
+            .and_then(|from| self.defined(file).get(from))
         {
             Some(&symbol) => Caller::In(Definition { file, symbol }),
             None => self

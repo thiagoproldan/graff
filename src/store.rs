@@ -757,7 +757,7 @@ impl Store {
         let holders = worktree.holders();
         let mut query = self.connection.prepare(
             "SELECT content, name, qualified, kind, start, end, doc, internal, typed, consumed, value, declared FROM symbols
-             WHERE content IN (SELECT content FROM files WHERE worktree = ?1) ORDER BY rowid",
+             WHERE content IN (SELECT content FROM files WHERE worktree = ?1) ORDER BY content, rowid",
         )?;
         let mut rows = query.query([id])?;
         while let Some(row) = rows.next()? {
@@ -774,13 +774,13 @@ impl Store {
                 value: row.get(10)?,
                 declared: row.get(11)?,
             };
-            for &f in holders.get(&row.get(0)?).into_iter().flatten() {
-                worktree.files[f].1.symbols.push(symbol.clone());
-            }
+            deal(holders.get(&row.get(0)?), symbol, |f, item| {
+                worktree.files[f].1.symbols.push(item)
+            });
         }
         let mut query = self.connection.prepare(
             "SELECT content, path, alias, glob, public, line, importer, via, condition FROM imports
-             WHERE content IN (SELECT content FROM files WHERE worktree = ?1) ORDER BY rowid",
+             WHERE content IN (SELECT content FROM files WHERE worktree = ?1) ORDER BY content, rowid",
         )?;
         let mut rows = query.query([id])?;
         while let Some(row) = rows.next()? {
@@ -794,13 +794,13 @@ impl Store {
                 via: row.get(7)?,
                 condition: row.get(8)?,
             };
-            for &f in holders.get(&row.get(0)?).into_iter().flatten() {
-                worktree.files[f].1.imports.push(import.clone());
-            }
+            deal(holders.get(&row.get(0)?), import, |f, item| {
+                worktree.files[f].1.imports.push(item)
+            });
         }
         let mut query = self.connection.prepare(
             "SELECT content, start, end, condition FROM branches
-             WHERE content IN (SELECT content FROM files WHERE worktree = ?1) ORDER BY rowid",
+             WHERE content IN (SELECT content FROM files WHERE worktree = ?1) ORDER BY content, rowid",
         )?;
         let mut rows = query.query([id])?;
         while let Some(row) = rows.next()? {
@@ -809,9 +809,9 @@ impl Store {
                 end: row.get(2)?,
                 condition: row.get(3)?,
             };
-            for &f in holders.get(&row.get(0)?).into_iter().flatten() {
-                worktree.files[f].1.branches.push(branch.clone());
-            }
+            deal(holders.get(&row.get(0)?), branch, |f, item| {
+                worktree.files[f].1.branches.push(item)
+            });
         }
         Ok(worktree)
     }
@@ -1103,6 +1103,17 @@ impl Worktree {
             holders.entry(*content).or_default().push(f);
         }
         holders
+    }
+}
+
+/// Hands `item` to each file of a content, the last one the item itself: a
+/// content has most often one.
+fn deal<T: Clone>(files: Option<&Vec<usize>>, item: T, mut give: impl FnMut(usize, T)) {
+    if let Some((last, rest)) = files.and_then(|files| files.split_last()) {
+        for &f in rest {
+            give(f, item.clone());
+        }
+        give(*last, item);
     }
 }
 
@@ -1488,6 +1499,34 @@ mod tests {
         fs::remove_dir_all(&first).unwrap();
         store.check(&second).unwrap();
         assert_eq!(count(&store, "SELECT count(*) FROM instances"), 0);
+    }
+
+    #[test]
+    fn files_of_one_content_each_read_its_definitions_in_order() {
+        let folder = Folder::new();
+        let root = repository(folder.0.join("repo"));
+        // Two files of the same bytes share a content; a third has others,
+        // which the rows of the first must not interleave with.
+        let same = "fn one() {}\nfn two() { one(); }\nfn three() { two(); }\n";
+        write(&root, "src/c.rs", same, OLD);
+        write(&root, "src/d.rs", same, OLD);
+        write(&root, "src/e.rs", "fn four() {}\nfn five() {}\n", OLD);
+        let mut store = Store::open(&folder.0.join("index.db")).unwrap();
+        store.check(&root).unwrap();
+        let worktree = store.read(&root).unwrap();
+        let names = |path: &str| -> Vec<String> {
+            let at = worktree.files.iter().position(|(p, _)| p == path).unwrap();
+            worktree.files[at]
+                .1
+                .symbols
+                .iter()
+                .map(|symbol| symbol.name.clone())
+                .collect()
+        };
+        for path in ["src/c.rs", "src/d.rs"] {
+            assert_eq!(names(path), ["one", "two", "three"], "{path}");
+        }
+        assert_eq!(names("src/e.rs"), ["four", "five"]);
     }
 
     #[test]

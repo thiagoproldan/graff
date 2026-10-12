@@ -1,0 +1,292 @@
+{
+ "run": {
+  "date": "2026-10-12T04:58:58-03:00",
+  "label": "t2-bm25",
+  "graff": {
+   "version": "graff 0.1.0",
+   "commit": null,
+   "store": null,
+   "binary": "/tmp/graff-19/graff-T2",
+   "settings": {},
+   "index": "graff index  (in the corpus)",
+   "ask": "graff search QUESTION  (in the corpus; --limit 20, --budget 2000)"
+  },
+  "power_at_start": {
+   "ac": "1",
+   "boost": "0",
+   "epp": "balance_power",
+   "load": "16.89 13.12 11.87 13/1555 2689857"
+  },
+  "rules": {
+   "tokens": 2000,
+   "chars_per_token": 4,
+   "k": 5
+  },
+  "questions": {
+   "all": 52,
+   "private": 11
+  },
+  "bar": {
+   "date": "2026-10-04T14:53:12-03:00",
+   "graphify-0.9.61": {
+    "version": "graphify 0.9.61",
+    "store": "/nix/store/3z3701h1ch4y7m22yz10bgbrjlv9mxc7-graphify-0.9.61"
+   },
+   "codebase-memory-mcp-0.11.0": {
+    "version": "codebase-memory-mcp 0.11.0",
+    "store": "/nix/store/w4h668ln3w13pq74jfq0fnsyfq52c6dm-codebase-memory-mcp-0.11.0"
+   }
+  }
+ },
+ "power_at_end": {
+  "ac": "1",
+  "boost": "0",
+  "epp": "balance_power",
+  "load": "14.76 12.78 11.78 4/1588 2692825"
+ },
+ "graff": {
+  "errors": 0,
+  "file@5": 0.761,
+  "recall_in_answer": 0.761,
+  "ranges_whole_only": 7,
+  "median_emitted_tokens": 819.0,
+  "median_seconds": 0.046,
+  "index_seconds": 9.4,
+  "index_failed": 0
+ },
+ "recall@5_whole_file_reaching_nothing": {
+  "t2-bm25": 0.435,
+  "graphify-0.9.61": 0.065,
+  "codebase-memory-mcp-0.11.0": 0.087
+ },
+ "all": {
+  "questions": 52,
+  "answered": 46,
+  "no_answer": 6,
+  "graff": {
+   "recall@5": 0.565,
+   "by_language": {
+    "bash": 0.4,
+    "c": 0.167,
+    "markdown": 0.7,
+    "nix": 0.857,
+    "python": 0.5,
+    "rust": 0.5
+   },
+   "median_tokens": 819.0,
+   "said_nothing": 0
+  },
+  "against": {
+   "graphify-0.9.61": {
+    "recall@5": 0.065,
+    "by_language": {
+     "bash": 0.4,
+     "c": 0.0,
+     "markdown": 0.0,
+     "nix": 0.0,
+     "python": 0.0,
+     "rust": 0.062
+    },
+    "median_tokens": 1645.0,
+    "said_nothing": 2,
+    "wins": [
+     "ctx-05",
+     "ctx-07",
+     "ekko-01",
+     "ekko-04",
+     "ekko-07",
+     "ekko-08",
+     "ekko-11",
+     "ekko-12",
+     "ekko-16",
+     "ekko-18",
+     "ekko-20",
+     "ekko-21",
+     "ekko-22",
+     "ekko-23",
+     "ekko-24",
+     "kimi-02",
+     "kimi-04"
+    ],
+    "wins_count": 25,
+    "losses": [],
+    "losses_count": 0,
+    "p": 2.98e-08,
+    "short_in": [],
+    "rules": {
+     "1 sign test": true,
+     "2 every language": true,
+     "3 median tokens": true,
+     "4 said nothing": false
+    },
+    "passes": false
+   },
+   "codebase-memory-mcp-0.11.0": {
+    "recall@5": 0.12,
+    "by_language": {
+     "bash": 0.4,
+     "c": 0.0,
+     "markdown": 0.1,
+     "nix": 0.286,
+     "python": 0.1,
+     "rust": 0.0
+    },
+    "median_tokens": 1313.0,
+    "said_nothing": 0,
+    "wins": [
+     "ctx-05",
+     "ctx-07",
+     "ekko-01",
+     "ekko-04",
+     "ekko-07",
+     "ekko-08",
+     "ekko-11",
+     "ekko-12",
+     "ekko-15",
+     "ekko-16",
+     "ekko-18",
+     "ekko-20",
+     "ekko-21",
+     "ekko-22",
+     "ekko-24",
+     "kimi-02",
+     "kimi-04"
+    ],
+    "wins_count": 23,
+    "losses": [],
+    "losses_count": 1,
+    "p": 1.49e-06,
+    "short_in": [],
+    "rules": {
+     "1 sign test": true,
+     "2 every language": true,
+     "3 median tokens": true,
+     "4 said nothing": false
+    },
+    "passes": false
+   }
+  },
+  "judged_languages": [
+   "bash",
+   "markdown",
+   "nix",
+   "python",
+   "rust"
+  ],
+  "passes": false
+ },
+ "without_seen": {
+  "questions": 49,
+  "answered": 43,
+  "no_answer": 6,
+  "graff": {
+   "recall@5": 0.581,
+   "by_language": {
+    "bash": 0.4,
+    "c": 0.167,
+    "markdown": 0.7,
+    "nix": 0.857,
+    "python": 0.5,
+    "rust": 0.538
+   },
+   "median_tokens": 820,
+   "said_nothing": 0
+  },
+  "against": {
+   "graphify-0.9.61": {
+    "recall@5": 0.07,
+    "by_language": {
+     "bash": 0.4,
+     "c": 0.0,
+     "markdown": 0.0,
+     "nix": 0.0,
+     "python": 0.0,
+     "rust": 0.077
+    },
+    "median_tokens": 1647,
+    "said_nothing": 2,
+    "wins": [
+     "ctx-05",
+     "ctx-07",
+     "ekko-04",
+     "ekko-07",
+     "ekko-08",
+     "ekko-11",
+     "ekko-12",
+     "ekko-16",
+     "ekko-18",
+     "ekko-20",
+     "ekko-21",
+     "ekko-22",
+     "ekko-23",
+     "ekko-24",
+     "kimi-02",
+     "kimi-04"
+    ],
+    "wins_count": 24,
+    "losses": [],
+    "losses_count": 0,
+    "p": 5.96e-08,
+    "short_in": [],
+    "rules": {
+     "1 sign test": true,
+     "2 every language": true,
+     "3 median tokens": true,
+     "4 said nothing": false
+    },
+    "passes": false
+   },
+   "codebase-memory-mcp-0.11.0": {
+    "recall@5": 0.128,
+    "by_language": {
+     "bash": 0.4,
+     "c": 0.0,
+     "markdown": 0.1,
+     "nix": 0.286,
+     "python": 0.1,
+     "rust": 0.0
+    },
+    "median_tokens": 1304,
+    "said_nothing": 0,
+    "wins": [
+     "ctx-05",
+     "ctx-07",
+     "ekko-04",
+     "ekko-07",
+     "ekko-08",
+     "ekko-11",
+     "ekko-12",
+     "ekko-15",
+     "ekko-16",
+     "ekko-18",
+     "ekko-20",
+     "ekko-21",
+     "ekko-22",
+     "ekko-24",
+     "kimi-02",
+     "kimi-04"
+    ],
+    "wins_count": 22,
+    "losses": [],
+    "losses_count": 1,
+    "p": 2.86e-06,
+    "short_in": [],
+    "rules": {
+     "1 sign test": true,
+     "2 every language": true,
+     "3 median tokens": true,
+     "4 said nothing": false
+    },
+    "passes": false
+   }
+  },
+  "judged_languages": [
+   "bash",
+   "markdown",
+   "nix",
+   "python",
+   "rust"
+  ],
+  "passes": false
+ }
+}

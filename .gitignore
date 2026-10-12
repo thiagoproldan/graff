@@ -14,3 +14,5 @@ evals/extract/registry*.txt
 evals/python/pyright-stdlib*.txt
 evals/nix/private/
 evals/search/private/
+evals/gate/work/
+evals/gate/private/

@@ -173,6 +173,20 @@ on graff's own worktree took 18 ms a call, against 24 ms for the command
 line (20 calls each, three rounds, 2026-10-12, TLP's balanced profile on
 battery, the load at 10 from other sessions).
 
+The flake's `packages.plugin` is graff's Claude Code plugin: that server,
+and a `SessionStart` hook, `graff --hook` (`src/hook.rs`), both pinned to
+the flake's graff by store path, so the plugin cannot run another
+revision (`plugin/.claude-plugin/plugin.json`, the manifest it is made
+from, names them `graff`, and a test holds every command there to that).
+The hook speaks only when a session starts in a worktree with code in a
+language graff reads, the one of `CLAUDE_PROJECT_DIR` as for the server:
+about 140 tokens (an estimate, at 4 bytes a token) naming its files by
+language and the tools to ask before grep. Anywhere else, Markdown alone
+included, it says nothing and costs one or two git calls: 11 to 12 ms
+outside a worktree, 15 to 21 ms in one of 150 to 1,900 files (medians of
+20 runs, two rounds, 2026-10-12, TLP's balanced profile, the boost off,
+the load at 10 and 22). It does not index: the first question does.
+
 What counts as graff working was fixed before its first line of code, in
 `evals/`:
 
@@ -219,6 +233,7 @@ What graff does so far is measured there too:
 ## Building
 
     nix build                  # the graff binary, in result/bin
+    nix build .#plugin         # the Claude Code plugin, graff pinned in it
     nix develop                # cargo, rustc, clippy, rustfmt, rust-analyzer, python3
     cargo test
     python3 evals/bar/test_bar.py

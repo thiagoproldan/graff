@@ -213,7 +213,7 @@ fn git(folder: &Path, args: &[&str]) -> Result<Vec<u8>, Error> {
 
 /// A worktree's files, tracked or untracked and not ignored, as paths from
 /// its top. A path that is not UTF-8 is left out.
-fn listed(root: &Path) -> Result<Vec<String>, Error> {
+pub fn listed(root: &Path) -> Result<Vec<String>, Error> {
     let said = git(
         root,
         &[

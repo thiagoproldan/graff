@@ -2234,3 +2234,121 @@ fn mcp_speaks_the_handshake_and_2026_07_28_in_one_process() {
     assert_eq!(said(&replies[4]), (answer, false));
     assert_eq!(replies[4]["result"]["resultType"], "complete");
 }
+
+/// `graff --hook` run from `at`, fed `input`.
+fn hook(at: &Path, input: &str) -> Output {
+    use std::io::Write;
+    let mut child = Command::new(env!("CARGO_BIN_EXE_graff"))
+        .arg("--hook")
+        .current_dir(at)
+        .env_remove("CLAUDE_PROJECT_DIR")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("graff runs");
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
+    child.wait_with_output().unwrap()
+}
+
+#[test]
+fn hook_speaks_at_a_session_start_in_a_worktree_with_code_and_is_silent_elsewhere() {
+    let demo = Demo::new("hook");
+    let start = |cwd: &Path| {
+        json!({"session_id": "s", "hook_event_name": "SessionStart", "source": "startup", "cwd": cwd})
+            .to_string()
+    };
+
+    let out = hook(&demo.top, &start(&demo.repo.join("src")));
+    assert!(out.status.success(), "{out:?}");
+    assert!(out.stderr.is_empty(), "{out:?}");
+    let said: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let text = said["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap();
+    assert!(
+        text.starts_with(&format!(
+            "[graff] graff maps the code of this worktree, {}: 2 Rust files.",
+            demo.repo.display()
+        )),
+        "{text}"
+    );
+
+    // Outside a worktree, on another event, and on input that is not a
+    // hook's: nothing on stdout or stderr, and success, which Claude Code
+    // shows the user nothing for.
+    let outside = demo.top.join("outside");
+    fs::create_dir_all(&outside).unwrap();
+    let prompt = json!({"hook_event_name": "UserPromptSubmit", "cwd": demo.repo}).to_string();
+    for (at, input) in [
+        (&outside, start(&outside)),
+        (&demo.repo, prompt),
+        (&demo.repo, String::new()),
+    ] {
+        let out = hook(at, &input);
+        assert!(out.status.success(), "{input}: {out:?}");
+        assert!(
+            out.stdout.is_empty() && out.stderr.is_empty(),
+            "{input}: {out:?}"
+        );
+    }
+}
+
+/// Every command the plugin's manifest runs, as the flake's packages.plugin
+/// pins it: the program, which must be graff, and its arguments.
+fn plugin_commands() -> Vec<(String, Vec<String>)> {
+    let manifest: Value =
+        serde_json::from_str(include_str!("../plugin/.claude-plugin/plugin.json")).unwrap();
+    let mut commands = Vec::new();
+    for server in manifest["mcpServers"].as_object().unwrap().values() {
+        let args = server["args"].as_array().map_or_else(Vec::new, |args| {
+            args.iter()
+                .map(|arg| arg.as_str().unwrap().to_string())
+                .collect()
+        });
+        commands.push((server["command"].as_str().unwrap().to_string(), args));
+    }
+    for groups in manifest["hooks"].as_object().unwrap().values() {
+        for group in groups.as_array().unwrap() {
+            for hook in group["hooks"].as_array().unwrap() {
+                assert_eq!(hook["type"], "command", "{hook}");
+                let mut words = hook["command"].as_str().unwrap().split(' ');
+                let program = words.next().unwrap().to_string();
+                commands.push((program, words.map(String::from).collect()));
+            }
+        }
+    }
+    commands
+}
+
+#[test]
+fn every_command_the_plugin_runs_is_graff_with_flags_it_takes() {
+    let commands = plugin_commands();
+    assert_eq!(commands.len(), 2, "{commands:?}");
+    let demo = Demo::new("plugin");
+    for (program, args) in commands {
+        // The flake pins `graff` to its store path: anything else would run
+        // whatever the PATH holds.
+        assert_eq!(program, "graff", "{args:?}");
+        // With stdin closed at once, each answers nothing and succeeds; a
+        // flag graff does not take fails with the usage.
+        let out = Command::new(env!("CARGO_BIN_EXE_graff"))
+            .args(&args)
+            .current_dir(&demo.repo)
+            .env("XDG_CACHE_HOME", demo.top.join("cache"))
+            .env_remove("CLAUDE_PROJECT_DIR")
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{args:?}: {out:?}");
+        assert!(
+            out.stdout.is_empty() && out.stderr.is_empty(),
+            "{args:?}: {out:?}"
+        );
+    }
+}

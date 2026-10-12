@@ -1,7 +1,7 @@
 //! graff: a code map for Claude Code.
 
 use std::error::Error;
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Instant;
@@ -23,6 +23,10 @@ struct Cli {
     /// the current folder
     #[arg(long)]
     mcp: bool,
+    /// Answer a Claude Code hook given on stdin: when a session starts in a
+    /// worktree whose code graff reads, say so; else nothing
+    #[arg(long, conflicts_with = "mcp")]
+    hook: bool,
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -138,6 +142,9 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     if cli.mcp {
         return serve();
+    }
+    if cli.hook {
+        return hook();
     }
     let Some(command) = cli.command else {
         eprintln!("graff: no command: see graff --help");
@@ -271,4 +278,19 @@ fn serve() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// `graff --hook`: an answer, or silence, and success either way, since a
+/// hook that fails is shown to the user and graff has nothing to tell them.
+fn hook() -> ExitCode {
+    let mut input = String::new();
+    if io::stdin().read_to_string(&mut input).is_err() {
+        return ExitCode::SUCCESS;
+    }
+    let project = std::env::var_os("CLAUDE_PROJECT_DIR").map(PathBuf::from);
+    let current = std::env::current_dir().unwrap_or_default();
+    if let Some(answer) = graff::hook::answer(&input, project.as_deref(), &current) {
+        let _ = put(&format!("{answer}\n"));
+    }
+    ExitCode::SUCCESS
 }

@@ -11,12 +11,18 @@ The answers are first compared with the next definition's edges, a control
 that has to find them different.
 
     python3 evals/query/check.py /projects/ekko     # ekko.txt
+    python3 evals/query/check.py ROOT --sample 300 --seed 1
+
+With --sample N, only N of the definitions are asked about, drawn with
+random.Random(SEED) (seed 0 unless --seed says); the report says which.
     python3 evals/query/test_check.py
 """
 
+import argparse
 import collections
 import json
 import os
+import random
 import re
 import subprocess
 import sys
@@ -79,8 +85,21 @@ def answered(answer, qualified):
     }
 
 
+def draw(targets, size, seed):
+    """`size` of the sorted definitions, drawn with the seed, in their order;
+    all of them when no size is given or it is no smaller than they are."""
+    if size is None or size >= len(targets):
+        return targets
+    return sorted(random.Random(seed).sample(targets, size))
+
+
 def main():
-    root = os.path.abspath(sys.argv[1])
+    parser = argparse.ArgumentParser()
+    parser.add_argument("root")
+    parser.add_argument("--sample", type=int, help="ask about this many definitions, drawn")
+    parser.add_argument("--seed", type=int, default=0, help="the draw's seed")
+    args = parser.parse_args()
+    root = os.path.abspath(args.root)
     run(["cargo", "build", "--release", "--quiet", "--bin", "graff", "--example", "resolve"], cwd=GRAFF)
     graff = os.path.join(GRAFF, "target/release/graff")
     example = os.path.join(GRAFF, "target/release/examples/resolve")
@@ -92,7 +111,9 @@ def main():
     print(f"graff {commit(GRAFF)}, {os.path.basename(root)} {commit(root)}, "
           f"{read[1]} files graff reads, {markdown} of them Markdown; {read[2]} it does not")
     edges, kinds = full_edges(full.stdout.splitlines())
-    targets = sorted(edges)
+    targets = draw(sorted(edges), args.sample, args.seed)
+    print(f"sample: {len(targets)} of {len(edges)} definitions" +
+          (f", seed {args.seed}" if len(targets) < len(edges) else ", all of them"))
     answers, refused = {}, []
     for path, qualified in targets:
         asked = question(path, qualified, kinds[(path, qualified)])
@@ -106,9 +127,10 @@ def main():
     if shifted == len(targets):
         sys.exit("the control found no difference: the comparison tells nothing")
     differ = [t for t in targets if t in answers and answers[t] != edges[t]]
-    from_markdown = sum(p.endswith((".md", ".markdown")) for e in edges.values() for p, _, _ in e)
+    asked = [edges[t] for t in targets]
+    from_markdown = sum(p.endswith((".md", ".markdown")) for e in asked for p, _, _ in e)
     print(f"{len(targets) - len(differ) - len(refused)} of {len(targets)} definitions with the same edges, "
-          f"{sum(map(len, edges.values()))} edges, {from_markdown} of them from Markdown; "
+          f"{sum(map(len, asked))} edges, {from_markdown} of them from Markdown; "
           f"{len(differ)} different, {len(refused)} refused")
     for t in differ:
         print("different", *t, "only full:", sorted(edges[t] - answers[t])[:5], "only graff:", sorted(answers[t] - edges[t])[:5])

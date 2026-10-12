@@ -90,3 +90,27 @@ Run again the same day with task 135's change, which looks up what a Rust
 module's use items and globs bring in of a name once: ekko's report is the
 same past its first line, and graff's tree, grown since, has 1,662 of
 1,662 definitions with the same edges, 9,596 of them.
+
+## Result, 2026-10-12 (task 167)
+
+Thousands of questions at about 0.5 s each kept the check to small
+corpora, none with a let-bound submodule. `--sample N --seed S` asks about
+N definitions drawn with `random.Random(S)`; the report says its sample,
+and the control and the comparison run on the drawn ones.
+
+    python3 evals/query/check.py /tmp/graff-167/nm --sample 300 --seed 1   # nixos-modules.txt
+
+The corpus is nixpkgs c59305b's nixos/modules, copied out of the store into
+a git repository (the check lists files with git) tagged `nixpkgs-c59305b`.
+
+|                   | nixos/modules at c59305b, 300 of 33,725 definitions, seed 1 |
+| ----------------- | ----------------------------------------------------------- |
+| files graff reads | 2,630, 108 of them Markdown                                 |
+| control           | 0 of 300 the same                                           |
+| same edges        | 299 of 300                                                  |
+| edges             | 1,167                                                       |
+
+The one different is `parseAddr.ipv4` in
+modules/tasks/network-interfaces-scripted.nix: full resolution ties the
+calls at lines 78 and 79, `parseAddr.${v} ..`, to it, and `callers` gives
+none. The report is nixos-modules.txt; one draw is a sample, not the whole.

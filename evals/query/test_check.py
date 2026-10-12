@@ -63,6 +63,14 @@ def main():
     check("answered: the named definition's sure edges, not possible ones nor another definition's",
           query_check.answered(answer, "load"), {("src/b.rs", "call", 4), ("src/b.rs", "use", 1)})
 
+    names = [("a.rs", str(i)) for i in range(50)]
+    drawn = query_check.draw(names, 10, 1)
+    check("draw: the size asked, sorted, from the definitions", (len(drawn), drawn == sorted(drawn), set(drawn) <= set(names)), (10, True, True))
+    check("draw: the same seed, the same sample", query_check.draw(names, 10, 1), drawn)
+    check("draw: another seed, another sample", query_check.draw(names, 10, 2) != drawn, True)
+    check("draw: no size, all of them", query_check.draw(names, None, 1), names)
+    check("draw: a size past them, all of them", query_check.draw(names, 99, 1), names)
+
     print(f"{total - failed}/{total} ok")
     sys.exit(1 if failed else 0)
 

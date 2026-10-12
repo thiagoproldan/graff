@@ -120,7 +120,15 @@ graff read nothing cmark-gfm did not, but for ekko's one heading.
   note, `<sup>Licensed under either of <a href="LICENSE-APACHE">..`, to
   files graff does not read; kimi's 5 are a row of links under its
   README's title and a caption. 2 of the 63 would reach what graff reads:
-  kimi's `#requirements` and CHANGELOG.md.
+  kimi's `#requirements` and CHANGELOG.md. Counted again on 2026-10-12,
+  with the registry grown to 725 crates (parse.py's own count of links in
+  `html_block` and `html_inline` nodes, each destination then resolved
+  against the worktree's files by a throwaway script): the registry's 92
+  reach no file graff reads (LICENSE-MIT 43, LICENSE-APACHE 42,
+  LICENSE-UNICODE 3, LICENSE-BOOST, LICENSE and two `.txt` licenses, one
+  each); ekko, ctx and graff 0; kimi's 5, 2 of them reaching what graff
+  reads, both under one README title. 2 of 97: task 133 was closed with no
+  code, until a corpus holds more.
 - **Fixed by this check**: pulldown-cmark's YAML metadata option took a
   block between two `---` lines anywhere in a file for front matter, and
   two headings of adler2 2.0.1's CHANGELOG went with it; graff now blanks

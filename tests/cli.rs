@@ -31,6 +31,20 @@ fn folder(name: &str) -> PathBuf {
     path
 }
 
+/// The index graff made in `cache`: the one `index-<schema>.db` there.
+fn index_in(cache: &Path) -> PathBuf {
+    let mut found: Vec<PathBuf> = fs::read_dir(cache.join("graff"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            name.starts_with("index-") && name.ends_with(".db")
+        })
+        .collect();
+    assert_eq!(found.len(), 1, "{found:?}");
+    found.remove(0)
+}
+
 #[test]
 fn version_names_the_binary_and_the_crate_version() {
     let out = graff(&["--version"]);
@@ -82,7 +96,7 @@ fn index_reads_a_worktree_once_and_then_only_what_changed() {
         said.contains("1 file, 1 in a language graff reads; 1 hashed, 1 extracted, 0 gone"),
         "{said}"
     );
-    assert!(cache.join("graff/index.db").is_file());
+    assert!(index_in(&cache).is_file());
 
     fs::remove_file(repo.join("src/main.rs")).unwrap();
     let second = graff_in(&repo, &cache, &["index"]);
@@ -624,7 +638,7 @@ fn a_map_reads_its_graph_back_until_a_file_changes() {
     let map = demo.ask(&["map"]);
     // The second map reads the graph the first kept: one of no edges,
     // written over it, ranks by the files' order alone.
-    let index = rusqlite::Connection::open(demo.top.join("cache/graff/index.db")).unwrap();
+    let index = rusqlite::Connection::open(index_in(&demo.top.join("cache"))).unwrap();
     index.execute("UPDATE graphs SET edges = x''", []).unwrap();
     let flat = demo.ask(&["map"]);
     assert_ne!(flat, map);
@@ -1210,7 +1224,7 @@ modules/video.nix:2-5 option options.sys.video.enable, written at lib/mkSys.nix:
     );
     // The second question reads where the first placed the options: a
     // placement that holds none, written over the kept one, places none.
-    let index = rusqlite::Connection::open(demo.top.join("cache/graff/index.db")).unwrap();
+    let index = rusqlite::Connection::open(index_in(&demo.top.join("cache"))).unwrap();
     let placed: String = index
         .query_row("SELECT placement FROM instances", [], |row| row.get(0))
         .unwrap();

@@ -26,8 +26,8 @@ use crate::extract::{
 };
 use crate::lang::Language;
 
-/// Bumped whenever the tables change: an index of another version is dropped
-/// and built again, as a cache may be.
+/// Bumped whenever the tables change. The index file is named by it, so a
+/// build of another schema keeps an index of its own beside this one's.
 const SCHEMA: i64 = 13;
 
 /// A file written this close before graff saw it may be written again within
@@ -180,9 +180,9 @@ impl From<rusqlite::Error> for Error {
     }
 }
 
-/// Where the index lives: $XDG_CACHE_HOME/graff/index.db, else
-/// ~/.cache/graff/index.db. A relative XDG_CACHE_HOME is ignored, as the XDG
-/// base directory specification says.
+/// Where the index lives: $XDG_CACHE_HOME/graff/index-<schema>.db, else
+/// ~/.cache/graff/index-<schema>.db. A relative XDG_CACHE_HOME is ignored, as
+/// the XDG base directory specification says.
 pub fn location() -> Option<PathBuf> {
     let absolute = |name: &str| {
         std::env::var_os(name)
@@ -191,7 +191,74 @@ pub fn location() -> Option<PathBuf> {
     };
     let cache =
         absolute("XDG_CACHE_HOME").or_else(|| absolute("HOME").map(|home| home.join(".cache")))?;
-    Some(cache.join("graff").join("index.db"))
+    Some(database(&cache, SCHEMA))
+}
+
+/// The index of `schema` in a cache folder. Two builds of different schemas,
+/// a branch's and the installed release's, each keep one of their own: with
+/// one file, each would drop the other's at every open.
+fn database(cache: &Path, schema: i64) -> PathBuf {
+    cache.join("graff").join(format!("index-{schema}.db"))
+}
+
+/// The index a file of the cache folder belongs to, if it is an index or one
+/// of its side files: `index.db`, which builds before the index was named by
+/// its schema wrote, or `index-<schema>.db`, with `-wal`, `-shm` or
+/// `-journal` after it.
+fn index_of(name: &str) -> Option<&str> {
+    let end = name.find(".db")? + ".db".len();
+    let (database, side) = name.split_at(end);
+    let schema = database.strip_prefix("index")?.strip_suffix(".db")?;
+    let named = schema.is_empty()
+        || schema
+            .strip_prefix('-')
+            .is_some_and(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()));
+    (named && ["", "-wal", "-shm", "-journal"].contains(&side)).then_some(database)
+}
+
+/// Marks the index at `path` used now, and removes the other indexes in its
+/// folder that nothing has written or marked for as long as KEPT: those of
+/// schemas no build runs any more, and the `index.db` of before the schemas
+/// named them. A build only reading writes nothing to its index, so the mark
+/// is the file's own modification time, set at each open.
+fn tidy(path: &Path) {
+    let now = SystemTime::now();
+    if let Ok(file) = fs::OpenOptions::new().write(true).open(path) {
+        let _ = file.set_modified(now);
+    }
+    let (Some(folder), Some(mine)) = (path.parent(), path.file_name().and_then(|n| n.to_str()))
+    else {
+        return;
+    };
+    let Ok(entries) = fs::read_dir(folder) else {
+        return;
+    };
+    // Each other index's files, with the latest of their modification times.
+    let mut others: HashMap<String, (SystemTime, Vec<PathBuf>)> = HashMap::new();
+    for entry in entries.filter_map(Result::ok) {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let Some(database) = index_of(&name).filter(|database| *database != mine) else {
+            continue;
+        };
+        let Ok(used) = entry.metadata().and_then(|meta| meta.modified()) else {
+            continue;
+        };
+        let other = others
+            .entry(database.to_string())
+            .or_insert((SystemTime::UNIX_EPOCH, Vec::new()));
+        other.0 = other.0.max(used);
+        other.1.push(entry.path());
+    }
+    for (used, files) in others.values() {
+        if now
+            .duration_since(*used)
+            .is_ok_and(|idle| idle > Duration::from_nanos(KEPT as u64))
+        {
+            for file in files {
+                let _ = fs::remove_file(file);
+            }
+        }
+    }
 }
 
 /// The top of the git worktree `folder` is in.
@@ -445,8 +512,14 @@ impl Names {
 
 impl Store {
     /// Opens the index at `path`, making it if there is none. One of another
-    /// schema is dropped and made again.
+    /// schema is dropped and made again, which `location` keeps from
+    /// happening by naming the file by the schema.
     pub fn open(path: &Path) -> Result<Store, Error> {
+        Store::open_as(path, SCHEMA)
+    }
+
+    /// `open`, as a build of `schema` would.
+    fn open_as(path: &Path, schema: i64) -> Result<Store, Error> {
         if let Some(folder) = path.parent() {
             fs::create_dir_all(folder)?;
         }
@@ -456,7 +529,7 @@ impl Store {
         connection.pragma_update(None, "synchronous", "NORMAL")?;
         connection.pragma_update(None, "foreign_keys", true)?;
         let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        if version != SCHEMA {
+        if version != schema {
             let tables: Vec<String> = connection
                 .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")?
                 .query_map([], |row| row.get(0))?
@@ -467,8 +540,9 @@ impl Store {
             }
             connection.pragma_update(None, "foreign_keys", true)?;
             connection.execute_batch(TABLES)?;
-            connection.pragma_update(None, "user_version", SCHEMA)?;
+            connection.pragma_update(None, "user_version", schema)?;
         }
+        tidy(path);
         Ok(Store {
             connection,
             extractor: extract::EXTRACTOR.clone(),
@@ -1830,5 +1904,101 @@ mod tests {
         let mut store = Store::open(&path).unwrap();
         assert_eq!(count(&store, "SELECT count(*) FROM contents"), 0);
         assert_eq!(store.check(&root).unwrap(), checked(3, 2, 2, 2, 0));
+    }
+
+    /// A build of one schema and a build of the next, alternating on one
+    /// cache folder, each read the worktree once: each keeps an index of its
+    /// own, where one shared file would be dropped by whichever opened it.
+    #[test]
+    fn builds_of_two_schemas_alternating_on_one_cache_each_extract_once() {
+        let folder = Folder::new();
+        let root = repository(folder.0.join("repo"));
+        let cache = folder.0.join("cache");
+        let build = |schema: i64| Store::open_as(&database(&cache, schema), schema).unwrap();
+        assert_eq!(build(SCHEMA).check(&root).unwrap(), checked(3, 2, 2, 2, 0));
+        assert_eq!(
+            build(SCHEMA + 1).check(&root).unwrap(),
+            checked(3, 2, 2, 2, 0)
+        );
+        for _ in 0..2 {
+            assert_eq!(build(SCHEMA).check(&root).unwrap(), checked(3, 2, 0, 0, 0));
+            assert_eq!(
+                build(SCHEMA + 1).check(&root).unwrap(),
+                checked(3, 2, 0, 0, 0)
+            );
+        }
+        assert_eq!(
+            location().map(|path| path.ends_with(format!("index-{SCHEMA}.db"))),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn only_an_index_and_its_side_files_are_taken_for_one() {
+        for (name, index) in [
+            ("index.db", Some("index.db")),
+            ("index.db-wal", Some("index.db")),
+            ("index-12.db", Some("index-12.db")),
+            ("index-12.db-shm", Some("index-12.db")),
+            ("index-12.db-journal", Some("index-12.db")),
+            ("index-.db", None),
+            ("index-x.db", None),
+            ("index-12.db-bak", None),
+            ("index-12.db.old", None),
+            ("indexes.db", None),
+            ("notes.db", None),
+            ("index", None),
+        ] {
+            assert_eq!(index_of(name), index, "{name}");
+        }
+    }
+
+    /// An index no build has used for KEPT goes with its side files, the
+    /// `index.db` of before the schemas named them too; one used since, one
+    /// of the open's own, and files that are no index stay.
+    #[test]
+    fn an_index_no_build_uses_any_more_is_removed_after_a_week() {
+        let folder = Folder::new();
+        let graff = folder.0.join("cache").join("graff");
+        fs::create_dir_all(&graff).unwrap();
+        let aged = |name: &str, age: Duration| {
+            let file = fs::File::create(graff.join(name)).unwrap();
+            file.set_modified(SystemTime::now() - age).unwrap();
+        };
+        let week = Duration::from_nanos(KEPT as u64);
+        let (old, recent) = (
+            week + Duration::from_secs(3600),
+            week - Duration::from_secs(3600),
+        );
+        aged("index.db", old);
+        aged("index.db-wal", old);
+        aged("index-12.db", old);
+        // Idle itself, but its write-ahead log was written lately.
+        aged("index-14.db", old);
+        aged("index-14.db-wal", recent);
+        aged("index-15.db", recent);
+        aged("notes.db", old);
+        aged("index-x.db", old);
+
+        Store::open(&database(&folder.0.join("cache"), SCHEMA)).unwrap();
+
+        let mine = format!("index-{SCHEMA}.db");
+        let mut left: Vec<String> = fs::read_dir(&graff)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .filter(|name| !name.starts_with(&format!("{mine}-")))
+            .collect();
+        left.sort();
+        assert_eq!(
+            left,
+            [
+                mine.as_str(),
+                "index-14.db",
+                "index-14.db-wal",
+                "index-15.db",
+                "index-x.db",
+                "notes.db"
+            ]
+        );
     }
 }

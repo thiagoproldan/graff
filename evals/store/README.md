@@ -41,8 +41,9 @@ was a `git clone --shared` of its mirror, made just before.
 ## The store, as built
 
 On those figures the index went where decision 71 put it: one SQLite
-database in the user's cache folder (`$XDG_CACHE_HOME/graff/index.db`, else
-`~/.cache/graff/index.db`), written in no repository. src/store.rs keeps
+database in the user's cache folder (`$XDG_CACHE_HOME/graff/index-<schema>.db`, else
+`~/.cache/graff/index-<schema>.db`, named by its schema so that builds of
+two schemas each keep one), written in no repository. src/store.rs keeps
 what graff read out of a file by its content -- git's id for a blob of its
 bytes, its language and the extractor's version, which for a build that is
 not a release carries a digest of its sources too (build.rs) -- so every

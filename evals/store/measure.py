@@ -19,6 +19,7 @@ it.
 A private repository's commit is not printed: NixOS's is in no public file.
 """
 
+import glob
 import os
 import re
 import shutil
@@ -85,7 +86,7 @@ def measure(name, source, scratch):
         "warm_hashed": max(row[1]["hashed"] for row in warm),
         "edit": (median(edits), median(edits, "ms")) if edits else None,
         "edit_said": edits[0][1] if edits else None,
-        "db": os.path.getsize(os.path.join(caches[-1], "graff", "index.db")),
+        "db": os.path.getsize(glob.glob(os.path.join(caches[-1], "graff", "index-*.db"))[0]),
     }
 
 

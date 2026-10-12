@@ -29,3 +29,5 @@ tree-sitter-python = "0.25.0"
 tree-sitter-rust = "0.24.2"
 unicode-properties = { version = "0.1.4", default-features = false, features = ["general-category"] }
 
+[build-dependencies]
+sha1_smol = "1"

@@ -1,11 +1,12 @@
 //! The index: one SQLite database in the user's cache folder, shared by every
 //! repository and worktree on the machine (decision 71). What graff read out
 //! of a file is kept by the file's content -- git's id for a blob of its
-//! bytes, its language and the extractor's version -- so a file the same in
-//! two worktrees, branches or commits is read once. Each worktree keeps what
-//! it last saw of each of its files, so that a check tells by their stat
-//! which changed, and reads only those again, and what instantiating its Nix
-//! helpers made, under a key that says what that was made from.
+//! bytes, its language and what the build keeps its extractions under,
+//! extract::EXTRACTOR -- so a file the same in two worktrees, branches or
+//! commits is read once. Each worktree keeps what it last saw of each of its
+//! files, so that a check tells by their stat which changed, and reads only
+//! those again, and what instantiating its Nix helpers made, under a key that
+//! says what that was made from.
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -27,7 +28,7 @@ use crate::lang::Language;
 
 /// Bumped whenever the tables change: an index of another version is dropped
 /// and built again, as a cache may be.
-const SCHEMA: i64 = 12;
+const SCHEMA: i64 = 13;
 
 /// A file written this close before graff saw it may be written again within
 /// the same tick of the file system's clock and keep its stat, so it is hashed
@@ -43,7 +44,7 @@ const TABLES: &str = "
         id INTEGER PRIMARY KEY,
         blob TEXT NOT NULL,
         language TEXT NOT NULL,
-        extractor INTEGER NOT NULL,
+        extractor TEXT NOT NULL,
         syntax_error INTEGER NOT NULL,
         too_deep INTEGER NOT NULL,
         guard TEXT,
@@ -349,8 +350,8 @@ struct Record {
     content: i64,
     blob: String,
     language: Language,
-    /// The version of the extractor that read the content.
-    extractor: u32,
+    /// What the build that read the content keeps its extractions under.
+    extractor: String,
     seen: i64,
 }
 
@@ -363,6 +364,8 @@ struct Stale<'a> {
 
 pub struct Store {
     connection: Connection,
+    /// What this build keeps its extractions under: extract::EXTRACTOR.
+    extractor: String,
 }
 
 /// What the index holds of a worktree: its files graff reads, by path, with
@@ -466,7 +469,10 @@ impl Store {
             connection.execute_batch(TABLES)?;
             connection.pragma_update(None, "user_version", SCHEMA)?;
         }
-        Ok(Store { connection })
+        Ok(Store {
+            connection,
+            extractor: extract::EXTRACTOR.clone(),
+        })
     }
 
     /// Brings the index of the worktree at `root`, its top, up to date: each
@@ -520,7 +526,7 @@ impl Store {
                 Some(record) => {
                     record.stat != file.stat
                         || file.stat.mtime >= record.seen - RACY
-                        || record.extractor != extract::VERSION
+                        || record.extractor != self.extractor
                 }
                 None => true,
             })
@@ -569,12 +575,12 @@ impl Store {
             // A file touched but not changed keeps its content.
             if let Some(record) = records.get(file.path)
                 && record.blob == *blob
-                && record.extractor == extract::VERSION
+                && record.extractor == self.extractor
             {
                 known.insert(key, record.content);
                 continue;
             }
-            match content_id(&transaction, blob, file.language)? {
+            match content_id(&transaction, blob, file.language, &self.extractor)? {
                 Some(id) => {
                     known.insert(key, id);
                 }
@@ -588,7 +594,7 @@ impl Store {
         checked.extracted = extracted.len();
         let mut inserts = Inserts::prepare(&transaction)?;
         for ((blob, language, _), extraction) in lacking.into_iter().zip(&extracted) {
-            let id = inserts.content(&transaction, &blob, language, extraction)?;
+            let id = inserts.content(&transaction, &blob, language, &self.extractor, extraction)?;
             known.insert((blob, language), id);
         }
         drop(inserts);
@@ -979,7 +985,7 @@ impl Store {
                 stat,
                 row.get::<_, i64>(5)?,
                 row.get::<_, String>(6)?,
-                row.get::<_, u32>(7)?,
+                row.get::<_, String>(7)?,
                 row.get::<_, i64>(8)?,
                 row.get::<_, String>(9)?,
             ))
@@ -1039,11 +1045,12 @@ fn content_id(
     transaction: &Transaction,
     blob: &str,
     language: Language,
+    extractor: &str,
 ) -> Result<Option<i64>, Error> {
     Ok(transaction
         .query_row(
             "SELECT id FROM contents WHERE blob = ?1 AND language = ?2 AND extractor = ?3",
-            params![blob, language.name(), extract::VERSION],
+            params![blob, language.name(), extractor],
             |row| row.get(0),
         )
         .optional()?)
@@ -1082,12 +1089,13 @@ impl<'t> Inserts<'t> {
         transaction: &Transaction,
         blob: &str,
         language: Language,
+        extractor: &str,
         extraction: &Extraction,
     ) -> Result<i64, Error> {
         self.content.execute(params![
             blob,
             language.name(),
-            extract::VERSION,
+            extractor,
             extraction.syntax_error,
             extraction.too_deep,
             extraction.guard
@@ -1509,9 +1517,46 @@ mod tests {
         store.check(&root).unwrap();
         store
             .connection
-            .execute("UPDATE contents SET extractor = extractor - 1", [])
+            .execute(
+                "UPDATE contents SET extractor = ?1",
+                [(extract::VERSION - 1).to_string()],
+            )
             .unwrap();
         assert_eq!(store.check(&root).unwrap(), checked(3, 2, 2, 2, 0));
+    }
+
+    /// Two builds at one VERSION, a branch's and main's, each indexing one
+    /// copy in one cache: neither serves the other what it read, unless both
+    /// are releases, which keep their extractions under VERSION alone.
+    #[test]
+    fn two_builds_at_one_version_each_extract_unless_both_are_releases() {
+        let folder = Folder::new();
+        let root = repository(folder.0.join("repo"));
+        let index = folder.0.join("index.db");
+        let build = |extractor: String| {
+            let mut store = Store::open(&index).unwrap();
+            store.extractor = extractor;
+            store
+        };
+        let main = format!("{}+0123456789abcdef", extract::VERSION);
+        let branch = format!("{}+fedcba9876543210", extract::VERSION);
+        assert_eq!(
+            build(main.clone()).check(&root).unwrap(),
+            checked(3, 2, 2, 2, 0)
+        );
+        assert_eq!(build(branch).check(&root).unwrap(), checked(3, 2, 2, 2, 0));
+        // Each build's own is still there for it.
+        assert_eq!(build(main).check(&root).unwrap(), checked(3, 2, 2, 0, 0));
+
+        // Two releases at one VERSION, the second a rebuild indexing another
+        // copy, share what the first read.
+        let release = extract::VERSION.to_string();
+        assert_eq!(
+            build(release.clone()).check(&root).unwrap(),
+            checked(3, 2, 2, 2, 0)
+        );
+        let copy = repository(folder.0.join("copy"));
+        assert_eq!(build(release).check(&copy).unwrap(), checked(3, 2, 2, 0, 0));
     }
 
     /// Where the store keeps each part of an extraction: a list of records

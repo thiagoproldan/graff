@@ -10,6 +10,8 @@ pub mod nix;
 pub mod python;
 pub mod rust;
 
+use std::sync::LazyLock;
+
 use serde::{Deserialize, Serialize};
 
 use crate::lang::Language;
@@ -17,6 +19,15 @@ use crate::lang::Language;
 /// Bumped whenever what an extractor produces changes, so that results kept
 /// from an older extractor are read again rather than trusted.
 pub const VERSION: u32 = 27;
+
+/// What the index keeps this build's extractions under: VERSION for a
+/// release, which a rebuild keeps reusing; for any other build, VERSION and
+/// a digest of its sources (build.rs), since a branch's build may run at a
+/// VERSION main takes for other code.
+pub static EXTRACTOR: LazyLock<String> = LazyLock::new(|| match env!("GRAFF_SOURCE") {
+    "" => VERSION.to_string(),
+    source => format!("{VERSION}+{source}"),
+});
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Extraction {

@@ -44,9 +44,11 @@ On those figures the index went where decision 71 put it: one SQLite
 database in the user's cache folder (`$XDG_CACHE_HOME/graff/index.db`, else
 `~/.cache/graff/index.db`), written in no repository. src/store.rs keeps
 what graff read out of a file by its content -- git's id for a blob of its
-bytes, its language and the extractor's version -- so every worktree,
-branch and commit with that file shares it; and, for each worktree, what it
-last saw of each file: size, modification and change times, inode, content.
+bytes, its language and the extractor's version, which for a build that is
+not a release carries a digest of its sources too (build.rs) -- so every
+worktree, branch and commit with that file shares it, each dev build apart
+from the others and from a release; and, for each worktree, what it last
+saw of each file: size, modification and change times, inode, content.
 `graff index` runs the check that every query will run first.
 
     cargo build --release

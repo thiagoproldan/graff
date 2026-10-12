@@ -28,6 +28,7 @@
             fileset = pkgs.lib.fileset.unions [
               ./Cargo.toml
               ./Cargo.lock
+              ./build.rs
               ./src
               ./tests
               ./plugin/.claude-plugin/plugin.json
@@ -35,6 +36,11 @@
           };
 
           cargoLock.lockFile = ./Cargo.lock;
+
+          # A release keeps its extractions in the index under the extractor's
+          # VERSION alone, so that a rebuild reuses them; any other build,
+          # under VERSION and a digest of its sources (build.rs).
+          env.GRAFF_RELEASE = "1";
 
           # The index's tests make git repositories.
           nativeCheckInputs = [ pkgs.git ];

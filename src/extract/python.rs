@@ -98,6 +98,7 @@ pub fn extract(source: &[u8]) -> Extraction {
         attributes: Vec::new(),
         values: HashMap::new(),
         types: HashMap::new(),
+        aliases: HashMap::new(),
         comments: HashMap::new(),
         ifs: Vec::new(),
         too_deep: false,
@@ -280,6 +281,10 @@ struct Scan<'s, 't> {
     /// written: a parameter's annotation, a name's at its assignment, or
     /// the callee it is assigned the result of, `C` in `x = C(..)`.
     types: HashMap<(usize, String), Node<'t>>,
+    /// The name or the path each function's scope first assigns a name
+    /// alone, `sep.join` in `join = sep.join`: what the local stands for,
+    /// where it is the one value the scope gives it.
+    aliases: HashMap<(usize, String), Node<'t>>,
     /// Comments by row, each with whether it starts its line.
     comments: HashMap<u32, (Node<'t>, bool)>,
     /// Each `if` statement's clauses, as they are met.
@@ -700,6 +705,17 @@ impl<'s, 't> Scan<'s, 't> {
                         self.types.entry((scope, name.to_string())).or_insert(ty);
                     }
                 }
+                if let How::Assigned(_, Some(value)) = how
+                    && matches!(
+                        self.scopes[scope].kind,
+                        ScopeKind::Function | ScopeKind::Lambda
+                    )
+                    && chain(value, self.source).is_some()
+                {
+                    self.aliases
+                        .entry((scope, name.to_string()))
+                        .or_insert(value);
+                }
                 if let How::Assigned(statement, value) = how
                     && matches!(
                         self.scopes[scope].kind,
@@ -812,6 +828,21 @@ enum Bound {
     Local,
     /// To the instance of the method the use is in.
     Instance,
+}
+
+/// How many local aliases deep a path is followed, `q = p.parse` after
+/// `p = self.parser` two.
+const MAX_ALIASES: usize = 8;
+
+/// A use through a function's local alias, as if written with what the
+/// local stands for: its path, `self.` for the instance, the receiver
+/// when one segment follows a name, the definition of the file the path
+/// starts with, and the class that start is an instance of.
+struct Alias {
+    path: String,
+    receiver: Option<String>,
+    local: Option<String>,
+    typed: Option<String>,
 }
 
 /// A definition about to be emitted: where it starts, so that definitions
@@ -1288,6 +1319,82 @@ impl<'s, 't> Reader<'s, 't> {
             at = held.parent;
         }
         None
+    }
+
+    /// What a function's local stands for where the function assigns it a
+    /// name or a path, and nothing else: `sep.join` for `join` after `join
+    /// = sep.join`; a local alias's own read again, `p.parse` for `q` after
+    /// `p = self.parser` and `q = p.parse`. With `rest`, the segments a
+    /// path goes on with past the local. None for a local that is no
+    /// alias, for one whose path starts with a local graff cannot tell
+    /// the class of, and for one that is another local alone.
+    fn alias(&self, scope: usize, name: &str, rest: &[&str], depth: usize) -> Option<Alias> {
+        if depth > MAX_ALIASES {
+            return None;
+        }
+        let (mut at, mut first) = (Some(scope), true);
+        let (bound_in, value) = loop {
+            let s = at?;
+            let held = &self.scan.scopes[s];
+            if held.kind != ScopeKind::Class || first {
+                match held.names.get(name) {
+                    Some(Binding::Nonlocal) | None => {}
+                    Some(Binding::Value)
+                        if matches!(held.kind, ScopeKind::Function | ScopeKind::Lambda)
+                            && self.scan.values.get(&(s, name.to_string())) == Some(&1) =>
+                    {
+                        break (s, *self.scan.aliases.get(&(s, name.to_string()))?);
+                    }
+                    Some(_) => return None,
+                }
+            }
+            first = false;
+            at = held.parent;
+        };
+        let (head, segments) = chain(value, self.source)?;
+        let head_name = self.text(head);
+        let segments: Vec<&str> = segments.into_iter().chain(rest.iter().copied()).collect();
+        let joined = |head: &str| {
+            std::iter::once(head)
+                .chain(segments.iter().copied())
+                .collect::<Vec<_>>()
+                .join(".")
+        };
+        let receiver = (segments.len() == 1).then(|| head_name.to_string());
+        Some(match self.read(bound_in, head_name, head.start_byte()) {
+            Bound::Instance if !segments.is_empty() => Alias {
+                path: joined("self"),
+                receiver: (segments.len() == 1).then(|| "self".to_string()),
+                local: None,
+                typed: None,
+            },
+            Bound::Symbol(qualified) => Alias {
+                path: joined(head_name),
+                receiver,
+                typed: self.typed(bound_in, head_name),
+                local: Some(qualified),
+            },
+            Bound::Open if !MODULE_NAMES.contains(&head_name) => Alias {
+                path: joined(head_name),
+                receiver,
+                local: None,
+                typed: None,
+            },
+            Bound::Local if head_name != name => {
+                match self.alias(bound_in, head_name, &segments, depth + 1) {
+                    Some(alias) => alias,
+                    // A local given another, `b = bits`, is a local still.
+                    None if segments.is_empty() => return None,
+                    None => Alias {
+                        path: joined(head_name),
+                        receiver,
+                        local: None,
+                        typed: Some(self.typed(bound_in, head_name)?),
+                    },
+                }
+            }
+            _ => return None,
+        })
     }
 
     /// The test a module assigns a name, where that is the one value it
@@ -1773,7 +1880,42 @@ impl<'s, 't> Reader<'s, 't> {
         match self.read(scope, name, node.start_byte()) {
             Bound::Symbol(qualified) => self.reference(node, name, None, kind, Some(qualified)),
             Bound::Open => self.reference(node, name, None, kind, None),
-            Bound::Local | Bound::Instance => {}
+            Bound::Local => {
+                if let Some(alias) = self.alias(scope, name, &[], 0) {
+                    self.aliased_reference(node, name, kind, alias);
+                }
+            }
+            Bound::Instance => {}
+        }
+    }
+
+    /// A reference through a local alias, as if written with its path.
+    fn aliased_reference(&mut self, at: Node, name: &str, kind: RefKind, alias: Alias) {
+        self.reference(at, name, Some(alias.path), kind, alias.local);
+        if let Some(reference) = self.out.references.last_mut() {
+            reference.typed = alias.typed;
+        }
+    }
+
+    /// A call through a local alias, as if written with its path: by the
+    /// name it is written with, which the path's last may not be, `f()`
+    /// after `f = self.helper`.
+    fn aliased_call(&mut self, at: Node, name: &str, alias: Alias) {
+        let kind = if alias.path.contains('.') {
+            CallKind::Method
+        } else {
+            CallKind::Free
+        };
+        self.record_call(
+            at,
+            name,
+            Some(alias.path),
+            kind,
+            alias.receiver.as_deref(),
+            alias.local,
+        );
+        if let Some(call) = self.out.calls.last_mut() {
+            call.typed = alias.typed;
         }
     }
 
@@ -1815,7 +1957,9 @@ impl<'s, 't> Reader<'s, 't> {
                 );
             }
             Bound::Local => {
-                if let Some(typed) = self.typed(scope, head_name) {
+                if let Some(alias) = self.alias(scope, head_name, &segments, 0) {
+                    self.aliased_reference(node, last, kind, alias);
+                } else if let Some(typed) = self.typed(scope, head_name) {
                     self.reference(node, last, Some(written), kind, None);
                     if let Some(reference) = self.out.references.last_mut() {
                         reference.typed = Some(typed);
@@ -1861,6 +2005,11 @@ impl<'s, 't> Reader<'s, 't> {
                         ),
                         Bound::Open if !MODULE_NAMES.contains(&name) => {
                             self.record_call(function, name, None, CallKind::Free, None, None)
+                        }
+                        Bound::Local => {
+                            if let Some(alias) = self.alias(scope, name, &[], 0) {
+                                self.aliased_call(function, name, alias);
+                            }
                         }
                         _ => {}
                     }
@@ -1941,12 +2090,15 @@ impl<'s, 't> Reader<'s, 't> {
                     None,
                 )
             }
-            Bound::Local => {
-                self.record_call(attribute, name, None, CallKind::Method, receiver, None);
-                if receiver.is_some() {
-                    self.type_last_call(scope, head_name);
+            Bound::Local => match self.alias(scope, head_name, &segments, 0) {
+                Some(alias) => self.aliased_call(attribute, name, alias),
+                None => {
+                    self.record_call(attribute, name, None, CallKind::Method, receiver, None);
+                    if receiver.is_some() {
+                        self.type_last_call(scope, head_name);
+                    }
                 }
-            }
+            },
             Bound::Symbol(qualified) => {
                 self.record_call(
                     attribute,

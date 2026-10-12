@@ -2476,3 +2476,51 @@ fn every_command_the_plugin_runs_is_graff_with_flags_it_takes() {
         );
     }
 }
+
+#[test]
+fn python_callers_hold_a_base_s_self_calls_and_a_local_alias_s_calls() {
+    let demo = Demo::of(
+        "py-overrides",
+        &[
+            (
+                "tools/base.py",
+                "class Base:\n    def run(self):\n        go = self.step\n        self.hook()\n        go()\n\n    def hook(self):\n        pass\n\n    def step(self):\n        pass\n",
+            ),
+            (
+                "tools/sub.py",
+                "from base import Base\n\n\nclass Sub(Base):\n    def hook(self):\n        pass\n",
+            ),
+        ],
+    );
+    // Python runs Sub.hook for `self.hook()` where the instance is a Sub.
+    assert_eq!(
+        demo.ask(&["callers", "Sub.hook"]),
+        demo.rooted(
+            "callers Sub.hook in ROOT
+tools/sub.py:5-6 method Sub.hook: 1 caller, 0 possible
+  tools/base.py:2-5 method Base.run: call 4
+"
+        )
+    );
+    // `go()` is written with another name than the one it reaches by.
+    assert_eq!(
+        demo.ask(&["callers", "Base.step"]),
+        demo.rooted(
+            "callers Base.step in ROOT
+tools/base.py:10-11 method Base.step: 1 caller, 0 possible
+  tools/base.py:2-5 method Base.run: call 5; ref 3
+"
+        )
+    );
+    assert_eq!(
+        demo.ask(&["callees", "Base.run"]),
+        demo.rooted(
+            "callees Base.run in ROOT
+tools/base.py:2-5 method Base.run: 3 callees, 0 possible, 0 outside the worktree
+  tools/base.py:7-8 method Base.hook: call 4
+  tools/base.py:10-11 method Base.step: call 5; ref 3
+  tools/sub.py:5-6 method Sub.hook: call 4
+"
+        )
+    );
+}

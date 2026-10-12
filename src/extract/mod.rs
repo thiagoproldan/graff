@@ -16,7 +16,7 @@ use crate::lang::Language;
 
 /// Bumped whenever what an extractor produces changes, so that results kept
 /// from an older extractor are read again rather than trusted.
-pub const VERSION: u32 = 26;
+pub const VERSION: u32 = 27;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Extraction {
@@ -177,7 +177,9 @@ pub struct Call {
     /// The last segment: `load` for `Storage::load(..)` and `store.load()`.
     pub name: String,
     /// The path as written, for a path call or a macro named by one:
-    /// `Storage::load`, `crate::ops::apply`.
+    /// `Storage::load`, `crate::ops::apply`. Python: through a function's
+    /// local that stands for a name or a path, that path, `sep.join` for
+    /// `join(..)` after `join = sep.join`, whose last the name may not be.
     pub path: Option<String>,
     pub kind: CallKind,
     pub line: u32,
@@ -213,10 +215,12 @@ pub enum CallKind {
 
 /// A name used other than by calling it: a type, a path, or a value such as a
 /// constant or a function passed along. Names bound in the same function
-/// (parameters, `let`, patterns) and generic parameters are left out.
+/// (parameters, `let`, patterns) and generic parameters are left out, but
+/// for Python a local that stands for a name or a path.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Reference {
     pub name: String,
+    /// The path as written; Python: through a local alias, as for a call.
     pub path: Option<String>,
     pub kind: RefKind,
     pub line: u32,

@@ -430,6 +430,14 @@ impl Names {
                 })
             })
     }
+
+    /// Whether a path ends in one of the names, as a use's name most often
+    /// does; but a Python use through a local alias is written with the
+    /// local's, `f()` after `f = self.helper`, a use of `helper`.
+    fn ends(&self, path: &str) -> bool {
+        let end = path.rfind(['.', ':']).map_or(path, |at| &path[at + 1..]);
+        self.names.contains(end)
+    }
 }
 
 impl Store {
@@ -737,9 +745,10 @@ impl Store {
         }
         let (filter, values): (String, Vec<rusqlite::types::Value>) = match which {
             Sites::Named(names) => {
-                // Whether a path goes through a name is told by `through`, in
-                // one pass over the sites: SQL's LIKE, a pattern for each
-                // name, took one for each.
+                // Whether a path goes through a name, or ends in one its use
+                // is not written with, is told by `through`, in one pass over
+                // the sites: SQL's LIKE, a pattern for each name, took one
+                // for each.
                 let through = Names::new(names);
                 self.connection.create_scalar_function(
                     "through",
@@ -748,7 +757,7 @@ impl Store {
                     move |context| {
                         // A null path, which is no text, goes through none.
                         let path = context.get_raw(0).as_str();
-                        Ok(path.is_ok_and(|path| through.through(path)))
+                        Ok(path.is_ok_and(|path| through.through(path) || through.ends(path)))
                     },
                 )?;
                 let mut values: Vec<rusqlite::types::Value> = vec![worktree.id.into()];
@@ -1753,6 +1762,13 @@ mod tests {
         // SQL's LIKE took it.
         for path in ["c::load", "load", "LOAD::c", "a.Load.c", "getXx::y"] {
             assert!(!names.through(path), "{path}");
+        }
+        // Last, which a use's own name most often is.
+        for path in ["c::load", "load", "self.load", "super().get_x"] {
+            assert!(names.ends(path), "{path}");
+        }
+        for path in ["load::c", "self.reload", "self.Load", "a.load.c"] {
+            assert!(!names.ends(path), "{path}");
         }
     }
 

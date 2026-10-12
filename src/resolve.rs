@@ -255,6 +255,10 @@ pub enum Rule {
     /// Bash: the local of the function that calls the one a variable is
     /// used in, or calls its caller, as Bash's dynamic scope has it.
     Caller,
+    /// Python: a subclass's member that `self.f` reaches where the
+    /// instance is of that subclass, past the one its own class reads, as
+    /// class hierarchy analysis has it: an override of the method.
+    Override,
     /// C: a definition of a file the file includes, or of one that
     /// includes it; or the definition a prototype found there declares.
     Include,
@@ -287,6 +291,7 @@ impl Rule {
             Rule::Source => "source",
             Rule::Environment => "environment",
             Rule::Caller => "caller",
+            Rule::Override => "override",
             Rule::Include => "include",
             Rule::Field => "field",
             Rule::Computed => "computed",

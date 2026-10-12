@@ -16,7 +16,12 @@
 //! and its submodules; a class's members and, through its bases, theirs
 //! (`glob`). `self.f()` reaches the method of the class it is called in or
 //! of the first class of its method resolution order that has one, C3's,
-//! and `super().f()` that of a class after it there (`receiver`). As
+//! and `super().f()` that of a class after it there (`receiver`); and
+//! `self.f`, read or called, each member of that name the class's
+//! subclasses read in its stead, at any depth, as class hierarchy
+//! analysis has it (`override`): Python runs the subclass's where the
+//! instance is of it, though pyright and jedi tie the use to the class's
+//! own alone (decision on task 383). As
 //! pyright reads a member, the first class there that declares it with a
 //! type -- a def, a class, `pos: int` -- comes before one that only
 //! assigns it: `self.pos = 0` in a subclass reads its base's `pos: int`.
@@ -25,7 +30,9 @@
 //! Python's library has a method of that name too: then the worktree's are
 //! only candidates.
 //! What none of these finds is external: the builtins', the library's, or
-//! a package's.
+//! a package's. A use through a function's local that stands for a name
+//! or a path, `h()` after `h = self.helper`, is read as written with that
+//! path, which extraction gives it.
 //!
 //! Of the definitions a scope gives one name, `f` and `f#2`, and of the
 //! imports that bind it there, a name reaches the first no branch around
@@ -48,6 +55,7 @@
 
 use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 use std::sync::LazyLock;
 
 use tree_sitter::Parser;
@@ -121,6 +129,19 @@ fn declared(symbol: &Symbol) -> bool {
     !matches!(symbol.kind, Kind::Variable | Kind::Const) || symbol.declared
 }
 
+/// What `overrides` keeps: a class, the method of it a use is in, the
+/// name the use reads through `self`, and the file and the innermost
+/// branch around the use, none outside any.
+type Reached = (Definition, Option<String>, String, Option<(usize, usize)>);
+
+/// A class's subclasses, at any depth, each with its method resolution
+/// order, and the names their members have, of the classes of those
+/// orders that are not in the class's own.
+struct Below<'a> {
+    classes: Vec<(Definition, Rc<[Definition]>)>,
+    names: HashSet<&'a str>,
+}
+
 struct Index<'a> {
     files: &'a [File<'a>],
     /// Each Python file, by its path.
@@ -158,6 +179,20 @@ struct Index<'a> {
     parser: RefCell<Parser>,
     /// Each file's names for `sys`, `os`, `sys.platform` and `os.name`.
     names: Vec<Names<'a>>,
+    /// The classes of the worktree that name a class as a base, by it.
+    subclasses: OnceCell<HashMap<Definition, Vec<Definition>>>,
+    /// The names of each class's members: its defs, classes and variables.
+    members: HashMap<Definition, HashSet<&'a str>>,
+    /// Each `super().name()` call, by its file, the definition it is in
+    /// and the name.
+    supers: HashSet<(usize, &'a str, &'a str)>,
+    /// What `overrides` found below a class, by the class, the method the
+    /// use is in, the name, and the innermost branch around the use.
+    reached: RefCell<HashMap<Reached, Rc<[Definition]>>>,
+    /// Each class's method resolution order `overrides` read.
+    orders: RefCell<HashMap<Definition, Rc<[Definition]>>>,
+    /// What `overrides` reads below each class it was asked of.
+    below: RefCell<HashMap<Definition, Rc<Below<'a>>>>,
     /// The use being resolved, by file and line: its branches tell what
     /// holds there.
     at: Cell<Option<(usize, u32)>>,
@@ -182,6 +217,12 @@ impl<'a> Index<'a> {
             conditions: Vec::with_capacity(n),
             parser: RefCell::new(crate::extract::python::parser()),
             names: Vec::with_capacity(n),
+            subclasses: OnceCell::new(),
+            members: HashMap::new(),
+            supers: HashSet::new(),
+            reached: RefCell::new(HashMap::new()),
+            orders: RefCell::new(HashMap::new()),
+            below: RefCell::new(HashMap::new()),
             at: Cell::new(None),
         };
         for (f, file) in files.iter().enumerate() {
@@ -229,6 +270,25 @@ impl<'a> Index<'a> {
                 .is_some()
             };
             index.siblings[f].retain(|_, all| all.iter().any(|&s| branched(s)));
+            for symbol in &file.extraction.symbols {
+                if let Some((class, _)) = symbol.qualified.rsplit_once('.')
+                    && let Some(&c) = index.qualified[f].get(class)
+                    && file.extraction.symbols[c].kind == Kind::Class
+                {
+                    index
+                        .members
+                        .entry(Definition { file: f, symbol: c })
+                        .or_default()
+                        .insert(&symbol.name);
+                }
+            }
+            for call in &file.extraction.calls {
+                if call.receiver.as_deref() == Some("super")
+                    && let Some(from) = call.from.as_deref()
+                {
+                    index.supers.insert((f, from, &call.name));
+                }
+            }
             for import in &file.extraction.imports {
                 let scope = import.from.as_deref().unwrap_or("");
                 match import.via.as_deref() {
@@ -278,6 +338,37 @@ impl<'a> Index<'a> {
         }
         index.methods = methods;
         index
+    }
+
+    /// Each class's subclasses: the classes whose bases, read where their
+    /// class statements are, name it; read once, when first asked.
+    fn subclasses(&self) -> &HashMap<Definition, Vec<Definition>> {
+        self.subclasses.get_or_init(|| self.derived())
+    }
+
+    fn derived(&self) -> HashMap<Definition, Vec<Definition>> {
+        let at = self.at.get();
+        let mut subclasses: HashMap<Definition, Vec<Definition>> = HashMap::new();
+        for (f, file) in self.files.iter().enumerate() {
+            if file.language != Language::Python {
+                continue;
+            }
+            for (s, symbol) in file.extraction.symbols.iter().enumerate() {
+                if symbol.kind != Kind::Class {
+                    continue;
+                }
+                let class = Definition { file: f, symbol: s };
+                self.at.set(Some((f, symbol.start)));
+                for base in self.bases_of(class, 0) {
+                    let found = subclasses.entry(base).or_default();
+                    if !found.contains(&class) {
+                        found.push(class);
+                    }
+                }
+            }
+        }
+        self.at.set(at);
+        subclasses
     }
 
     /// The folders a file's absolute imports are looked for in, in the
@@ -681,13 +772,24 @@ impl<'a> Index<'a> {
         if depth > DEPTH {
             return None;
         }
+        self.member_in(class, name, || self.mro(class, depth))
+    }
+
+    /// `member`, with the class's method resolution order given, when
+    /// its own member is not the one.
+    fn member_in<O: std::ops::Deref<Target = [Definition]>>(
+        &self,
+        class: Definition,
+        name: &str,
+        order: impl FnOnce() -> O,
+    ) -> Option<(Definition, Rule)> {
         let own = self.defined(class.file, self.qualified_name(class), name);
         if let Some(d) = own
             && (self.declared(d) || !self.declared_names.contains(name))
         {
             return Some((d, Rule::Path));
         }
-        let found = self.first_member(&self.mro(class, depth), name)?;
+        let found = self.first_member(&order(), name)?;
         let rule = if Some(found) == own {
             Rule::Path
         } else {
@@ -818,6 +920,160 @@ impl<'a> Index<'a> {
         } else {
             self.member(class, name, 0).map(|(d, _)| d)
         }
+    }
+
+    /// What else `self.name` reaches in a method where the instance is of
+    /// a subclass of its class, at any depth: each subclass's member of
+    /// the name, as `member` picks it, but the one the class itself reads
+    /// -- an override, or a member a subclass sets where the class sets
+    /// none, `_address_class = IPv4Address`. pyright and jedi tie the use
+    /// to the class's own alone; Python runs the subclass's. A subclass
+    /// whose instances never run the method the use is in, as one that
+    /// overrides it and calls no `super()` of it, reaches nothing there.
+    fn overrides(
+        &self,
+        file: usize,
+        from: Option<&str>,
+        name: &str,
+        own: Option<Definition>,
+    ) -> Vec<Definition> {
+        let Some(from) = from else {
+            return Vec::new();
+        };
+        let Some(class) = self
+            .class_of(file, from)
+            .filter(|class| self.subclasses().contains_key(class))
+        else {
+            return Vec::new();
+        };
+        // The class's method the use is in, at any depth inside it.
+        let method = from
+            .strip_prefix(self.qualified_name(class))
+            .and_then(|rest| rest.strip_prefix('.'))
+            .map(|rest| rest.split('.').next().unwrap_or(rest));
+        // What a subclass reads depends on what holds where the use is: on
+        // the innermost branch around it.
+        let below = self.below(class);
+        if !below.names.contains(name) {
+            return Vec::new();
+        }
+        let branch = self.at.get().and_then(|(f, line)| {
+            around(&self.files[f].extraction.branches, &self.parents[f], line)
+                .next()
+                .map(|b| (f, b))
+        });
+        let key = (class, method.map(String::from), name.to_string(), branch);
+        let kept = self.reached.borrow().get(&key).cloned();
+        let reached = kept.unwrap_or_else(|| {
+            let reached: Rc<[Definition]> = self.reached_below(class, &below, method, name).into();
+            self.reached.borrow_mut().insert(key, reached.clone());
+            reached
+        });
+        reached
+            .iter()
+            .copied()
+            .filter(|&d| Some(d) != own)
+            .collect()
+    }
+
+    /// The members of a name the subclasses of a class read, at any depth,
+    /// of those whose instances run the class's method of a name.
+    fn reached_below(
+        &self,
+        class: Definition,
+        below: &Below,
+        method: Option<&str>,
+        name: &str,
+    ) -> Vec<Definition> {
+        let mut found = Vec::new();
+        for (sub, order) in &below.classes {
+            if !order.iter().any(|c| self.has_member(*c, name))
+                || method.is_some_and(|method| !self.runs(order, class, method))
+            {
+                continue;
+            }
+            if let Some((d, _)) = self.member_in(*sub, name, || order.clone())
+                && !found.contains(&d)
+            {
+                found.push(d);
+            }
+        }
+        found
+    }
+
+    /// A class's subclasses, at any depth, each with its method resolution
+    /// order, and the names of the members they may read in place of the
+    /// class's own, made once: C3 keeps the class's own order in a
+    /// subclass's, so a subclass reads another member only through a class
+    /// not in it.
+    fn below(&self, class: Definition) -> Rc<Below<'a>> {
+        if let Some(below) = self.below.borrow().get(&class) {
+            return below.clone();
+        }
+        let own = self.order(class);
+        let mut below = Below {
+            classes: Vec::new(),
+            names: HashSet::new(),
+        };
+        let mut seen = HashSet::from([class]);
+        let mut next = vec![class];
+        while let Some(above) = next.pop() {
+            for &sub in self.subclasses().get(&above).into_iter().flatten() {
+                if !seen.insert(sub) {
+                    continue;
+                }
+                next.push(sub);
+                let order = self.order(sub);
+                for c in order.iter().filter(|c| !own.contains(c)) {
+                    below
+                        .names
+                        .extend(self.members.get(c).into_iter().flatten().copied());
+                }
+                below.classes.push((sub, order));
+            }
+        }
+        let below = Rc::new(below);
+        self.below.borrow_mut().insert(class, below.clone());
+        below
+    }
+
+    fn has_member(&self, class: Definition, name: &str) -> bool {
+        self.members
+            .get(&class)
+            .is_some_and(|names| names.contains(name))
+    }
+
+    /// A class's method resolution order, made once, its bases read where
+    /// the class statement is.
+    fn order(&self, class: Definition) -> Rc<[Definition]> {
+        if let Some(order) = self.orders.borrow().get(&class) {
+            return order.clone();
+        }
+        let at = self.at.replace(Some((class.file, self.symbol_line(class))));
+        let order: Rc<[Definition]> = self.mro(class, 0).into();
+        self.at.set(at);
+        self.orders.borrow_mut().insert(class, order.clone());
+        order
+    }
+
+    /// Whether an instance of a class whose method resolution order is
+    /// given runs a method of a class of it: each class before it there
+    /// that defines a method of that name calls `super()`'s.
+    fn runs(&self, order: &[Definition], class: Definition, method: &str) -> bool {
+        for &at in order {
+            if at == class {
+                return true;
+            }
+            if self.has_member(at, method)
+                && let Some(d) = self.defined(at.file, self.qualified_name(at), method)
+                && !self
+                    .supers
+                    .contains(&(d.file, self.qualified_name(d), method))
+            {
+                return false;
+            }
+        }
+        true
     }
 
     /// The class of the worktree a type written in a definition names.
@@ -983,15 +1239,19 @@ impl<'a> Index<'a> {
     fn call(&self, file: usize, call: &'a Call, edges: &mut Vec<Edge>) {
         self.at.set(Some((file, call.line)));
         let from = call.from.as_deref();
+        let name = reached_by(&call.name, call.path.as_deref());
+        let mut overrides = Vec::new();
         let resolution = match (call.path.as_deref(), call.receiver.as_deref()) {
             (Some(path), Some("self")) if path.starts_with("self.") => {
-                match self.receiver(file, from, &call.name, false) {
+                let own = self.receiver(file, from, name, false);
+                overrides = self.overrides(file, from, name, own);
+                match own {
                     Some(d) => Resolution::Resolved(d, Rule::Receiver),
                     None => Resolution::External,
                 }
             }
             (Some(path), Some("super")) if path.starts_with("super().") => {
-                match self.receiver(file, from, &call.name, true) {
+                match self.receiver(file, from, name, true) {
                     Some(d) => Resolution::Resolved(d, Rule::Receiver),
                     None => Resolution::External,
                 }
@@ -1010,9 +1270,9 @@ impl<'a> Index<'a> {
                     self.qualifiers(file, call.line, path, from, through, edges);
                 }
                 match reach {
-                    Reach::Opaque => self.by_name(&call.name),
+                    Reach::Opaque => self.by_name(name),
                     Reach::Outside | Reach::Unbound if path.starts_with("self.") => {
-                        self.by_name(&call.name)
+                        self.by_name(name)
                     }
                     reach => self.resolution(reach),
                 }
@@ -1038,27 +1298,43 @@ impl<'a> Index<'a> {
                 },
             },
         };
-        edges.push(Edge {
-            file,
-            line: call.line,
-            name: call.name.clone(),
-            path: call.path.clone(),
-            used: Use::Call(call.kind),
-            from: call.from.clone(),
-            resolution,
-        });
+        for resolution in with_overrides(resolution, overrides) {
+            edges.push(Edge {
+                file,
+                line: call.line,
+                name: call.name.clone(),
+                path: call.path.clone(),
+                used: Use::Call(call.kind),
+                from: call.from.clone(),
+                resolution,
+            });
+        }
     }
 
     fn reference(&self, file: usize, reference: &'a Reference, edges: &mut Vec<Edge>) {
         self.at.set(Some((file, reference.line)));
         let from = reference.from.as_deref();
+        let name = reached_by(&reference.name, reference.path.as_deref());
+        let mut overrides = Vec::new();
         let resolution = match reference.path.as_deref() {
-            Some(path) if path.starts_with("self.") || path.starts_with("super().") => {
+            // A member of the instance, `self.x`; a path through it, which a
+            // local alias gives, `self.cc.text` for `cc.text` after `cc =
+            // self.cc`, is followed as any path.
+            Some(path)
+                if (path.starts_with("self.") || path.starts_with("super()."))
+                    && path.matches('.').count() == 1 =>
+            {
                 let past = path.starts_with("super().");
-                match self.receiver(file, from, &reference.name, past) {
+                let own = self.receiver(file, from, name, past);
+                // A set gives the instance its own value: it reads none.
+                if !past && reference.kind != RefKind::Set {
+                    overrides = self.overrides(file, from, name, own);
+                }
+                match own {
                     Some(d) => Resolution::Resolved(d, Rule::Receiver),
                     // An attribute of the instance, set by a method.
-                    None => return,
+                    None if overrides.is_empty() => return,
+                    None => Resolution::External,
                 }
             }
             Some(path) => {
@@ -1070,7 +1346,16 @@ impl<'a> Index<'a> {
                     reference.typed.as_deref(),
                     1,
                 );
-                self.qualifiers(file, reference.line, path, from, through, edges);
+                // What a path through an attribute of the instance reaches
+                // past the class's members is the instance's, as `self.x` is.
+                if path.starts_with("self.") && !matches!(reach, Reach::Found(..)) {
+                    return;
+                }
+                // Through `self`, the alias's own line reads the first
+                // attribute, as a call's extraction does.
+                if !path.starts_with("self.") {
+                    self.qualifiers(file, reference.line, path, from, through, edges);
+                }
                 self.resolution(reach)
             }
             None => match reference.local.as_deref() {
@@ -1081,19 +1366,21 @@ impl<'a> Index<'a> {
                 None => self.resolution(self.name(file, from, &reference.name)),
             },
         };
-        edges.push(Edge {
-            file,
-            line: reference.line,
-            name: reference.name.clone(),
-            path: reference.path.clone(),
-            used: if reference.kind == RefKind::Set {
-                Use::Setting
-            } else {
-                Use::Reference(reference.kind)
-            },
-            from: reference.from.clone(),
-            resolution,
-        });
+        for resolution in with_overrides(resolution, overrides) {
+            edges.push(Edge {
+                file,
+                line: reference.line,
+                name: reference.name.clone(),
+                path: reference.path.clone(),
+                used: if reference.kind == RefKind::Set {
+                    Use::Setting
+                } else {
+                    Use::Reference(reference.kind)
+                },
+                from: reference.from.clone(),
+                resolution,
+            });
+        }
     }
 
     /// An import's edge, to the module or the name it names; a class's
@@ -1253,6 +1540,30 @@ fn names<'a>(file: &File<'a>) -> Names<'a> {
         }
     }
     names
+}
+
+/// The name a use reaches what it reaches by: its path's last, which is
+/// the name it is written with but through a local alias, `helper` for
+/// `f()` after `f = self.helper`.
+fn reached_by<'n>(name: &'n str, path: Option<&'n str>) -> &'n str {
+    path.and_then(|path| path.rsplit('.').next())
+        .unwrap_or(name)
+}
+
+/// A use's resolutions: what it reaches, then the overrides it reaches
+/// too, each as an edge of its own; what reaches nothing but overrides is
+/// those alone.
+fn with_overrides(resolution: Resolution, overrides: Vec<Definition>) -> Vec<Resolution> {
+    let mut found = Vec::with_capacity(1 + overrides.len());
+    if overrides.is_empty() || !matches!(resolution, Resolution::External) {
+        found.push(resolution);
+    }
+    found.extend(
+        overrides
+            .into_iter()
+            .map(|d| Resolution::Resolved(d, Rule::Override)),
+    );
+    found
 }
 
 /// Whether a text is a name as Python writes one: `Turtle`, `_x1`.
@@ -2266,12 +2577,15 @@ def outside(s: BodyTypedSub):
                 expected.push((i as u32 + 1, name.to_string(), place.to_string()));
             }
         }
+        // What a subclass reads, `Both`'s BodyTyped.x for PlainSub's
+        // `self.x`, is an override, which the test of overrides holds.
         let mut reached: Vec<(u32, String, String)> = resolve(&files)
             .into_iter()
             .filter(|edge| {
-                expected
-                    .iter()
-                    .any(|(line, name, _)| edge.line == *line && edge.name == *name)
+                !matches!(edge.resolution, Resolution::Resolved(_, Rule::Override))
+                    && expected
+                        .iter()
+                        .any(|(line, name, _)| edge.line == *line && edge.name == *name)
             })
             .map(|edge| {
                 let reached = match edge.resolution {
@@ -2413,5 +2727,240 @@ def use():
         reached.sort();
         expected.sort();
         assert_eq!(reached, expected);
+    }
+
+    /// Each edge of the files whose line ends in `# name -> ..`, as that
+    /// comment writes them: `# name -> b.py Base.f (receiver), Sub.f
+    /// (override)`, each target by its qualified name and rule, the file
+    /// where it is not the use's, or `external`; `# name -> nothing`, none.
+    fn written_edges(sources: &[(&str, &[u8])]) {
+        let extractions: Vec<Extraction> = sources
+            .iter()
+            .map(|(_, source)| extract::extract(Language::Python, source))
+            .collect();
+        let files: Vec<File> = sources
+            .iter()
+            .zip(&extractions)
+            .map(|((path, _), extraction)| File {
+                path,
+                language: Language::Python,
+                extraction,
+            })
+            .collect();
+        let mut expected: Vec<(usize, u32, String, String)> = Vec::new();
+        let mut asked: Vec<(usize, u32, String)> = Vec::new();
+        for (f, (_, source)) in sources.iter().enumerate() {
+            for (i, line) in std::str::from_utf8(source).unwrap().lines().enumerate() {
+                if let Some((_, said)) = line.split_once("# ")
+                    && let Some((name, targets)) = said.split_once(" -> ")
+                {
+                    asked.push((f, i as u32 + 1, name.to_string()));
+                    if targets.starts_with("nothing") {
+                        continue;
+                    }
+                    for target in targets.split(", ") {
+                        expected.push((f, i as u32 + 1, name.to_string(), target.to_string()));
+                    }
+                }
+            }
+        }
+        let mut reached: Vec<(usize, u32, String, String)> = resolve(&files)
+            .into_iter()
+            .filter(|edge| {
+                edge.used != Use::Qualifier
+                    && asked.iter().any(|(f, line, name)| {
+                        (edge.file, edge.line) == (*f, *line) && edge.name == *name
+                    })
+            })
+            .map(|edge| {
+                let reached = match edge.resolution {
+                    Resolution::Resolved(d, rule) => {
+                        let symbol = &extractions[d.file].symbols[d.symbol].qualified;
+                        let file = if d.file == edge.file {
+                            String::new()
+                        } else {
+                            format!("{} ", files[d.file].path)
+                        };
+                        format!("{file}{symbol} ({})", rule.name())
+                    }
+                    Resolution::Ambiguous(found) => format!("ambiguous, {}", found.len()),
+                    Resolution::External => "external".to_string(),
+                };
+                (edge.file, edge.line, edge.name, reached)
+            })
+            .collect();
+        reached.sort();
+        expected.sort();
+        assert_eq!(reached, expected);
+    }
+
+    #[test]
+    fn self_in_a_base_s_method_reaches_its_subclasses_overrides_too() {
+        // pyright 1.1.414 and jedi 0.20.0 tie line 5's `self.hook()` to
+        // Base.hook alone (textDocument/definition, references and
+        // incomingCalls; goto and get_references, 2026-10-12); Python runs
+        // the hook of the instance's class. An Own never runs Base.run, nor
+        // a Calls, whose `super().run()` is Own's.
+        let base = br#"class Base:
+    size = 0
+
+    def run(self):
+        self.hook()  # hook -> Base.hook (receiver), sub.py Sub.hook (override), sub.py Leaf.hook (override), sub.py Mixin.hook (override), sub.py Cooperates.hook (override)
+        self.tail()  # tail -> Base.tail (receiver)
+        self.make()  # make -> sub.py Sub.make (override)
+        cb = self.hook  # hook -> Base.hook (receiver), sub.py Sub.hook (override), sub.py Leaf.hook (override), sub.py Mixin.hook (override), sub.py Cooperates.hook (override)
+        self.size = 1  # size -> Base.size (receiver)
+        return self.size  # size -> Base.size (receiver), sub.py Sub.size (override)
+
+    def hook(self):
+        pass
+
+    def tail(self):
+        pass
+
+    def unset(self):
+        return self.missing  # missing -> nothing, an attribute of the instance
+"#;
+        let sub = br#"from base import Base
+
+
+class Maker:
+    pass
+
+
+class Sub(Base):
+    size = 5
+    make = Maker
+
+    def hook(self):
+        super().hook()  # hook -> base.py Base.hook (receiver)
+        self.tail()  # tail -> base.py Base.tail (receiver)
+
+
+class Mid(Sub):
+    pass
+
+
+class Leaf(Mid):
+    def hook(self):
+        self.hook()  # hook -> Leaf.hook (receiver)
+
+
+class Other:
+    def hook(self):
+        pass
+
+
+class Mixin:
+    def hook(self):
+        pass
+
+
+class Mixed(Mixin, Base):
+    pass
+
+
+class Own(Base):
+    def run(self):
+        pass
+
+    def hook(self):
+        pass
+
+
+class Calls(Own):
+    def run(self):
+        super().run()
+
+    def hook(self):
+        pass
+
+
+class Cooperates(Base):
+    def run(self):
+        super().run()
+
+    def hook(self):
+        pass
+"#;
+        written_edges(&[("base.py", base), ("sub.py", sub)]);
+    }
+
+    #[test]
+    fn a_function_s_local_alias_is_followed_to_what_it_stands_for() {
+        // evals/python/monitoring.py counted 111 calls the library's tests
+        // made through such locals that graff tied to nothing (task 124).
+        let source = br#"def helper():
+    pass
+
+
+class Parser:
+    def parse(self):
+        pass
+
+
+class Store:
+    parser: Parser
+
+    def __init__(self):
+        self.parser = Parser()
+
+    def helper(self):
+        pass
+
+    def run(self, sep, items):
+        h = self.helper
+        h()  # h -> Store.helper (receiver)
+        p = self.parser
+        p.parse()  # parse -> Parser.parse (receiver)
+        q = p.parse
+        q()  # q -> Parser.parse (receiver)
+        g = helper
+        g()  # g -> helper (scope)
+        register(h)  # h -> Store.helper (receiver)
+        join = sep.join
+        join(items)  # join -> nothing, a parameter's
+        twice = helper
+        twice = self.helper
+        twice()  # twice -> nothing, given two values
+        t = Parser()
+        tp = t.parse
+        tp()  # tp -> Parser.parse (receiver)
+        e = print
+        e()  # e -> external
+        late = None
+        late = helper
+        late()  # late -> helper (scope)
+        copy = t
+        copy.parse()  # parse -> Parser.parse (receiver)
+        print(copy)  # copy -> nothing, a local
+        sp = self.parser
+        print(sp.parse)  # parse -> Parser.parse (receiver)
+        size = self.parser.size
+        print(size)  # size -> nothing, an attribute of the instance's
+
+        def inner():
+            h()  # h -> Store.helper (receiver)
+"#;
+        written_edges(&[("a.py", source)]);
+        // `self.parser` is read where `sp` is given it, not where `sp` is.
+        let extraction = extract::extract(Language::Python, source);
+        let files = [File {
+            path: "a.py",
+            language: Language::Python,
+            extraction: &extraction,
+        }];
+        let line = std::str::from_utf8(source)
+            .unwrap()
+            .lines()
+            .position(|line| line.contains("print(sp.parse)"))
+            .unwrap() as u32
+            + 1;
+        let qualifiers: Vec<String> = resolve(&files)
+            .into_iter()
+            .filter(|edge| edge.line == line && edge.used == Use::Qualifier)
+            .map(|edge| edge.name)
+            .collect();
+        assert_eq!(qualifiers, Vec::<String>::new());
     }
 }

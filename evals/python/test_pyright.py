@@ -138,5 +138,82 @@ class Reassigned(unittest.TestCase):
         self.assertEqual(self.placed(12, 8), [("m.py", "C.move")])
 
 
+class Aliases(unittest.TestCase):
+    TEXT = [
+        "class Store:",
+        "    def helper(self):",
+        "        pass",
+        "    def run(self):",
+        "        h = self.helper",
+        "        g = h",
+        "        g()",
+        "LEVEL = Store",
+    ]
+    SYMBOLS = {"m.py": [{"name": "LEVEL", "qualified": "LEVEL", "start": 8, "end": 8}]}
+    PREFIX = "file:///r/"
+
+    class Server:
+        """pyright's places as it gives them, lines from 0: `h` on line 6
+        at line 4's local, `helper` there at a stub's and the method;
+        `Store` of line 7 at the class."""
+
+        def __init__(self):
+            self.asked = []
+
+        def definition(self, uri, line, character):
+            self.asked.append((line, character))
+            return {(5, 12): [("file:///r/m.py", 4, 8, False)],
+                    (4, 17): [("file:///stub.pyi", 3, 8, False), ("file:///r/m.py", 1, 8, False)],
+                    (7, 8): [("file:///r/m.py", 0, 6, False)]}.get((line, character), [])
+
+    def follow(self, places):
+        server = self.Server()
+        found = pyright.through_aliases(server, {"m.py": self.TEXT}, self.SYMBOLS, lambda p: self.PREFIX + p,
+                                        self.PREFIX, places)
+        return found, server.asked
+
+    def test_a_local_alias_is_followed_to_its_path_s_last_name(self):
+        # `g()`: pyright places g at line 5's `g = h`, h at `h = self.helper`,
+        # and `helper` in a stub and in the file, as it does the library's.
+        found, asked = self.follow([("file:///r/m.py", 5, 8, False)])
+        self.assertEqual(found, [("file:///stub.pyi", 3, 8, False), ("file:///r/m.py", 1, 8, False)])
+        self.assertEqual(asked, [(5, 12), (4, 17)])
+
+    def test_a_local_whose_path_pyright_places_nowhere_has_no_place(self):
+        class Nowhere(self.Server):
+            def definition(self, uri, line, character):
+                self.asked.append((line, character))
+                return []
+
+        server = Nowhere()
+        found = pyright.through_aliases(server, {"m.py": self.TEXT}, self.SYMBOLS, lambda p: self.PREFIX + p,
+                                        self.PREFIX, [("file:///r/m.py", 5, 8, False)])
+        self.assertEqual((found, server.asked), ([], [(5, 12)]))
+
+    def test_a_name_a_module_assigns_and_anything_else_stay(self):
+        for place in [("file:///r/m.py", 7, 0, False), ("file:///r/m.py", 1, 8, False),
+                      ("file:///elsewhere.py", 4, 8, False), ("file:///r/m.py", 0, 0, True)]:
+            self.assertEqual(self.follow([place]), ([place], []))
+
+    def test_a_call_through_an_alias_is_found_by_the_name_written(self):
+        edge = {"name": "h", "use": "call method", "written": "self.helper"}
+        self.assertEqual(pyright.column("        h()", edge), 8)
+        edge = {"name": "join", "use": "call method", "written": "sep.join"}
+        self.assertEqual(pyright.column("        join(items)", edge), 8)
+        edge = {"name": "bufsize", "use": "reference value", "written": "self.copybufsize"}
+        text = "        copyfileobj(src, dst, bufsize=bufsize)"
+        self.assertEqual(pyright.column(text, edge), text.rindex("bufsize"))
+
+    def test_an_alias_that_bears_its_path_s_last_name_or_heads_it_is_found(self):
+        edge = {"name": "results", "use": "reference value", "written": "self.results"}
+        self.assertEqual(pyright.column("        if results is not None:", edge), 11)
+        edge = {"name": "startswith", "use": "call method", "written": "self.rawdata.startswith"}
+        self.assertEqual(pyright.column("        elif startswith('</', i):", edge), 13)
+        edge = {"name": "write", "use": "reference path", "written": "sys.stdout.write"}
+        self.assertEqual(pyright.column("        out = save_stdout.write", edge), 26)
+        edge = {"name": "_state", "use": "qualifier", "written": "_state.close"}
+        self.assertIsNone(pyright.column("    state.close()", edge))
+
+
 if __name__ == "__main__":
     unittest.main()

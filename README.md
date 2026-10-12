@@ -64,11 +64,14 @@ it, the worktree's `src/`, and those a `sys.path.append` adds, a package's
 module looking in the top and `src/` before its own folder. A path is
 followed through modules and classes, and through a variable a module or a
 class assigns a name or a path and nothing else, `Pen = Turtle`, as through
-what that names, a class's base and a type included; `self.f()` and
-`super().f()` reach the method of the class or of a base, in Python's method
-resolution order, where
+what that names, a class's base and a type included, and through a
+function's local given a name or a path alone, `h = self.helper`; `self.f()`
+and `super().f()` reach the method of the class or of a base, in Python's
+method resolution order, where
 a member a class declares with a type, `pos: int` or a def, comes before one
-a class only assigns, as pyright reads it; a method called on what a class of
+a class only assigns, as pyright reads it, and `self.f` reaches too each
+subclass's own `f`, what Python runs where the instance is of it (rule
+`override`, which pyright does not tie); a method called on what a class of
 the worktree made reaches that class's, and one called on anything else, the
 worktree's only method of that name, unless a type of Python's library has
 one too. Of the definitions a scope gives one
@@ -241,7 +244,8 @@ What graff does so far is measured there too:
   on bash-completion; a function's use of its callers' locals against Bash's
   call stack as bash-completion's completions run.
 - `evals/python/`: Python against pyright's ties of names, on kimi-k3-in-c's
-  tools/, on ekko's and graff's evals/, and on Python 3.14's library.
+  tools/, on ekko's and graff's evals/, and on Python 3.14's library; and
+  calls against what ran when graff's evals and the library's tests ran.
 - `evals/c/`: C against clangd's ties of names, on kimi-k3-in-c, with
   graphify's call edges there beside graff's, and on tree-sitter's C.
 - `evals/markdown/`: Markdown against cmark-gfm, GitHub's parser, against

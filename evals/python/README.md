@@ -13,10 +13,13 @@ worktree's `src/`, and those a `sys.path.append` adds; a package's module
 looks in the top and `src/` before its own folder. A path is followed
 through modules and classes, and through a variable assigned a name or a
 path and nothing else, `Pen = Turtle`, as through what that names, a
-base and a type included; `self.f()` and `super().f()` through the
-class and its bases in Python's method resolution order (C3), where a
-member a class declares with a type, `pos: int` or a def, comes before
-one a class only assigns, as pyright reads it, a method
+base and a type included, and through a function's local so assigned,
+`h = self.helper`, as if written with its path; `self.f()` and
+`super().f()` through the class and its bases in Python's method
+resolution order (C3), where a member a class declares with a type,
+`pos: int` or a def, comes before one a class only assigns, as pyright
+reads it, `self.f` to each subclass's own `f` too, which Python runs
+where the instance is of it (rule `override`), a method
 called on what a class of the worktree made to that class's, and any
 other method call to the worktree's only method of that name, unless a
 type of Python's library has one too. Of the definitions a scope gives
@@ -81,7 +84,14 @@ definition named there whose lines hold it, else to the one of the fewest
 lines that do. pyright places a name at each of its assignments and graff
 at the first in its scope, so a place on a later one maps to that first:
 `GetStdHandle`, assigned in both branches of a platform test, or an
-attribute that two methods set through `self`.
+attribute that two methods set through `self`. A place on a function's
+local given a name or a path alone, `h = self.helper`, which graff
+records no definition of, is followed: pyright is asked again at the
+path's last name there, up to 8 locals deep, and answers where `h()`
+leads, as graff reads it. A place on a name a module or a class so
+assigns, `Pen = Turtle`, is graff's definition of it and stays. An edge
+of rule `override` is not judged: pyright names the member the class
+reads, never a subclass's, which monitoring.py judges.
 
 - **precision**: of graff's edges tied to a definition, those where one of
   pyright's places is that definition; an edge pyright gives no place for
@@ -548,3 +558,64 @@ TLP's balanced profile, the boost off, other sessions holding the load at
   follow as it follows `Pen = Turtle`, and 135 parameters; 116 through a
   variable graff ties; 30 to another definition; and 2 tied as a
   reference, not a call.
+
+### Result, 2026-10-12 (tasks 383 and 384)
+
+`self.f`, read or called in a class's method, reaches each subclass's
+member of that name besides the class's own (rule `override`), where an
+instance of the subclass runs the method the use is in: a subclass that
+overrides that method and calls no `super()` of it never does (calendar's
+`_CLIDemoCalendar.formatmonth`). pyright 1.1.414 and jedi 0.20.0 tie such
+a use to the class's own alone, and give a subclass's override no
+reference and no incoming call (a probe, 2026-10-12); class hierarchy
+analysis, the baseline of call graphs, ties it to each override, and
+PyCharm counts a base's uses among an override's (decision on task 383).
+A use through a function's local given a name or a path alone, `h()`
+after `h = self.helper`, is read as written with that path, through
+locals so given up to 8 deep; one given two values, a parameter's
+attribute, or another local alone is not followed.
+
+Both sides in one run, main at ddbfed4 against this tree, the library's
+calls those of task 124's run (`--calls`), on TLP's balanced profile:
+
+|                                 | main                     | with both                |
+| ------------------------------- | ------------------------ | ------------------------ |
+| monitoring, graff's evals/      | 1.000, recall 0.942      | 1.000, recall 0.954      |
+| monitoring, the library         | 0.952, recall 0.739      | 0.917, recall 0.774      |
+| ..., all but `override`         | 4,057 of 4,261           | 4,089 of 4,294, 0.952    |
+| ..., `override`                 | --                       | 171 of 352 right         |
+| pyright.py, the library         | 0.992, recall 0.941      | 0.992, recall 0.946      |
+| ..., names tied right           | 80,842 (635 wrong)       | 83,807 (655 wrong)       |
+| pyright.py, graff's evals/      | 1,369 of 1,369, 1,328    | 1,378 of 1,378, 1,337    |
+| resolution of the library       | 336-344 ms, 140,385      | 464-472 ms, 147,722      |
+
+- **Calls the library's tests made, missed through an override**: 135 ->
+  3, and through a local alias 111 -> 56; on graff's evals/, the 9
+  through `reaches = nil.reaches` are tied. The 56 left are locals given
+  two values (heapq's `_heapify`, `glob_in_dir`), a parameter's
+  attribute (re's `sourceget = source.get`), and a plain function's
+  `cls` (inspect's `Parameter = cls._parameter_cls`).
+- **The 181 override ties no call ran** are subclasses the 55 tests did
+  not make at that place: `TestCase.run`'s `self.setUp()` reaches each
+  of idlelib's tests' setUps, calendar's `self.formatweek()` its
+  `LocaleTextCalendar`'s. They may run; a run that makes none of them
+  cannot say so, so this precision is a floor for these ties. pyright.py
+  leaves the 4,091 override edges of the library unjudged.
+- **pyright.py's 20 new wrong ties** go through a local alias to a
+  member whose type graff and pyright read apart: idlelib's tests'
+  `text = self.text` (graff tkinter's Text, pyright mock_tk's), and
+  `_pydecimal`'s `dc = DefaultContext`, whose `dc.prec` pyright places in
+  `Context.__init__`.
+- **Names not found on their line, 263 -> 359**: the 96 more are what
+  an alias's path goes through, `_state` of `state.close()` after
+  `state = _state`, a qualifier at the line that uses the alias too,
+  where the path is not written; they are not asked. A local named as
+  its path's last name, `results = self.results`, is asked where it
+  stands bare, and one that heads a path, `out.write` after
+  `out = sys.stdout`, at the name after the dot: before pyright.py found
+  them, 735 such names went unasked (1,094 not found), the 542 more it
+  judges now all right.
+- **Speed**: examples/resolve on the library, 10 runs each alternating,
+  load 1.3, 38% slower; 5.2% more edges. The subclasses are read once,
+  when a use first asks; what a class's subclasses reach is kept by the
+  class, the method, the name and the branch the use is in.

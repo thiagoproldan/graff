@@ -80,12 +80,20 @@ def column(text, edge):
     protocol counts; None when it is not there."""
     name, written, use = edge["name"], edge["written"] or "", edge["use"]
     word = re.escape(name)
+    if use != "qualifier" and written and re.split(r"\.|\(\)\.", written)[-1] != name:
+        # Through a local alias, the name as written: `h` in `h()` after
+        # `h = self.helper`, whose path graff's edge holds; a value read,
+        # not the keyword a call passes it to.
+        after = r"(?!\s*=(?!=))" if use == "reference value" else ""
+        found = re.search(r"(?<![\w.])(" + word + r")(?!\w)" + after, text)
+        return utf16(text, found.start(1)) if found else None
     if written.startswith(("self.", "super().")):
         # Through the instance, most often named self or cls; or super().
         found = (re.search(r"\b(?:self|cls)\s*\.\s*(" + word + r")(?!\w)", text)
                  or re.search(r"\bsuper\(\)\s*\.\s*(" + word + r")(?!\w)", text)
                  or re.search(r"\.\s*(" + word + r")(?!\w)", text))
-        return utf16(text, found.start(1)) if found else None
+        if found:
+            return utf16(text, found.start(1))
     whole = written.lstrip(".")
     if whole and "." in whole or (use == "import" and whole):
         found = re.search(r"(?<![\w])" + re.escape(whole) + r"(?!\w)", text)
@@ -109,6 +117,12 @@ def column(text, edge):
     # passes the second to a keyword the first names.
     after = r"(?!\s*=(?!=))" if use == "reference value" else ""
     found = re.search(r"(?<![\w.])(" + word + r")(?!\w)" + after, text)
+    if not found and use != "qualifier" and written:
+        # A path not written on its line goes through a local alias: one
+        # that bears its last name stands bare, as above, `results` after
+        # `results = self.results`; one that heads it, before a dot,
+        # `out.write` after `out = sys.stdout`.
+        found = re.search(r"\.\s*(" + word + r")(?!\w)", text)
     return utf16(text, found.start(1)) if found else None
 
 
@@ -310,6 +324,11 @@ def score(edges, asked, extractions, texts, reassigned=False):
         sites[key].append(edge)
         if edge["resolution"] != "resolved":
             continue
+        if edge["rule"] == "override":
+            # pyright names the member the class declares, never the
+            # subclasses' a call may reach: monitoring.py judges those.
+            judged[edge["rule"]]["unjudged"] += 1
+            continue
         answer = placed(asked.get(key, []), extractions, texts, reassigned)
         target = (edge["target"]["path"], edge["target"]["qualified"])
         if not answer:
@@ -351,10 +370,44 @@ def summary(judged, found):
             "recall": ratio(hits, sum(found.values())), "found": hits, "answers": sum(found.values())}
 
 
-def ask(root, files, edges):
+# A local given a name or a path alone, `h = self.helper`: the local, then
+# the path.
+ALIAS = re.compile(r"\s*([A-Za-z_]\w*)\s*(?::[^=]*)?=\s*([A-Za-z_][\w.]*)\s*(?:#.*)?$")
+# How many local aliases deep pyright is followed.
+ALIASES = 8
+
+
+def through_aliases(server, texts, symbols, uri_of, prefix, places, depth=0):
+    """pyright's places, each on a function's local that stands for a name
+    or a path followed to what pyright places that path's last name at --
+    each of them, as typeshed's stub and the library's source: pyright
+    places `h` of `h()` at `h = self.helper`, a local graff records no
+    definition of, and `helper` there at Store.helper, what the call
+    reaches. A local whose path pyright places nowhere, a package's not
+    installed, gives no place. A place on a name a module or a class
+    assigns, which is graff's definition, stays."""
+    followed = []
+    for place in places:
+        target, line, character, module = place
+        path = target[len(prefix):] if target.startswith(prefix) else None
+        lines = texts.get(path, [])
+        text = lines[line] if line < len(lines) else ""
+        alias = ALIAS.match(text)
+        if module or depth == ALIASES or not alias or utf16(text, alias.start(1)) != character \
+                or any(s["name"] == alias.group(1) and s["start"] == line + 1 for s in symbols.get(path, ())):
+            followed.append(place)
+            continue
+        last = alias.start(2) + alias.group(2).rfind(".") + 1
+        found = server.definition(uri_of(path), line, utf16(text, last))
+        followed += through_aliases(server, texts, symbols, uri_of, prefix, found, depth + 1)
+    return followed
+
+
+def ask(root, files, edges, symbols):
     """pyright's places at each of graff's names, by the question each edge
     asks, `site`: (path from the root or None outside it, line from 1,
-    character, whether a module's start). Each edge holds its column."""
+    character, whether a module's start), through local aliases. Each edge
+    holds its column; `symbols` holds graff's definitions of each file."""
     texts = {}
     for path in files:
         with open(os.path.join(root, path), encoding="utf-8", errors="replace", newline="") as file:
@@ -365,8 +418,13 @@ def ask(root, files, edges):
     server = Server(root)
     asked, unplaced, seen = {}, 0, set()
     prefix = f"file://{root}/"
+    lines = {path: text.split("\n") for path, text in texts.items()}
+
+    def uri_of(path):
+        return f"file://{os.path.join(root, path)}"
+
     for path in files:
-        uri = f"file://{os.path.join(root, path)}"
+        uri = uri_of(path)
         server.open(uri, texts[path])
         for edge in by_file[path]:
             key = site(edge)
@@ -378,6 +436,7 @@ def ask(root, files, edges):
                 unplaced += 1
                 continue
             places = server.definition(uri, edge["line"] - 1, character)
+            places = through_aliases(server, lines, symbols, uri_of, prefix, places)
             asked[key] = [(target[len(prefix):] if target.startswith(prefix) else None, line + 1, character, module)
                           for target, line, character, module in places]
         server.close_document(uri)
@@ -403,8 +462,9 @@ def main():
     built = run(["nix", "build", "--no-link", "--print-out-paths", "nixpkgs#pyright"]).stdout.split()[0]
     SERVER[0] = os.path.join(built, "bin", "pyright-langserver")
     source = os.path.realpath(source)
-    # A worktree or a bare repository is taken out at a commit; a folder, as it is.
-    copied = os.path.isdir(os.path.join(source, ".git")) or (
+    # A worktree, whose .git is a file in a linked one, or a bare repository
+    # is taken out at a commit; a folder, as it is.
+    copied = os.path.exists(os.path.join(source, ".git")) or (
         os.path.isfile(os.path.join(source, "HEAD")) and os.path.isdir(os.path.join(source, "objects")))
     if copied:
         commit = run(["git", "-C", source, "rev-parse", "--short=7", at]).stdout.strip()
@@ -437,7 +497,7 @@ def main():
         extracted = run([binaries["extract"]], cwd=root, stdin=listed, check=False).stdout.splitlines()
         extractions = {item["path"]: item["extraction"] for item in map(json.loads, extracted)}
         edges = edges_of(False)
-        asked, unplaced = ask(root, files, edges)
+        asked, unplaced = ask(root, files, edges, {path: e["symbols"] for path, e in extractions.items()})
         broken = summary(*score(edges_of(True), asked, extractions, texts, reassigned=True)[:2])
         judged, found, wrong, missed, others = score(edges, asked, extractions, texts, reassigned=True)
         real = summary(judged, found)

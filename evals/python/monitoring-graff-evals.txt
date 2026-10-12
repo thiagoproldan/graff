@@ -1,15 +1,15 @@
 run 2026-10-12
-graff eeb0cc8
+graff ddbfed4 with uncommitted changes
 corpus graff-evals: a git repository at 17976f4 (git archive), 47 Python files
 truth: Python 3.14.7, sys.monitoring's CALL events, each of 18 tests (evals/*/test_*.py) run as `python3 -I -X frozen_modules=off monitor.py .. TEST`
   tests failed: none
   2428 calls of their own at 2121 places; 721 reached a definition graff records, by the name written; 10 one it records none of (a lambda); 145 made for a statement; 0 with no name written ()
 
 broken resolver: precision 0.000, recall 0.000
-graff: precision 1.000 (701 of 701 judged; 567 unjudged, 4 tied to what holds a function), recall 0.942 (679 of 721 calls; 0 tied by a use other than a call)
-by rule: import 15/15 (98 unjudged), path 200/200 (23 unjudged), receiver 33/33 (76 unjudged), scope 440/440 (363 unjudged), unique 13/13 (7 unjudged)
+graff: precision 1.000 (710 of 710 judged; 568 unjudged, 4 tied to what holds a function), recall 0.954 (688 of 721 calls; 0 tied by a use other than a call)
+by rule: import 15/15 (98 unjudged), override 0/0 (1 unjudged), path 209/209 (23 unjudged), receiver 33/33 (76 unjudged), scope 440/440 (363 unjudged), unique 13/13 (7 unjudged)
 wrong, by what ran: 
-missed, by what graff did: 23 call free tied to a variable, 2 call method ambiguous, 9 no edge, through a local alias, 8 no edge, through a parameter
+missed, by what graff did: 23 call free tied to a variable, 2 call method ambiguous, 8 no edge, through a parameter
 
 wrong edges:
 
@@ -46,24 +46,6 @@ evals/nix/options.py:177 to_path -> evals/nix/test_options.py to_path; graff: no
     held["positions"].add((to_path(position["file"]), position["line"]))
 evals/nix/options.py:208 to_path -> evals/nix/test_options.py to_path; graff: no edge, through a parameter
     file = to_path(node["file"])
-evals/nix/test_nil.py:97 reaches -> evals/nix/nil.py reaches; graff: no edge, through a local alias
-    assert reaches(target("b"), ("f.nix", 2, "b"), SYMBOLS)
-evals/nix/test_nil.py:98 reaches -> evals/nix/nil.py reaches; graff: no edge, through a local alias
-    assert reaches(target("b.c"), ("f.nix", 2, "b"), SYMBOLS)
-evals/nix/test_nil.py:99 reaches -> evals/nix/nil.py reaches; graff: no edge, through a local alias
-    assert not reaches(target("b"), ("g.nix", 2, "b"), SYMBOLS)
-evals/nix/test_nil.py:101 reaches -> evals/nix/nil.py reaches; graff: no edge, through a local alias
-    assert reaches(target("x.a"), ("f.nix", 6, "a"), SYMBOLS)
-evals/nix/test_nil.py:103 reaches -> evals/nix/nil.py reaches; graff: no edge, through a local alias
-    assert reaches(target("p#2"), ("f.nix", 9, "p"), SYMBOLS)
-evals/nix/test_nil.py:104 reaches -> evals/nix/nil.py reaches; graff: no edge, through a local alias
-    assert not reaches(target("p"), ("f.nix", 9, "p"), SYMBOLS)
-evals/nix/test_nil.py:106 reaches -> evals/nix/nil.py reaches; graff: no edge, through a local alias
-    assert reaches(target("two"), ("f.nix", 11, "two"), SYMBOLS)
-evals/nix/test_nil.py:107 reaches -> evals/nix/nil.py reaches; graff: no edge, through a local alias
-    assert not reaches(target("one"), ("f.nix", 11, "two"), SYMBOLS)
-evals/nix/test_nil.py:109 reaches -> evals/nix/nil.py reaches; graff: no edge, through a local alias
-    assert reaches(target("q.r"), ("f.nix", 13, "q"), SYMBOLS)
 evals/nix/test_nil.py:158 test -> evals/nix/test_nil.py test_a_path_splits_as_graffs_does; graff: call free tied to a variable
     test()
 evals/nix/test_nil.py:158 test -> evals/nix/test_nil.py test_a_target_reaches_the_binding_nil_names_or_one_inside_it; graff: call free tied to a variable

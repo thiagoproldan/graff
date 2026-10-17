@@ -196,6 +196,28 @@ on graff's own worktree took 18 ms a call, against 24 ms for the command
 line (20 calls each, three rounds, 2026-10-12, TLP's balanced profile on
 battery, the load at 10 from other sessions).
 
+`graff history` brings the index of the repository's git history up to
+date (`src/store/history.rs`): for each commit HEAD reaches, merges aside,
+the files in a language graff reads that it changed, and the definitions
+its changed lines fall in, by `git diff-tree -M -U0`, each side read as
+that commit has it, so a file renamed on the way is followed. A blob is
+parsed once: one the index holds, as a check of the worktree leaves HEAD's,
+is read from it, and the run keeps what it parsed for its other commits.
+Only the commits the index lacks are mapped, and the history is kept by
+repository and by the build's extractions, which say where each
+definition's lines are. A definition's lines are the item's own, so a
+change to its doc comment alone falls in what holds it. The commits that
+touched a definition, following its file back through renames, and those
+whose message holds a trailer such as `Ekko: 27`, with what they touched,
+are what `Store::touching` and `Store::touched` give. On ekko at f9564f4
+(359 commits, 1,502 changes to files graff reads, 1,461 blobs, 100 MB) the
+whole history took 6.3 to 6.7 s, 37 s of CPU, most of it parsing; each of
+its last ten commits, mapped one at a time, 69 to 482 ms, parsing nothing,
+of which the worktree's check, extracting what the commit changed, takes
+the most: the history alone took 50 to 83 ms (three rounds and ten
+commits, 2026-10-17, TLP's performance profile on AC, the load at 17 to
+25 from other sessions; `evals/history/`).
+
 The flake's `packages.plugin` is graff's Claude Code plugin: that server,
 and a `SessionStart` hook, `graff --hook` (`src/hook.rs`), both pinned to
 the flake's graff by store path, so the plugin cannot run another

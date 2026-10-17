@@ -109,6 +109,64 @@ fn index_reads_a_worktree_once_and_then_only_what_changed() {
 }
 
 #[test]
+fn history_maps_the_commits_head_reaches_once_and_then_only_new_ones() {
+    let top = folder("history");
+    let repo = top.join("repo");
+    fs::create_dir_all(&repo).unwrap();
+    let git = |args: &[&str]| {
+        let done = Command::new("git")
+            .args([
+                "-c",
+                "user.name=graff",
+                "-c",
+                "user.email=graff@example.org",
+            ])
+            .args([
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "core.hooksPath=/dev/null",
+            ])
+            .args(args)
+            .current_dir(&repo)
+            .status()
+            .unwrap();
+        assert!(done.success());
+    };
+    git(&["init", "-q"]);
+    let cache = top.join("cache");
+    let said = graff_in(&repo, &cache, &["history"]);
+    assert!(
+        said.status.success(),
+        "{}",
+        String::from_utf8_lossy(&said.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&said.stdout).contains(": 0 commits, 0 mapped now;"),
+        "{}",
+        String::from_utf8_lossy(&said.stdout)
+    );
+
+    fs::write(repo.join("main.rs"), "fn main() {}\n").unwrap();
+    fs::write(repo.join("notes.txt"), "not read\n").unwrap();
+    git(&["add", "-A"]);
+    git(&["commit", "-q", "--no-verify", "-m", "Add main"]);
+    fs::write(repo.join("main.rs"), "fn main() {\n    run();\n}\n").unwrap();
+    git(&["commit", "-q", "--no-verify", "-am", "Run"]);
+    let said = String::from_utf8_lossy(&graff_in(&repo, &cache, &["history"]).stdout).into_owned();
+    assert!(
+        said.contains(": 2 commits, 2 mapped now; 2 changes to files in a language graff reads, 1 blob parsed, 1 read from the index;"),
+        "{said}"
+    );
+    let said = String::from_utf8_lossy(&graff_in(&repo, &cache, &["history"]).stdout).into_owned();
+    assert!(
+        said.contains(": 2 commits, 0 mapped now; 0 changes"),
+        "{said}"
+    );
+    fs::remove_dir_all(&top).unwrap();
+}
+
+#[test]
 fn a_reader_gone_before_graff_writes_wants_no_more() {
     let demo = Demo::new("gone");
     for args in [&["index"][..], &["outline", "src/store.rs"]] {

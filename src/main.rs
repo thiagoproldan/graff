@@ -39,6 +39,14 @@ enum Command {
         /// A folder in the worktree [default: the current one]
         folder: Option<PathBuf>,
     },
+    /// Bring the index of a repository's git history up to date, mapping
+    /// only the commits it lacks: for each commit HEAD reaches, merges
+    /// aside, the definitions its changed lines fall in, read as that commit
+    /// has them; and say what it did
+    History {
+        /// A folder in the worktree [default: the current one]
+        folder: Option<PathBuf>,
+    },
     /// Where a symbol is defined: its lines, the first sentence of its doc,
     /// its signature, and a type's or trait's impl blocks
     Def {
@@ -152,6 +160,7 @@ fn main() -> ExitCode {
     };
     let done = match command {
         Command::Index { folder } => index(folder),
+        Command::History { folder } => history(folder),
         Command::Def { symbol, asked } => ask(asked, |store, root, options| {
             query::def(store, root, &symbol.symbol, options)
         }),
@@ -225,6 +234,25 @@ fn index(folder: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
         checked.hashed,
         checked.extracted,
         checked.gone,
+        started.elapsed().as_secs_f64() * 1000.0
+    ))
+}
+
+fn history(folder: Option<PathBuf>) -> Result<(), Box<dyn Error>> {
+    let started = Instant::now();
+    let (mut store, root) = open(folder)?;
+    // The worktree first, as a question does: the blobs it holds, HEAD's
+    // most often, the history then reads from the index.
+    store.check(&root)?;
+    let mapped = store.history(&root)?.mapped;
+    put(&format!(
+        "{}: {}, {} mapped now; {} to files in a language graff reads, {} parsed, {} read from the index; {:.1} ms\n",
+        root.display(),
+        plural(mapped.listed, "commit"),
+        mapped.mapped,
+        plural(mapped.changes, "change"),
+        plural(mapped.parsed, "blob"),
+        mapped.indexed,
         started.elapsed().as_secs_f64() * 1000.0
     ))
 }

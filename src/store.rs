@@ -6,7 +6,8 @@
 //! commits is read once. Each worktree keeps what it last saw of each of its
 //! files, so that a check tells by their stat which changed, and reads only
 //! those again, and what instantiating its Nix helpers made, under a key that
-//! says what that was made from.
+//! says what that was made from. A repository's history, the definitions
+//! each commit touched, is kept apart (`history`).
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -26,9 +27,13 @@ use crate::extract::{
 };
 use crate::lang::Language;
 
+mod history;
+
+pub use history::{Commit, History, Mapped, Touch};
+
 /// Bumped whenever the tables change. The index file is named by it, so a
 /// build of another schema keeps an index of its own beside this one's.
-const SCHEMA: i64 = 13;
+const SCHEMA: i64 = 14;
 
 /// A file written this close before graff saw it may be written again within
 /// the same tick of the file system's clock and keep its stat, so it is hashed
@@ -146,6 +151,62 @@ const TABLES: &str = "
         key TEXT NOT NULL,
         edges BLOB NOT NULL
     );
+    -- A repository's git history as a build reads it: by the repository's
+    -- common git folder, which its worktrees share, and what the build keeps
+    -- its extractions under, which says where each definition's lines are.
+    CREATE TABLE histories (
+        id INTEGER PRIMARY KEY,
+        repository TEXT NOT NULL,
+        extractor TEXT NOT NULL,
+        -- When a build last read it, in nanoseconds since 1970.
+        used INTEGER NOT NULL,
+        UNIQUE (repository, extractor)
+    );
+    -- A commit of a history, but a merge, whose other side's commits bring
+    -- what it changed.
+    CREATE TABLE commits (
+        id INTEGER PRIMARY KEY,
+        history INTEGER NOT NULL REFERENCES histories (id) ON DELETE CASCADE,
+        sha TEXT NOT NULL,
+        -- When it was committed, in seconds since 1970.
+        time INTEGER NOT NULL,
+        subject TEXT NOT NULL,
+        UNIQUE (history, sha)
+    );
+    -- The trailers of a commit's message, `Ekko: 27`, in their order.
+    CREATE TABLE trailers (
+        rev INTEGER NOT NULL REFERENCES commits (id) ON DELETE CASCADE,
+        key TEXT NOT NULL,
+        value TEXT NOT NULL
+    );
+    CREATE INDEX trailers_by_rev ON trailers (rev);
+    CREATE INDEX trailers_by_value ON trailers (value);
+    -- A file in a language graff reads that a commit changed, by its path
+    -- after the commit, or before it when the commit deleted it, with its
+    -- path before when the commit moved it: added, deleted, renamed or
+    -- modified, and how many lines it added and removed.
+    CREATE TABLE changes (
+        rev INTEGER NOT NULL REFERENCES commits (id) ON DELETE CASCADE,
+        path TEXT NOT NULL,
+        renamed TEXT,
+        status TEXT NOT NULL,
+        added INTEGER NOT NULL,
+        removed INTEGER NOT NULL
+    );
+    CREATE INDEX changes_by_rev ON changes (rev);
+    -- A definition a commit's changed lines fall in, by its file's path as
+    -- changes gives it and its qualified name: how many lines the commit
+    -- added within it, and removed from within it.
+    CREATE TABLE touches (
+        rev INTEGER NOT NULL REFERENCES commits (id) ON DELETE CASCADE,
+        path TEXT NOT NULL,
+        qualified TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        added INTEGER NOT NULL,
+        removed INTEGER NOT NULL
+    );
+    CREATE INDEX touches_by_rev ON touches (rev);
+    CREATE INDEX touches_by_qualified ON touches (qualified);
 ";
 
 #[derive(Debug)]
@@ -2011,11 +2072,13 @@ mod tests {
         );
         aged("index.db", old);
         aged("index.db-wal", old);
-        aged("index-12.db", old);
+        // Other schemas than the open's own, whatever SCHEMA is.
+        let other = |n: i64| format!("index-{}.db", SCHEMA + 100 + n);
+        aged(&other(0), old);
         // Idle itself, but its write-ahead log was written lately.
-        aged("index-14.db", old);
-        aged("index-14.db-wal", recent);
-        aged("index-15.db", recent);
+        aged(&other(1), old);
+        aged(&format!("{}-wal", other(1)), recent);
+        aged(&other(2), recent);
         aged("notes.db", old);
         aged("index-x.db", old);
 
@@ -2028,16 +2091,15 @@ mod tests {
             .filter(|name| !name.starts_with(&format!("{mine}-")))
             .collect();
         left.sort();
-        assert_eq!(
-            left,
-            [
-                mine.as_str(),
-                "index-14.db",
-                "index-14.db-wal",
-                "index-15.db",
-                "index-x.db",
-                "notes.db"
-            ]
-        );
+        let mut kept = vec![
+            mine,
+            other(1),
+            format!("{}-wal", other(1)),
+            other(2),
+            "index-x.db".to_string(),
+            "notes.db".to_string(),
+        ];
+        kept.sort();
+        assert_eq!(left, kept);
     }
 }

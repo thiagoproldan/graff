@@ -419,7 +419,7 @@ fn texts(args: &mut Map<String, Value>, key: &str) -> Result<Vec<String>, String
 /// The tools' definitions, as tools/list gives them.
 pub fn tool_definitions() -> Value {
     let symbol = json!({"type": "string", "description": "load, Storage::load, src/store.rs:Storage::load, src/store.rs:120 for the definition around a line, a file by its path, or a Markdown section by its heading or anchor: readme.md#usage"});
-    let folder = json!({"type": "string", "description": "A folder in the worktree to ask about, from the project's. Absent: the project's."});
+    let folder = json!({"type": "string", "description": "A folder in the worktree to ask about, from the session's. Absent: the session's."});
     let budget = |default: usize| json!({"type": "integer", "minimum": 1, "maximum": MOST, "description": format!("The tokens the answer may take, at 4 bytes each. Absent: {default}.")});
     let object = |properties: Value, required: &[&str]| json!({"type": "object", "properties": properties, "required": required, "additionalProperties": false});
     let about_symbol = || {

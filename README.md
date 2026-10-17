@@ -177,24 +177,25 @@ each level asked SQL's LIKE for each name it reached, where one pass over
 the sites now tells which paths go through any of them. `graff index`
 runs the freshness check alone.
 
-`graff --mcp` serves the seven questions as tools over the Model Context
-Protocol, on stdin and stdout (`src/mcp.rs`), for the worktree of the
-folder `CLAUDE_PROJECT_DIR` names, as Claude Code sets it for the servers
-it starts, else of the folder it was started in; a call may name another
-folder. A tool's answer is the command line's, cut to the `budget` the
-call names, at most 8,000 tokens, under the 10,000 past which Claude Code
-warns of a tool's output (an estimate: graff counts 4 bytes a token); a
-cut that would need more says so. It speaks both revisions ekko speaks: a
-request whose `_meta` names 2026-07-28 is served on its own,
-`server/discover` included, and an `initialize` handshake gets 2025-11-25
-or the earlier revision it asks for. Claude Code loads only the tools'
-names and the server's instructions at a session's start, the definitions
-on the ToolSearch that wants them: the instructions, 1,100 characters, say
-when graff answers better than grep and when it does not, and a test holds
-them to 1,200 and the seven definitions to 6,000. In one server a `def`
-on graff's own worktree took 18 ms a call, against 24 ms for the command
-line (20 calls each, three rounds, 2026-10-12, TLP's balanced profile on
-battery, the load at 10 from other sessions).
+`graff --mcp` serves the seven questions as tools over the Model
+Context Protocol, on stdin and stdout (`src/mcp.rs`), for the worktree
+of the folder `CLAUDE_PROJECT_DIR` names, as Claude Code sets it for the
+servers it starts, else of the folder it was started in; a call may name
+another folder, as the plugin's hook makes each call do. A tool's answer
+is the command line's, cut to the `budget` the call names, at most 8,000
+tokens, under the 10,000 past which Claude Code warns of a tool's output
+(an estimate: graff counts 4 bytes a token); a cut that would need more
+says so. It speaks both revisions ekko speaks: a request whose `_meta`
+names 2026-07-28 is served on its own, `server/discover` included, and an
+`initialize` handshake gets 2025-11-25 or the earlier revision it asks
+for. Claude Code loads only the tools' names and the server's instructions
+at a session's start, the definitions on the ToolSearch that wants them:
+the instructions, 1,100 characters, say when graff answers better than
+grep and when it does not, and a test holds them to 1,200 and the seven
+definitions to 6,000. In one server a `def` on graff's own worktree took
+18 ms a call, against 24 ms for the command line (20 calls each, three
+rounds, 2026-10-12, TLP's balanced profile on battery, the load at 10 from
+other sessions).
 
 `graff history` brings the index of the repository's git history up to
 date (`src/store/history.rs`): for each commit HEAD reaches, merges aside,
@@ -218,19 +219,32 @@ the most: the history alone took 50 to 83 ms (three rounds and ten
 commits, 2026-10-17, TLP's performance profile on AC, the load at 17 to
 25 from other sessions; `evals/history/`).
 
-The flake's `packages.plugin` is graff's Claude Code plugin: that server,
-and a `SessionStart` hook, `graff --hook` (`src/hook.rs`), both pinned to
-the flake's graff by store path, so the plugin cannot run another
-revision (`plugin/.claude-plugin/plugin.json`, the manifest it is made
-from, names them `graff`, and a test holds every command there to that).
-The hook speaks only when a session starts in a worktree with code in a
-language graff reads, the one of `CLAUDE_PROJECT_DIR` as for the server:
-about 140 tokens (an estimate, at 4 bytes a token) naming its files by
-language and the tools to ask before grep. Anywhere else, Markdown alone
-included, it says nothing and costs one or two git calls: 11 to 12 ms
-outside a worktree, 15 to 21 ms in one of 150 to 1,900 files (medians of
-20 runs, two rounds, 2026-10-12, TLP's balanced profile, the boost off,
-the load at 10 and 22). It does not index: the first question does.
+The flake's `packages.plugin` is graff's Claude Code plugin: that
+server, and two hooks, `graff --hook` (`src/hook.rs`) at `SessionStart`
+and before each call to one of graff's tools, all pinned to the
+flake's graff by store path, so the plugin cannot run another revision
+(`plugin/.claude-plugin/plugin.json`, the manifest it is made from, names
+them `graff`, and a test holds every command there to that). Both hooks
+take the session's folder, the `cwd` Claude Code gives hooks, before
+`CLAUDE_PROJECT_DIR`: a session that enters a worktree moves its folder
+there, while `CLAUDE_PROJECT_DIR` and the server, which Claude Code does
+not restart, stay with the checkout it started in, and a call without
+`folder` was answered for that checkout (task 319, seen from inside
+headless sessions of Claude Code 2.1.296). Before each call the hook puts
+the session's folder in the call's `folder`, or the folder a relative
+one names from it, in 9 to 24 ms, medians 11 to 12 (20 runs, two rounds,
+2026-10-17, TLP's performance profile on AC, the load at 21); it runs no
+git and asks nothing a call would not have asked. MCP's roots follow the
+session into the worktree too, but 2026-07-28 deprecates them for a tool's
+parameters, and asking for them costs each call a second round trip. At a
+session's start the hook speaks only in a worktree with code in a language
+graff reads: about 140 tokens (an estimate, at 4 bytes a token) naming
+its files by language and the tools to ask before grep. Anywhere else,
+Markdown alone included, it says nothing and costs one or two git calls:
+11 to 12 ms outside a worktree, 15 to 21 ms in one of 150 to 1,900 files
+(medians of 20 runs, two rounds, 2026-10-12, TLP's balanced profile, the
+boost off, the load at 10 and 22). It does not index: the first question
+does.
 
 What counts as graff working was fixed before its first line of code, in
 `evals/`:

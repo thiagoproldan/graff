@@ -2431,18 +2431,21 @@ fn mcp_speaks_the_handshake_and_2026_07_28_in_one_process() {
     assert_eq!(replies[4]["result"]["resultType"], "complete");
 }
 
-/// `graff --hook` run from `at`, fed `input`.
-fn hook(at: &Path, input: &str) -> Output {
+/// `graff --hook` run from `at`, CLAUDE_PROJECT_DIR `project`, fed `input`.
+fn hook(at: &Path, project: Option<&Path>, input: &str) -> Output {
     use std::io::Write;
-    let mut child = Command::new(env!("CARGO_BIN_EXE_graff"))
+    let mut command = Command::new(env!("CARGO_BIN_EXE_graff"));
+    command
         .arg("--hook")
         .current_dir(at)
         .env_remove("CLAUDE_PROJECT_DIR")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("graff runs");
+        .stderr(Stdio::piped());
+    if let Some(project) = project {
+        command.env("CLAUDE_PROJECT_DIR", project);
+    }
+    let mut child = command.spawn().expect("graff runs");
     child
         .stdin
         .take()
@@ -2460,7 +2463,7 @@ fn hook_speaks_at_a_session_start_in_a_worktree_with_code_and_is_silent_elsewher
             .to_string()
     };
 
-    let out = hook(&demo.top, &start(&demo.repo.join("src")));
+    let out = hook(&demo.top, None, &start(&demo.repo.join("src")));
     assert!(out.status.success(), "{out:?}");
     assert!(out.stderr.is_empty(), "{out:?}");
     let said: Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -2486,13 +2489,91 @@ fn hook_speaks_at_a_session_start_in_a_worktree_with_code_and_is_silent_elsewher
         (&demo.repo, prompt),
         (&demo.repo, String::new()),
     ] {
-        let out = hook(at, &input);
+        let out = hook(at, None, &input);
         assert!(out.status.success(), "{input}: {out:?}");
         assert!(
             out.stdout.is_empty() && out.stderr.is_empty(),
             "{input}: {out:?}"
         );
     }
+}
+
+#[test]
+fn a_session_that_entered_a_worktree_is_answered_for_it() {
+    // As Claude Code 2.1.296 left it after EnterWorktree (task 319): the
+    // server started in the checkout, CLAUDE_PROJECT_DIR naming it, and the
+    // session's folder, the cwd hooks get, a worktree under it that
+    // defines a name the checkout does not.
+    let demo = Demo::new("worktree-entered");
+    let git = |at: &Path, args: &[&str]| {
+        let out = Command::new("git")
+            .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+            .args(args)
+            .current_dir(at)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{args:?}: {out:?}");
+    };
+    git(&demo.repo, &["add", "."]);
+    git(&demo.repo, &["commit", "-qm", "checkout"]);
+    let entered = demo.repo.join(".claude/worktrees/wt");
+    git(
+        &demo.repo,
+        &["worktree", "add", "-q", "-b", "wt", ".claude/worktrees/wt"],
+    );
+    fs::write(entered.join("src/extra.rs"), "pub fn only_here() {}\n").unwrap();
+    let asked = json!({"symbol": "only_here"});
+
+    // The call as the model writes it, the server alone: the checkout's.
+    let replies = serve(
+        &demo,
+        &demo.repo,
+        Some(&demo.repo),
+        &[call(1, "def", asked.clone())],
+    );
+    let (text, refused) = said(&replies[0]);
+    assert!(refused, "{text}");
+    assert!(
+        text.contains(&format!(
+            "no definition named only_here in {}",
+            demo.repo.display()
+        )),
+        "{text}"
+    );
+
+    // The plugin's hook before it names the session's folder, so the same
+    // call is answered for the worktree.
+    let before = json!({
+        "session_id": "s",
+        "hook_event_name": "PreToolUse",
+        "cwd": entered,
+        "tool_name": "mcp__plugin_graff_graff__def",
+        "tool_input": asked,
+    });
+    let out = hook(&demo.repo, Some(&demo.repo), &before.to_string());
+    assert!(out.status.success() && out.stderr.is_empty(), "{out:?}");
+    let given: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let arguments = given["hookSpecificOutput"]["updatedInput"].clone();
+    assert_eq!(
+        arguments["folder"],
+        entered.display().to_string(),
+        "{given}"
+    );
+    let replies = serve(
+        &demo,
+        &demo.repo,
+        Some(&demo.repo),
+        &[call(1, "def", arguments)],
+    );
+    let (text, refused) = said(&replies[0]);
+    assert!(!refused, "{text}");
+    assert!(
+        text.starts_with(&format!(
+            "def only_here in {}\nsrc/extra.rs:1 function only_here",
+            entered.display()
+        )),
+        "{text}"
+    );
 }
 
 /// Every command the plugin's manifest runs, as the flake's packages.plugin
@@ -2525,7 +2606,7 @@ fn plugin_commands() -> Vec<(String, Vec<String>)> {
 #[test]
 fn every_command_the_plugin_runs_is_graff_with_flags_it_takes() {
     let commands = plugin_commands();
-    assert_eq!(commands.len(), 2, "{commands:?}");
+    assert_eq!(commands.len(), 3, "{commands:?}");
     let demo = Demo::new("plugin");
     for (program, args) in commands {
         // The flake pins `graff` to its store path: anything else would run

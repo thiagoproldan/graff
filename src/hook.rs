@@ -1,20 +1,33 @@
 //! `graff --hook`: what Claude Code's plugin runs when a session starts, to
-//! say that graff maps the code of the worktree its MCP server answers for:
-//! the one of CLAUDE_PROJECT_DIR, which Claude Code sets for both, else of
-//! the session's folder, else of the folder the hook runs in.
+//! say that graff maps the code of the worktree its MCP server answers for,
+//! and before each call to one of graff's tools, to name that worktree to
+//! the call. Both take the session's folder, the `cwd` Claude Code gives
+//! hooks, else CLAUDE_PROJECT_DIR, else the folder the hook runs in.
 //!
-//! Silence is the normal case, as with ctx's hooks: outside a git worktree,
-//! in one with no code in a language graff reads, on any other event and on
-//! any error, it says nothing and costs one `git rev-parse`, and at most one
-//! `git ls-files`. It reads no file and does not index: the first question
-//! does that, as it would anyway. A file's language is told by its
+//! The session's folder, not CLAUDE_PROJECT_DIR, because a session that
+//! enters a worktree moves its folder there while CLAUDE_PROJECT_DIR keeps
+//! naming the checkout it started in, and so does the server's: Claude
+//! Code 2.1.296 does not restart it. Before a call, then, the hook puts the
+//! session's folder in the call's `folder`, or the folder a relative one
+//! names from it, and leaves an absolute one alone; the server, which
+//! cannot see the session move, answers for the folder the call names.
+//! MCP's roots would tell the server too, but 2026-07-28 deprecates them in
+//! favour of a tool's parameters (SEP-2577), and asking for them would cost
+//! each call a second round trip.
+//!
+//! At a session's start silence is the normal case, as with ctx's hooks:
+//! outside a git worktree, in one with no code in a language graff reads
+//! and on any error, it says nothing and costs one `git rev-parse`, and at
+//! most one `git ls-files`. It reads no file and does not index: the first
+//! question does that, as it would anyway. A file's language is told by its
 //! extension alone here, so a worktree whose only code is scripts without
-//! one stays silent.
+//! one stays silent. Before a call it runs no git at all, and on any other
+//! event it says nothing.
 
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 use crate::lang::Language;
 use crate::mcp;
@@ -30,25 +43,49 @@ pub const TOOL_PREFIX: &str = "mcp__plugin_graff_graff__";
 /// `current`: None for silence.
 pub fn answer(input: &str, project: Option<&Path>, current: &Path) -> Option<String> {
     let input: Value = serde_json::from_str(input).ok()?;
-    if input["hook_event_name"] != "SessionStart" {
-        return None;
-    }
     let cwd = input["cwd"].as_str().map(Path::new);
-    let folder = [project, cwd]
+    let folder = [cwd, project]
         .into_iter()
         .flatten()
         .find(|path| path.is_absolute())
         .unwrap_or(current);
-    let said = announcement(folder)?;
-    Some(
-        json!({
-            "hookSpecificOutput": {
-                "hookEventName": "SessionStart",
-                "additionalContext": said,
-            }
-        })
-        .to_string(),
-    )
+    let output = match input["hook_event_name"].as_str()? {
+        "SessionStart" => json!({
+            "hookEventName": "SessionStart",
+            "additionalContext": announcement(folder)?,
+        }),
+        "PreToolUse" => json!({
+            "hookEventName": "PreToolUse",
+            "updatedInput": named(&input, folder)?,
+        }),
+        _ => return None,
+    };
+    Some(json!({"hookSpecificOutput": output}).to_string())
+}
+
+/// The arguments of the call to a graff tool that `input` is about to make,
+/// with `folder`, the session's, in its `folder`: None for a call that
+/// names an absolute folder already, or one that is not to graff. No
+/// permission decision goes with them, so the call still asks whatever it
+/// would have asked.
+fn named(input: &Value, folder: &Path) -> Option<Map<String, Value>> {
+    let tool = input["tool_name"].as_str()?.strip_prefix(TOOL_PREFIX)?;
+    if !mcp::TOOLS.contains(&tool) {
+        return None;
+    }
+    let mut args = match &input["tool_input"] {
+        Value::Null => Map::new(),
+        Value::Object(args) => args.clone(),
+        _ => return None,
+    };
+    let folder = match args.get("folder") {
+        None | Some(Value::Null) => folder.to_path_buf(),
+        Some(Value::String(named)) if Path::new(named).is_relative() => folder.join(named),
+        // Absolute, or not a text: the server's to answer.
+        Some(_) => return None,
+    };
+    args.insert("folder".into(), json!(folder.to_str()?));
+    Some(args)
 }
 
 /// What a session in `folder` is told, if graff maps code there.
@@ -224,15 +261,115 @@ mod tests {
     }
 
     #[test]
-    fn the_project_claude_code_names_comes_before_the_sessions_folder() {
-        let code = worktree("project", &["src/main.rs"]);
-        let notes = worktree("cwd", &["README.md"]);
-        assert!(answer(&start(&notes), Some(&code), Path::new("/")).is_some());
-        assert_eq!(answer(&start(&code), Some(&notes), Path::new("/")), None);
+    fn the_sessions_folder_comes_before_the_project_claude_code_names() {
+        // After EnterWorktree hooks get the worktree as cwd while
+        // CLAUDE_PROJECT_DIR names the checkout the session started in.
+        let code = worktree("cwd", &["src/main.rs"]);
+        let notes = worktree("project", &["README.md"]);
+        assert!(answer(&start(&code), Some(&notes), Path::new("/")).is_some());
+        assert_eq!(answer(&start(&notes), Some(&code), Path::new("/")), None);
         // A relative one is not a folder Claude Code names.
+        assert!(answer(&start(Path::new("notes")), Some(&code), Path::new("/")).is_some());
         assert!(answer(&start(&code), Some(Path::new("notes")), Path::new("/")).is_some());
         for folder in [code, notes] {
             fs::remove_dir_all(folder).unwrap();
+        }
+    }
+
+    fn call(tool: &str, cwd: &str, args: Value) -> String {
+        json!({
+            "session_id": "s",
+            "hook_event_name": "PreToolUse",
+            "cwd": cwd,
+            "tool_name": tool,
+            "tool_input": args,
+        })
+        .to_string()
+    }
+
+    /// The arguments the hook gives the call, if it gives any.
+    fn given(input: &str, project: Option<&Path>) -> Option<Value> {
+        let said: Value = serde_json::from_str(&answer(input, project, Path::new("/"))?).unwrap();
+        let output = &said["hookSpecificOutput"];
+        assert_eq!(output["hookEventName"], "PreToolUse");
+        // The call asks what it would have asked: the hook only names.
+        assert_eq!(output.as_object().unwrap().len(), 2, "{output}");
+        Some(output["updatedInput"].clone())
+    }
+
+    #[test]
+    fn a_call_to_every_tool_is_given_the_sessions_folder() {
+        let worktree = "/home/u/repo/.claude/worktrees/wt";
+        let project = Path::new("/home/u/repo");
+        let definitions = mcp::tool_definitions();
+        for tool in mcp::TOOLS {
+            // The rule holds over the class: every tool takes a folder.
+            let definition = definitions
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|definition| definition["name"] == *tool)
+                .unwrap();
+            assert!(
+                definition["inputSchema"]["properties"]["folder"].is_object(),
+                "{tool}"
+            );
+            let name = format!("{TOOL_PREFIX}{tool}");
+            let args = json!({"symbol": "load", "budget": 300});
+            assert_eq!(
+                given(&call(&name, worktree, args), Some(project)),
+                Some(json!({"symbol": "load", "budget": 300, "folder": worktree})),
+                "{tool}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_relative_folder_is_the_sessions_and_an_absolute_one_stays() {
+        let name = format!("{TOOL_PREFIX}def");
+        let cwd = "/home/u/repo/.claude/worktrees/wt";
+        assert_eq!(
+            given(&call(&name, cwd, json!({"folder": "src"})), None),
+            Some(json!({"folder": "/home/u/repo/.claude/worktrees/wt/src"}))
+        );
+        assert_eq!(
+            given(&call(&name, cwd, json!({"folder": null})), None),
+            Some(json!({"folder": cwd}))
+        );
+        assert_eq!(
+            given(&call(&name, cwd, Value::Null), None),
+            Some(json!({"folder": cwd}))
+        );
+        for args in [
+            json!({"folder": "/elsewhere"}),
+            json!({"folder": 3}),
+            json!([]),
+        ] {
+            assert_eq!(given(&call(&name, cwd, args.clone()), None), None, "{args}");
+        }
+        // Without a cwd Claude Code names, CLAUDE_PROJECT_DIR's.
+        assert_eq!(
+            given(
+                &call(&name, "wt", json!({})),
+                Some(Path::new("/home/u/repo"))
+            ),
+            Some(json!({"folder": "/home/u/repo"}))
+        );
+    }
+
+    #[test]
+    fn a_call_to_another_tool_is_left_alone() {
+        for tool in [
+            "Bash",
+            "mcp__plugin_graff_graff__nope",
+            "mcp__plugin_other_other__def",
+            "mcp__graff__def",
+        ] {
+            assert_eq!(
+                answer(&call(tool, "/w", json!({})), None, Path::new("/")),
+                None,
+                "{tool}"
+            );
         }
     }
 
@@ -245,5 +382,11 @@ mod tests {
         assert_eq!(servers.len(), 1);
         let server = servers.keys().next().unwrap();
         assert_eq!(TOOL_PREFIX, format!("mcp__plugin_{plugin}_{server}__"));
+        // The hook before a call runs for graff's tools alone, and for all
+        // of them: a matcher without `.*` would be an exact name.
+        let groups = manifest["hooks"]["PreToolUse"].as_array().unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0]["matcher"], format!("{TOOL_PREFIX}.*"));
+        assert_eq!(groups[0]["hooks"][0]["command"], "graff --hook");
     }
 }

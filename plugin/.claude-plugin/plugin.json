@@ -1,6 +1,6 @@
 {
   "name": "graff",
-  "description": "graff, a code map for Claude Code: an MCP server that answers where a name is defined, what reaches it and what it reaches, what a change would touch, what a file defines and what matters most in a git worktree's Rust, Nix, Bash, Python, C and Markdown, each answer with file:line ranges within a token budget; and a hook that says so when a session starts in a worktree with code graff reads, and nothing anywhere else.",
+  "description": "graff, a code map for Claude Code: an MCP server that answers where a name is defined, what reaches it and what it reaches, what a change would touch, what a file defines and what matters most in a git worktree's Rust, Nix, Bash, Python, C and Markdown, each answer with file:line ranges within a token budget; a hook that says so when a session starts in a worktree with code graff reads, and nothing anywhere else; and one that names the session's folder to each call, so a session that enters a worktree is answered for it.",
   "author": { "name": "Thiago Pereira Roldan" },
   "homepage": "https://github.com/thiagoproldan/graff",
   "license": "MIT",
@@ -13,6 +13,17 @@
   "hooks": {
     "SessionStart": [
       {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "graff --hook"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "mcp__plugin_graff_graff__.*",
         "hooks": [
           {
             "type": "command",

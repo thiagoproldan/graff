@@ -24,7 +24,8 @@ struct Cli {
     #[arg(long)]
     mcp: bool,
     /// Answer a Claude Code hook given on stdin: when a session starts in a
-    /// worktree whose code graff reads, say so; else nothing
+    /// worktree whose code graff reads, say so; before a call to one of its
+    /// tools, name the session's folder to it; else nothing
     #[arg(long, conflicts_with = "mcp")]
     hook: bool,
     #[command(subcommand)]

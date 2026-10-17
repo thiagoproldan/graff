@@ -272,7 +272,7 @@ struct Index<'a> {
     declared_names: HashSet<&'a str>,
     /// Each file's definitions that a scope gives a name another has, `f`
     /// and `f#2`, by the first: all of them, in the order they are written,
-    /// where a branch holds one.
+    /// where a branch holds one, or at the module's top.
     siblings: Vec<HashMap<usize, Vec<usize>>>,
     /// The branch each branch of a file is in, by their places among the
     /// file's.
@@ -411,7 +411,13 @@ impl<'a> Index<'a> {
                 .next()
                 .is_some()
             };
-            index.siblings[f].retain(|_, all| all.iter().any(|&s| branched(s)));
+            // At the module's top a def written twice is rebound as the
+            // module runs, branch or none; elsewhere it matters only where
+            // a branch decides which runs.
+            let symbols = &file.extraction.symbols;
+            index.siblings[f].retain(|&first, all| {
+                !symbols[first].qualified.contains('.') || all.iter().any(|&s| branched(s))
+            });
             for (s, symbol) in file.extraction.symbols.iter().enumerate() {
                 if let Some((class, own)) = symbol.qualified.rsplit_once('.')
                     && own == symbol.name
@@ -3828,5 +3834,29 @@ def setlocale(category, locale=None):
     pass
 "#;
         written_edges(&[("locale.py", locale)]);
+    }
+
+    #[test]
+    fn a_top_level_name_defined_twice_in_no_branch_reaches_the_last_from_a_function() {
+        // A function reads the module once loaded, so its use sees the last
+        // def; a use at the module's level sees the one bound before it.
+        let twice = br#"def f():
+    pass
+
+
+f()  # f -> f (scope)
+
+
+def g():
+    return f()  # f -> f#2 (scope)
+
+
+def f():
+    pass
+
+
+f()  # f -> f#2 (scope)
+"#;
+        written_edges(&[("twice.py", twice)]);
     }
 }

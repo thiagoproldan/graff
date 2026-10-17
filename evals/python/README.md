@@ -32,7 +32,8 @@ and `os.name`, as a name the module assigns such a test once reads, or
 as the host's CPython lacks a module only some platforms build, or false
 where the name is used; then the last the scope binds where the use sees
 it, and where the scope may bind the name again to what has no source in
-the worktree, the Python definition, marked `fallback` (task 382). Two
+the worktree, the Python definition, marked `fallback` (task 382; also a
+def written twice at the module's top with no branch, task 652). Two
 checks hold it
 against what knows more:
 

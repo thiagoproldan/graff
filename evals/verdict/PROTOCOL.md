@@ -23,8 +23,10 @@ Task 25 runs it as written. Nothing here moves after a result is seen.
     a point: ~14M units are ~182 points of trabalho's 5-hour window, about
     two windows (an estimate, not measured). The guards stand: 95% of the
     5-hour window, 70% of the week, 3M a run, 30M in all.
-  - **Runs start from 20:00**, to ekko's 07:30, where ekko's harness started
-    at 23:00: the user wants the pairs tonight (task 529's note 558).
+  - **Runs start from 19:00**, to ekko's 07:30, where ekko's harness started
+    at 23:00: the user wants the pairs tonight, from when trabalho's 5-hour
+    window resets (task 529's note 660, 17:31; this line said 20:00, from
+    note 558, until then, before any pair ran).
   - **The time to the first edit** is added, descriptive only (note 527): per
     run, the seconds from the prompt's row in the transcript to the call
     that "calls to the first edit" counts to; reported beside it as graff's

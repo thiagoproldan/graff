@@ -83,8 +83,9 @@ AFTER_HANDOFF = 180
 CAP = 3_000_000  # a run is stopped past this (PROTOCOL.md: twice a short run)
 EXPECTED = 1_300_000  # a short run at max, ekko's pilot (PROTOCOL.md's budget)
 TOTAL_CAP = 30_000_000  # the whole gate, the probe included
-# When a run may start: from 20:00 (note 558), to ekko's 07:30.
-NIGHT = (datetime.time(20, 0), datetime.time(7, 30))
+# When a run may start: from 19:00, when trabalho's 5-hour window resets (the
+# user's word through task 529's note 660; 20:00 before it), to ekko's 07:30.
+NIGHT = (datetime.time(19, 0), datetime.time(7, 30))
 SEED = 25  # the cells' order within each task
 
 CELLS = {

@@ -151,7 +151,7 @@ def main():
         failed.append("the queue moves between two calls")
     if queue == harness.queue_of(seed=1) and queue == harness.queue_of(seed=2):
         failed.append("the seed does not move the order")
-    for moment, want in (("20:00", True), ("23:30", True), ("03:00", True), ("07:29", True), ("07:30", False), ("15:00", False), ("19:59", False)):
+    for moment, want in (("19:00", True), ("23:30", True), ("03:00", True), ("07:29", True), ("07:30", False), ("15:00", False), ("18:59", False)):
         if harness.at_night(datetime.time.fromisoformat(moment)) != want:
             failed.append(f"at_night {moment}: want {want}")
 

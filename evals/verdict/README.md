@@ -25,7 +25,7 @@ harness runs on the store's python, outside the devshell:
     $PY evals/verdict/harness.py check            # each cell's setup, from inside: they must differ
     $PY evals/verdict/harness.py probe            # ekko-593, graff cell, effort low; nothing kept
     $PY evals/verdict/harness.py gate --dry-run   # the order
-    $PY evals/verdict/harness.py gate             # the 4 pairs, from 20:00, one run at a time
+    $PY evals/verdict/harness.py gate             # the 4 pairs, from 19:00, one run at a time
     $PY evals/verdict/grade.py checks             # the repository's checks and hidden tests
     $PY evals/verdict/grade.py judge              # both orders per task
     $PY evals/verdict/grade.py report             # the configuration, the tables, the decision

@@ -1342,6 +1342,7 @@ impl<'s> Code<'s> {
                 symbol.kind,
                 Kind::Function | Kind::Method | Kind::Declaration
             ),
+            self.worktree.languages[d.file],
         )
     }
 
@@ -2004,11 +2005,20 @@ fn edits(a: &str, b: &str) -> usize {
 }
 
 /// A function's signature out of its lines, joined to where its body
-/// starts; the first line of anything else.
-fn signature(lines: &[&str], function: bool) -> Option<String> {
+/// starts, comments left out; the first line of anything else.
+fn signature(lines: &[&str], function: bool, language: Language) -> Option<String> {
     let mut joined = String::new();
+    let mut block = false;
     for line in lines.iter().take(if function { 8 } else { 1 }) {
+        let line = if function {
+            without_comments(line, language, &mut block)
+        } else {
+            line.to_string()
+        };
         let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
         if !joined.is_empty() && !joined.ends_with('(') && !line.starts_with(')') {
             joined.push(' ');
         }
@@ -2024,6 +2034,57 @@ fn signature(lines: &[&str], function: bool) -> Option<String> {
         .trim_end()
         .trim_end_matches(',');
     capped(joined)
+}
+
+/// A line without its comments, as `language` writes them: `//` in Rust
+/// and C, `#` in Nix and Bash, `/* .. */` in all but Bash. `block` says a
+/// block comment from an earlier line is still open, and is kept up to date.
+fn without_comments(line: &str, language: Language, block: &mut bool) -> String {
+    let (line_comment, block_comment) = match language {
+        Language::Rust | Language::C => (Some("//"), true),
+        Language::Nix => (Some("#"), true),
+        Language::Bash => (Some("#"), false),
+        Language::Python | Language::Markdown => (None, false),
+    };
+    let mut kept = String::new();
+    let mut quote = None;
+    let mut escaped = false;
+    let mut rest = line;
+    while let Some(c) = rest.chars().next() {
+        if *block {
+            let Some(at) = rest.find("*/") else {
+                return kept;
+            };
+            rest = &rest[at + 2..];
+            *block = false;
+            continue;
+        }
+        if let Some(open) = quote {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' && !(language == Language::Bash && open == '\'') {
+                escaped = true;
+            } else if c == open {
+                quote = None;
+            }
+        } else if c == '"' || (c == '\'' && matches!(language, Language::C | Language::Bash)) {
+            quote = Some(c);
+        } else if block_comment && rest.starts_with("/*") {
+            *block = true;
+            rest = &rest[2..];
+            continue;
+        } else if line_comment.is_some_and(|marker| rest.starts_with(marker)) {
+            // A `#` in Bash opens a comment only where a word would start:
+            // `$#` and `${#list[@]}` are not one.
+            let word_start = kept.chars().last().is_none_or(char::is_whitespace);
+            if language != Language::Bash || word_start {
+                return kept;
+            }
+        }
+        kept.push(c);
+        rest = &rest[c.len_utf8()..];
+    }
+    kept
 }
 
 /// A Python definition's signature: from its `def` or `class` line, past
@@ -2624,7 +2685,7 @@ mod tests {
             "        x",
         ];
         assert_eq!(
-            signature(&lines, true).as_deref(),
+            signature(&lines, true, Language::Rust).as_deref(),
             Some("pub fn sites(&self, which: Sites) -> Result<(), Error>")
         );
         let lines = [
@@ -2636,15 +2697,20 @@ mod tests {
             "}",
         ];
         assert_eq!(
-            signature(&lines, true).as_deref(),
+            signature(&lines, true, Language::Rust).as_deref(),
             Some("fn f<T>(x: T) -> T where T: Clone")
         );
         assert_eq!(
-            signature(&["    fn size(&self) -> u32;"], true).as_deref(),
+            signature(&["    fn size(&self) -> u32;"], true, Language::Rust).as_deref(),
             Some("fn size(&self) -> u32;")
         );
         assert_eq!(
-            signature(&["pub struct Storage {", "    path: String,"], false).as_deref(),
+            signature(
+                &["pub struct Storage {", "    path: String,"],
+                false,
+                Language::Rust
+            )
+            .as_deref(),
             Some("pub struct Storage")
         );
         // A C prototype over two lines, whole.
@@ -2654,10 +2720,82 @@ mod tests {
                     "void k3_matmul_mxfp4(float *y, const float *x,",
                     "                     int in, int rows);",
                 ],
-                true
+                true,
+                Language::C
             )
             .as_deref(),
             Some("void k3_matmul_mxfp4(float *y, const float *x, int in, int rows);")
+        );
+    }
+
+    #[test]
+    fn a_rust_signature_leaves_its_comments_out() {
+        // The comment after a parameter would swallow the rest.
+        let lines = [
+            "    pub fn new(",
+            "        items: &[(String, String)], // (match_id, title)",
+            "        // the width",
+            "        width: u16, /* cells */",
+            "    ) -> Self { // builds it",
+            "        todo!()",
+        ];
+        assert_eq!(
+            signature(&lines, true, Language::Rust).as_deref(),
+            Some("pub fn new(items: &[(String, String)], width: u16) -> Self")
+        );
+        // A `//` in a string is not a comment.
+        assert_eq!(
+            signature(&["fn f(sep: &str = \"//\") { // x"], true, Language::Rust).as_deref(),
+            Some("fn f(sep: &str = \"//\")")
+        );
+    }
+
+    #[test]
+    fn a_c_signature_leaves_its_comments_out() {
+        // A prototype over three lines, each with its comment.
+        let lines = [
+            "void k3_matmul(float *y, // out",
+            "               int in /* cols",
+            "               still the comment */, int rows); // end",
+        ];
+        assert_eq!(
+            signature(&lines, true, Language::C).as_deref(),
+            Some("void k3_matmul(float *y, int in , int rows);")
+        );
+    }
+
+    #[test]
+    fn a_nix_signature_leaves_its_comments_out() {
+        // `#` opens one; `//` is the update operator and stays.
+        let lines = [
+            "mkThing = { a, # first",
+            "  b ? { } // { x = 1; } # second",
+            "}:",
+            "  a + b;",
+        ];
+        assert_eq!(
+            signature(&lines, true, Language::Nix).as_deref(),
+            Some("mkThing = { a, b ? { } // { x = 1; } }: a + b;")
+        );
+    }
+
+    #[test]
+    fn a_bash_signature_leaves_its_comments_out() {
+        // A comment after the brace ends the signature there.
+        assert_eq!(
+            signature(
+                &["run_all() { # each step", "  echo \"$#\""],
+                true,
+                Language::Bash
+            )
+            .as_deref(),
+            Some("run_all()")
+        );
+        // A `#` inside a word, or a string, is not one.
+        let mut block = false;
+        assert_eq!(
+            without_comments("n=${#list[@]} s='a # b' # c", Language::Bash, &mut block),
+            "n=${#list[@]} s='a # b' "
         );
     }
 

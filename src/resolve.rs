@@ -4,7 +4,9 @@
 //! the module's use items, then their globs -- and, failing those, as a name
 //! only one definition in the crate has. A path is followed module by
 //! module, then to a type's associated items or an enum's variants. A method
-//! call is tied through its receiver when that is `self`, else by its name
+//! call is tied through its receiver when that is `self`, or a local whose
+//! `let` or parameter writes or builds a type of the crate's or of a library
+//! it names, and that type has a method of the name; else by its name
 //! alone, unless std's types have a method of that name too: then the
 //! crate's methods of that name are only candidates. What keeps more than one
 //! candidate is ambiguous and says how many; what has none in the crate is
@@ -1852,7 +1854,8 @@ impl<'a> Index<'a> {
         Some((found, Rule::Path))
     }
 
-    /// A method call: through `self`'s type in a method, else by its name.
+    /// A method call: through `self`'s type in a method, or the type of a
+    /// local `typed` gives, else by its name.
     fn method(
         &self,
         file: usize,
@@ -1860,6 +1863,7 @@ impl<'a> Index<'a> {
         name: &str,
         from: Option<&str>,
         receiver: Option<&str>,
+        typed: Option<&str>,
     ) -> Resolution {
         if receiver == Some("self")
             && let Some(from) = from
@@ -1874,6 +1878,22 @@ impl<'a> Index<'a> {
                         .collect(),
                     Rule::Receiver,
                 );
+            }
+        }
+        if receiver != Some("self")
+            && let Some(typed) = typed
+        {
+            // A type of the crate's, or of a library it names, that has no
+            // method of the name may reach one through Deref or a trait graff
+            // does not read: then the name alone tells, as for any receiver.
+            let found: Vec<Definition> = self
+                .receiver_types(file, scope, from, typed)
+                .into_iter()
+                .flat_map(|ty| self.associated(ty, name))
+                .filter(|d| self.symbol(*d).kind == Kind::Method)
+                .collect();
+            if !found.is_empty() {
+                return one(found, Rule::Receiver);
             }
         }
         let named = |crates: &mut dyn Iterator<Item = &str>| -> Vec<Definition> {
@@ -1922,10 +1942,50 @@ impl<'a> Index<'a> {
         }
     }
 
+    /// The types a local holds, as `Call::typed` gives them: a type as
+    /// written, or one whose function the local was built by, where that
+    /// function's written return type is `Self` or the type -- or, unwrapped,
+    /// a Result or an Option of it.
+    fn receiver_types(
+        &self,
+        file: usize,
+        scope: &Scope,
+        from: Option<&str>,
+        typed: &str,
+    ) -> Vec<Definition> {
+        let (built, unwrapped) = match typed.strip_suffix("()?") {
+            Some(built) => (Some(built), true),
+            None => (typed.strip_suffix("()"), false),
+        };
+        let Some(built) = built else {
+            return self.types_written(file, scope, from, typed, 0).0;
+        };
+        let parts = segments(built);
+        let Some((function, prefix)) = parts.split_last() else {
+            return Vec::new();
+        };
+        if prefix.is_empty() {
+            return Vec::new();
+        }
+        self.type_of(file, scope, prefix, from, 0)
+            .0
+            .into_iter()
+            .filter(|ty| {
+                let own = &self.symbol(*ty).name;
+                self.associated(*ty, function).iter().any(|f| {
+                    self.symbol(*f)
+                        .typed
+                        .as_deref()
+                        .is_some_and(|returned| returns(returned, own, unwrapped))
+                })
+            })
+            .collect()
+    }
+
     fn resolve(&self, file: usize, scope: &Scope, site: &Site) -> Resolution {
         let found = match site.used {
             Use::Call(CallKind::Method) => {
-                return self.method(file, scope, site.name, site.from, site.receiver);
+                return self.method(file, scope, site.name, site.from, site.receiver, site.typed);
             }
             Use::Call(CallKind::Macro) => self.unique(file, &scope.0, site.name, |d| {
                 self.symbol(d).kind == Kind::Macro
@@ -2037,6 +2097,37 @@ fn distinct(definitions: Vec<Definition>) -> Vec<Definition> {
     definitions
 }
 
+/// Whether a function whose return type is written `returned`, unspaced,
+/// gives a value of the type named `ty`: `Self` or `ty`, or, `unwrapped`, a
+/// Result or an Option of one, as `Result<Self,Error>` or `io::Result<Self>`.
+fn returns(returned: &str, ty: &str, unwrapped: bool) -> bool {
+    let returned = if unwrapped {
+        let Some((outer, inner)) = returned.split_once('<') else {
+            return false;
+        };
+        if !matches!(last(outer), "Result" | "Option") {
+            return false;
+        }
+        let mut depth = 0usize;
+        let end = inner
+            .find(|c| {
+                match c {
+                    '<' => depth += 1,
+                    '>' if depth > 0 => depth -= 1,
+                    ',' | '>' => return true,
+                    _ => {}
+                }
+                false
+            })
+            .unwrap_or(inner.len());
+        &inner[..end]
+    } else {
+        returned
+    };
+    let base = returned.split('<').next().unwrap_or(returned);
+    base == "Self" || last(base) == ty
+}
+
 fn one(definitions: Vec<Definition>, rule: Rule) -> Resolution {
     let definitions = distinct(definitions);
     match definitions.len() {
@@ -2055,6 +2146,7 @@ struct Site<'a> {
     used: Use,
     from: Option<&'a str>,
     receiver: Option<&'a str>,
+    typed: Option<&'a str>,
 }
 
 /// Every call and reference of the files, each use item and each type a
@@ -2126,6 +2218,7 @@ fn resolve_rust(files: &[File], libraries: &[Library], features: &Features) -> V
             used: Use::Call(c.kind),
             from: c.from.as_deref(),
             receiver: c.receiver.as_deref(),
+            typed: c.typed.as_deref(),
         });
         let references = file.extraction.references.iter().map(|r| Site {
             line: r.line,
@@ -2134,6 +2227,7 @@ fn resolve_rust(files: &[File], libraries: &[Library], features: &Features) -> V
             used: Use::Reference(r.kind),
             from: r.from.as_deref(),
             receiver: None,
+            typed: None,
         });
         let imports = file
             .extraction
@@ -2147,6 +2241,7 @@ fn resolve_rust(files: &[File], libraries: &[Library], features: &Features) -> V
                 used: Use::Import,
                 from: None,
                 receiver: None,
+                typed: None,
             });
         let globs = file
             .extraction
@@ -2542,12 +2637,12 @@ fn render() {}
         );
         assert_eq!(
             reaches(&edges, "src/lib.rs:7", "fetch", "call method"),
-            "src/store.rs Storage::fetch (unique)"
+            "src/store.rs Storage::fetch (receiver)"
         );
-        // HashMap has a get: the crate's one is a candidate only.
+        // HashMap has a get too, but `s` is written a Storage.
         assert_eq!(
             reaches(&edges, "src/lib.rs:8", "get", "call method"),
-            "ambiguous, 1"
+            "src/store.rs Storage::get (receiver)"
         );
         assert_eq!(
             reaches(&edges, "src/store.rs:32", "save", "call method"),
@@ -2681,22 +2776,22 @@ impl View {
     #[test]
     fn a_method_called_in_another_package_may_be_of_a_library_it_names() {
         let edges = edges_in(WORKSPACE, &[("deck", "deck")], true);
-        // The path crosses to deck; the let-bound value's method too, as a
-        // candidate: gui's other dependencies have methods graff never read.
+        // The path crosses to deck, and the value it builds is deck's Dock.
         assert_eq!(
             reaches(&edges, "gui/src/main.rs:5", "new", "call path"),
             "deck/src/dock.rs Dock::new (path)"
         );
         assert_eq!(
             reaches(&edges, "gui/src/main.rs:6", "update_windows", "call method"),
-            "ambiguous: deck/src/dock.rs Dock::update_windows"
+            "deck/src/dock.rs Dock::update_windows (receiver)"
         );
-        // A closure's parameter, typed through Option<&mut Dock>.
+        // A closure's parameter, typed only through Option<&mut Dock>: a
+        // candidate, as gui's other dependencies have methods graff never read.
         assert_eq!(
             reaches(&edges, "gui/src/view.rs:12", "refresh_icons", "call method"),
             "ambiguous: deck/src/dock.rs Dock::refresh_icons"
         );
-        // Inside deck, its only update_windows is still the one.
+        // Inside deck, through the parameter's written type.
         assert_eq!(
             reaches(
                 &edges,
@@ -2704,7 +2799,7 @@ impl View {
                 "update_windows",
                 "call method"
             ),
-            "deck/src/dock.rs Dock::update_windows (unique)"
+            "deck/src/dock.rs Dock::update_windows (receiver)"
         );
     }
 
@@ -2716,16 +2811,111 @@ impl View {
             reaches(&edges, "gui/src/view.rs:9", "data_changed", "call method"),
             "ambiguous: deck/src/dock.rs Dock::data_changed, gui/src/view.rs View::data_changed"
         );
-        // Elsewhere gui's only data_changed is still the one, deck's aside.
+        // Elsewhere gui's view is written a View, deck's data_changed aside.
         assert_eq!(
             reaches(&edges, "gui/src/main.rs:10", "data_changed", "call method"),
-            "gui/src/view.rs View::data_changed (unique)"
+            "gui/src/view.rs View::data_changed (receiver)"
         );
-        // Within one crate too: `other` may be a Tree, or not.
+        // A parameter written a Tree is one: Tree::walk recurses.
         assert_eq!(
             reaches(&edges, "deck/src/dock.rs:11", "walk", "call method"),
-            "ambiguous: deck/src/dock.rs Tree::walk"
+            "deck/src/dock.rs Tree::walk (receiver)"
         );
+    }
+
+    /// Two types with methods of the same names, and locals of each.
+    const TYPED: &[(&str, &str)] = &[(
+        "src/lib.rs",
+        "pub struct Disk;
+pub struct Net;
+pub struct Plain;
+pub struct Error;
+impl Disk {
+    pub fn new() -> Self { Disk }
+    pub fn open() -> Result<Disk, Error> { Ok(Disk) }
+    pub fn find() -> Option<Self> { None }
+    pub fn plain() -> Plain { Plain }
+    pub fn run(&self) {}
+    pub fn get(&self) {}
+}
+impl Net {
+    pub fn new() -> Net { Net }
+    pub fn run(&self) {}
+    pub fn get(&self) {}
+    pub fn close(&self) {}
+}
+impl std::ops::Deref for Plain {
+    type Target = Net;
+    fn deref(&self) -> &Net { &Net }
+}
+fn make() -> Disk { Disk }
+
+pub fn go(net: &mut Net, held: Option<Net>) -> Result<(), Error> {
+    let disk = Disk::new();
+    disk.run();
+    net.run();
+    let opened = Disk::open()?;
+    opened.run();
+    let found = Disk::find().unwrap();
+    found.get();
+    let built = Net {};
+    built.get();
+    let written: Disk = make();
+    written.run();
+    held.iter().for_each(|n: &Net| n.run());
+    {
+        let disk = Net::new();
+        disk.run();
+    }
+    disk.run();
+    let disk = make();
+    disk.run();
+    let plain = Disk::plain();
+    plain.run();
+    plain.close();
+    let unwrapped = Disk::new().unwrap();
+    unwrapped.run();
+    Ok(())
+}
+",
+    )];
+
+    #[test]
+    fn a_method_call_on_a_local_of_a_type_graff_reads_is_that_types() {
+        let edges = edges_of(TYPED);
+        let run = |line: &str, name: &str| {
+            reaches(&edges, &format!("src/lib.rs:{line}"), name, "call method")
+        };
+        // Built by a function returning Self or the type, written as a
+        // parameter's or a let's type, or built as a struct.
+        assert_eq!(run("27", "run"), "src/lib.rs Disk::run (receiver)");
+        assert_eq!(run("28", "run"), "src/lib.rs Net::run (receiver)");
+        // A Result or an Option of the type, unwrapped by ? or unwrap().
+        assert_eq!(run("30", "run"), "src/lib.rs Disk::run (receiver)");
+        // A name std's types have a method of, on a type that has one too.
+        assert_eq!(run("32", "get"), "src/lib.rs Disk::get (receiver)");
+        assert_eq!(run("34", "get"), "src/lib.rs Net::get (receiver)");
+        assert_eq!(run("36", "run"), "src/lib.rs Disk::run (receiver)");
+        // A closure's parameter with a written type.
+        assert_eq!(run("37", "run"), "src/lib.rs Net::run (receiver)");
+        // A block's own binding, and the outer one after it.
+        assert_eq!(run("40", "run"), "src/lib.rs Net::run (receiver)");
+        assert_eq!(run("42", "run"), "src/lib.rs Disk::run (receiver)");
+    }
+
+    #[test]
+    fn a_local_whose_type_graff_cannot_tell_is_tied_by_the_name_as_before() {
+        let edges = edges_of(TYPED);
+        let run = |line: &str, name: &str| {
+            reaches(&edges, &format!("src/lib.rs:{line}"), name, "call method")
+        };
+        // Shadowed by a free function's value: what make returns is not read.
+        assert_eq!(run("44", "run"), "ambiguous, 2");
+        // Disk::plain returns another type, whose run comes through Deref.
+        assert_eq!(run("46", "run"), "ambiguous, 2");
+        assert_eq!(run("47", "close"), "src/lib.rs Net::close (unique)");
+        // unwrap() on what is no Result or Option of the type.
+        assert_eq!(run("49", "run"), "ambiguous, 2");
     }
 
     #[test]

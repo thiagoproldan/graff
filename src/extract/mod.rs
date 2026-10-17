@@ -18,7 +18,7 @@ use crate::lang::Language;
 
 /// Bumped whenever what an extractor produces changes, so that results kept
 /// from an older extractor are read again rather than trusted.
-pub const VERSION: u32 = 28;
+pub const VERSION: u32 = 29;
 
 /// What the index keeps this build's extractions under: VERSION for a
 /// release, which a rebuild keeps reusing; for any other build, VERSION and
@@ -82,6 +82,8 @@ pub struct Symbol {
     /// function's return annotation names, as written: `Shards` for
     /// `sh = Shards(d)` or `sh: Shards`, `K3Config` for `def tiny() ->
     /// K3Config`; for a value a call returns, the callee, `tiny_config`.
+    /// Rust: a function's return type as written, unspaced: `Self`,
+    /// `Result<Storage,Error>`.
     #[serde(default)]
     pub typed: Option<String>,
     /// Nix: whether the binding is in what a function that makes a package,
@@ -207,6 +209,13 @@ pub struct Call {
     /// instance of, as written where it gets its value: `Shards` for
     /// `sh.get()` after `sh = Shards(d)` or with `sh: Shards`; none for a
     /// name given a value more than once.
+    /// Rust: the type a method call's receiver, a local, holds where the
+    /// call is, as its `let` or its parameter writes or builds it: `Storage`
+    /// with `store: &mut Storage`, `let store: Storage` or `let store =
+    /// Storage { .. }`; `Storage::open()` after `let store =
+    /// Storage::open(..)`, the type if that function returns it;
+    /// `Storage::open()?` after `Storage::open(..)?`, `.unwrap()` or
+    /// `.expect(..)`, if it returns a Result or an Option of it.
     #[serde(default)]
     pub typed: Option<String>,
 }

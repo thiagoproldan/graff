@@ -108,6 +108,7 @@ pub fn extract(source: &[u8]) -> Extraction {
         scope: Vec::new(),
         from: None,
         locals: HashSet::new(),
+        typed: HashMap::new(),
         generics: Vec::new(),
         taken: HashMap::new(),
         depth: 0,
@@ -137,6 +138,9 @@ struct Reader<'s> {
     from: Option<String>,
     /// Names bound in the function being read, where the walk is.
     locals: HashSet<String>,
+    /// Of those locals, the type each holds where graff reads it, as
+    /// `Call::typed` gives it.
+    typed: HashMap<String, String>,
     /// The generic parameters of the items the walk is in.
     generics: Vec<HashSet<String>>,
     /// How many times each qualified name was given.
@@ -206,6 +210,22 @@ fn path_text(text: &str) -> String {
         .join(" ")
         .replace(" ::", "::")
         .replace(":: ", "::")
+}
+
+/// A path without the generic arguments it is written with: `Vec::<u8>`
+/// reads `Vec`, `Cache::<K>::new` `Cache::new`.
+fn without_generics(path: &str) -> String {
+    let mut depth = 0usize;
+    let mut out = String::new();
+    for c in path.chars() {
+        match c {
+            '<' => depth += 1,
+            '>' => depth = depth.saturating_sub(1),
+            _ if depth == 0 => out.push(c),
+            _ => {}
+        }
+    }
+    out.replace("::::", "::").trim_end_matches("::").to_string()
 }
 
 /// Whether a function's first parameter is `self`, `&self`, `mut self` or
@@ -344,8 +364,10 @@ impl<'s> Reader<'s> {
     /// or a match arm binds is not bound after it.
     fn local_scope(&mut self, step: impl FnOnce(&mut Self)) {
         let locals = self.locals.clone();
+        let typed = self.typed.clone();
         step(self);
         self.locals = locals;
+        self.typed = typed;
     }
 
     fn read(&mut self, node: Node) {
@@ -607,6 +629,13 @@ impl<'s> Reader<'s> {
         self.generics.push(self.generic_names(node));
         let from = self.from.replace(qualified.clone());
         let locals = std::mem::take(&mut self.locals);
+        let typed = std::mem::take(&mut self.typed);
+        let returned = node
+            .child_by_field_name("return_type")
+            .map(|returned| path_text(self.text(returned)).replace(' ', ""));
+        if let Some(symbol) = self.out.symbols.last_mut() {
+            symbol.typed = returned;
+        }
         for (field, child) in fields(node) {
             match field {
                 Some("type_parameters" | "parameters" | "return_type") => self.visit(child),
@@ -621,6 +650,7 @@ impl<'s> Reader<'s> {
             }
         }
         self.locals = locals;
+        self.typed = typed;
         self.from = from;
         self.generics.pop();
     }
@@ -663,12 +693,14 @@ impl<'s> Reader<'s> {
         };
         let from = self.from.replace(qualified);
         let locals = std::mem::take(&mut self.locals);
+        let typed = std::mem::take(&mut self.typed);
         for (field, child) in fields(node) {
             if matches!(field, Some("type" | "value")) {
                 self.visit(child);
             }
         }
         self.locals = locals;
+        self.typed = typed;
         self.from = from;
     }
 
@@ -988,9 +1020,13 @@ impl<'s> Reader<'s> {
         let receiver = receiver
             .filter(|r| matches!(r.kind(), "self" | "identifier"))
             .map(|r| self.text(r).to_string());
+        let typed = receiver
+            .as_ref()
+            .and_then(|receiver| self.typed.get(receiver).cloned());
         self.record_call(at, name, None, CallKind::Method);
         if let Some(call) = self.out.calls.last_mut() {
             call.receiver = receiver;
+            call.typed = typed;
         }
     }
 
@@ -1338,7 +1374,7 @@ impl<'s> Reader<'s> {
                         && name != "mut"
                         && !KEYWORDS.contains(&name)
                     {
-                        self.locals.insert(name.to_string());
+                        self.bind_name(name);
                     }
                 }
                 _ => {}
@@ -1508,6 +1544,89 @@ impl<'s> Reader<'s> {
         }
         if let Some(pattern) = node.child_by_field_name("pattern") {
             self.bind(pattern);
+            let typed = match node.child_by_field_name("type") {
+                Some(written) => self.written_type(written),
+                None => node
+                    .child_by_field_name("value")
+                    .and_then(|value| self.built_type(value)),
+            };
+            self.type_local(pattern, typed);
+        }
+    }
+
+    /// Gives a local a lone name binds the type it holds.
+    fn type_local(&mut self, pattern: Node, typed: Option<String>) {
+        if pattern.kind() == "identifier"
+            && let Some(typed) = typed
+        {
+            let name = self.text(pattern);
+            if self.locals.contains(name) {
+                self.typed.insert(name.to_string(), typed);
+            }
+        }
+    }
+
+    /// A name a pattern binds: a local, of no type known unless the binding
+    /// gives it one.
+    fn bind_name(&mut self, name: &str) {
+        self.locals.insert(name.to_string());
+        self.typed.remove(name);
+    }
+
+    /// The type a type as written is, or refers to: `Storage` for
+    /// `Storage`, `&mut Storage` or `Storage<'a>`, `store::Storage`; none for
+    /// a tuple, a slice, `dyn` or `impl` a trait, a generic parameter.
+    fn written_type(&self, node: Node) -> Option<String> {
+        match node.kind() {
+            "reference_type" | "generic_type" => {
+                self.written_type(node.child_by_field_name("type")?)
+            }
+            "type_identifier" | "scoped_type_identifier" => {
+                let written = path_text(self.text(node));
+                (!self.is_generic(written.split("::").next()?)).then_some(written)
+            }
+            _ => None,
+        }
+    }
+
+    /// The type a value is built as, as `Call::typed` gives it: `Storage` for
+    /// `Storage { .. }`; `Storage::open()` for `Storage::open(..)`, whose
+    /// return type tells; `Storage::open()?` for that call followed by `?`,
+    /// `.unwrap()` or `.expect(..)`.
+    fn built_type(&self, node: Node) -> Option<String> {
+        let unwrapped = |built: String| built.ends_with("()").then(|| built + "?");
+        match node.kind() {
+            "struct_expression" => {
+                let name = node.child_by_field_name("name")?;
+                let name = match name.kind() {
+                    "generic_type_with_turbofish" => name.child_by_field_name("type")?,
+                    _ => name,
+                };
+                Some(without_generics(&path_text(self.text(name))))
+            }
+            "call_expression" => {
+                let function = node.child_by_field_name("function")?;
+                match function.kind() {
+                    "scoped_identifier" => {
+                        let path = function.child_by_field_name("path")?;
+                        let name = function.child_by_field_name("name")?;
+                        let path = without_generics(&path_text(self.text(path)));
+                        (starts_upper(path.rsplit("::").next()?)
+                            && !self.is_generic(path.split("::").next()?))
+                        .then(|| format!("{path}::{}()", self.text(name)))
+                    }
+                    "field_expression"
+                        if function.child_by_field_name("field").is_some_and(|field| {
+                            matches!(self.text(field), "unwrap" | "expect")
+                        }) =>
+                    {
+                        unwrapped(self.built_type(function.child_by_field_name("value")?)?)
+                    }
+                    _ => None,
+                }
+            }
+            "try_expression" => unwrapped(self.built_type(node.named_child(0)?)?),
+            _ => None,
         }
     }
 
@@ -1522,6 +1641,12 @@ impl<'s> Reader<'s> {
                         Some("type") => self.visit(child),
                         _ => {}
                     }
+                }
+                if let Some(pattern) = node.child_by_field_name("pattern") {
+                    let typed = node
+                        .child_by_field_name("type")
+                        .and_then(|written| self.written_type(written));
+                    self.type_local(pattern, typed);
                 }
             }
             "self_parameter" | "attribute_item" | "variadic_parameter" => {}
@@ -1543,11 +1668,11 @@ impl<'s> Reader<'s> {
                 if starts_upper(name) {
                     self.value(node);
                 } else {
-                    self.locals.insert(name.to_string());
+                    self.bind_name(name);
                 }
             }
             "shorthand_field_identifier" => {
-                self.locals.insert(self.text(node).to_string());
+                self.bind_name(self.text(node));
             }
             "scoped_identifier"
             | "type_identifier"
@@ -1864,6 +1989,53 @@ mod tests {
                 .filter(|c| c.kind != CallKind::Method)
                 .all(|c| c.receiver.is_none())
         );
+    }
+
+    #[test]
+    fn a_method_call_knows_the_type_its_let_or_parameter_gives_the_receiver() {
+        let source = "fn f(a: &mut store::Disk, b: Vec<u8>) -> Result<Self, E> {
+    a.x(); b.x();
+    let c = Disk::new(); c.x();
+    let d = Disk::<u8>::open()?; d.x();
+    let e = Disk::find().unwrap(); e.x();
+    let g: Net<'_> = make(); g.x();
+    let h = Net { a: 1 }; h.x();
+    let i = make(); i.x();
+    let (j, k) = (Disk::new(), 1); j.x();
+    { let c = make(); c.x(); }
+    c.x();
+    items.iter().for_each(|m: &Net| m.x());
+    let c = c.into(); c.x();
+}";
+        let out = extract(source.as_bytes());
+        let typed: Vec<(&str, Option<&str>)> = out
+            .calls
+            .iter()
+            .filter(|c| c.name == "x")
+            .map(|c| (c.receiver.as_deref().unwrap_or(""), c.typed.as_deref()))
+            .collect();
+        assert_eq!(
+            typed,
+            vec![
+                ("a", Some("store::Disk")),
+                ("b", Some("Vec")),
+                ("c", Some("Disk::new()")),
+                ("d", Some("Disk::open()?")),
+                ("e", Some("Disk::find()?")),
+                ("g", Some("Net")),
+                ("h", Some("Net")),
+                ("i", None),
+                ("j", None),
+                ("c", None),
+                ("c", Some("Disk::new()")),
+                ("m", Some("Net")),
+                ("c", None),
+            ]
+        );
+        assert_eq!(out.symbols[0].typed.as_deref(), Some("Result<Self,E>"));
+        // A generic parameter is no type of the crate's.
+        let out = extract(b"fn g<T: Tr>(t: &T) { t.x(); let u = T::make(); u.x(); }");
+        assert!(out.calls.iter().all(|c| c.typed.is_none()));
     }
 
     #[test]

@@ -11,6 +11,45 @@ drawn by the protocol's rule before graff's first code (task 46).
     python3 evals/verdict/draw.py tasks                  # tasks.json, from work/review.json
     python3 evals/verdict/test_draw.py
     python3 evals/verdict/test_checks.py
+    python3 evals/verdict/test_harness.py
+    python3 evals/verdict/test_grade.py
+
+## Gate B's runs (task 25)
+
+`harness.py` runs the probe and the pairs, `grade.py` grades them and reads
+the decision; both are ekko's evals/paired at 099da4f with what PROTOCOL.md's
+Harness and Deviations say. The runs get the user's environment, so the
+harness runs on the store's python, outside the devshell:
+
+    PY=$(nix develop -c sh -c 'command -v python3')
+    $PY evals/verdict/harness.py check            # each cell's setup, from inside: they must differ
+    $PY evals/verdict/harness.py probe            # ekko-593, graff cell, effort low; nothing kept
+    $PY evals/verdict/harness.py gate --dry-run   # the order
+    $PY evals/verdict/harness.py gate             # the 4 pairs, from 20:00, one run at a time
+    $PY evals/verdict/grade.py checks             # the repository's checks and hidden tests
+    $PY evals/verdict/grade.py judge              # both orders per task
+    $PY evals/verdict/grade.py report             # the configuration, the tables, the decision
+
+- **The cells** differ in graff alone. Control is trabalho's profile as it
+  is, with graff's plugin off in the run's `--settings` and graff off PATH
+  (each PATH folder holding it replaced by links to everything else), so
+  that ctx, which finds graff by `command -v`, falls back to graphify. The
+  graff cell has both. `check` reads, from one short session per cell:
+  graff's plugin, server, tools and SessionStart hook in the stream, `command
+  -v graff` in the session's Bash, graff on the hooks' PATH, and what ctx's
+  hook answers a denied read of a 480-line file (graff's outline, or the
+  plain denial).
+- **The fence** is a PreToolUse hook (`harness.py fence`) beside the deny
+  rules: the real repositories, ~/NixOS, the profiles' transcripts and
+  ekko's other boards are refused, and so are sudo, a switch of the system
+  or the profile, services and writes under ~/.claude*. `test_harness.py`
+  holds a case each way for every rule.
+- **Where things land**: the run repositories in
+  ~/.cache/ekko-paired/graff-25/ (a folder the transcript studies skip, so
+  that task 51's bill leaves them out), and runs, transcripts, checks, the
+  judge and the reports in ~/.local/state/graff-25/, outside git and /tmp.
+  nixos-789's diffs and the judge's words on it stay there; the numbers go
+  in the results.
 
 ## The draw, 2026-10-04
 

@@ -16,6 +16,47 @@ Task 25 runs it as written. Nothing here moves after a result is seen.
   questions, the bar or gate.py) asked the same 52 questions by the same
   rules against the same bar answers. The first result stays in `evals/gate/`, the second is in
   `evals/gate/run-2/`, and the second is gate A's verdict.
+- 2026-10-17, gate B, written before any of its runs (task 25):
+  - **The account is trabalho**, at night, one run at a time: the user's
+    answer 551 (decision 552), since the default account no longer runs a
+    Claude Code turn (gotcha 550). The estimate redone for it, at ~77k units
+    a point: ~14M units are ~182 points of trabalho's 5-hour window, about
+    two windows (an estimate, not measured). The guards stand: 95% of the
+    5-hour window, 70% of the week, 3M a run, 30M in all.
+  - **Runs start from 20:00**, to ekko's 07:30, where ekko's harness started
+    at 23:00: the user wants the pairs tonight (task 529's note 558).
+  - **The time to the first edit** is added, descriptive only (note 527): per
+    run, the seconds from the prompt's row in the transcript to the call
+    that "calls to the first edit" counts to; reported beside it as graff's
+    over control's. It decides nothing.
+  - **What the harness needed** (`harness.py`, `grade.py`, adapted from
+    ekko's evals/paired at 099da4f; README.md says how):
+    - control is trabalho's profile without graff: graff's plugin off in the
+      run's `--settings` (`"graff@skills-dir": false`) and graff off PATH,
+      each PATH folder holding it replaced by links to the rest, since ctx
+      finds graff by `command -v graff` (note 557). graff is the same with
+      both. `harness.py check` reads each cell's setup from inside a session
+      before the runs, and the two cells must differ on every reading.
+    - Both cells run as ekko's cmax, its shared control: effort max, the
+      handoff asked past 160k in ctx's /handoff's words, a fresh session told
+      'continuando'; ctx's own threshold is moved out of the way, as there.
+    - A PreToolUse hook fences each run (note 63): /projects, ~/Projects,
+      ~/Projetos, ~/NixOS and the profiles' transcripts are refused, and so
+      are ekko's other boards, sudo, a switch of the system or the profile,
+      services, and writes under ~/.claude*. Every refusal is listed with its
+      run. nixos-789 runs on a copy of ~/NixOS at its base, with ekko's board
+      cut at the prompt's time.
+    - graff's calls count its CLI too (`graff def`, ... through Bash; note
+      115), and so does the navigation measure, which counts them as
+      searches as it counts graff's MCP tools (`ceiling.py`; task 1's figures
+      do not move: graff did not exist then). Control's graff calls must be
+      zero.
+    - The repository's checks: for ekko, `cargo test`, `cargo clippy -D
+      warnings` and the flake's build (ekko's grade.py); for nixos-789, the
+      checks in its entry. The judge's correctness for a task with no hidden
+      test is averaged over its two orders.
+    - Each task's cells are shuffled with seed 25 (`harness.py gate --dry-run`
+      prints the order).
 
 ## What is decided
 
@@ -193,7 +234,7 @@ Settled by the user on 2026-09-26 (answer 44: the account) and on 2026-10-04
   in all, ~215 points of the default account's 5-hour window: about two full
   windows.
 - **The default account**, at night, one run at a time, as ekko's decisions
-  741 and 744. The harness's guards hold: a run starts only if the 5-hour
+  741 and 744 (the trabalho account since 2026-10-17: Deviations). The harness's guards hold: a run starts only if the 5-hour
   window can take it whole, the test pauses at 70% of the week unless the
   user moves that, and a run cut by the usage limit is discarded and run
   again.

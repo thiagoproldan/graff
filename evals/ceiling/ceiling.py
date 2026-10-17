@@ -12,7 +12,8 @@ A call is a navigation turn when the tools it asked for locate code instead of
 changing it or running it:
 - search: Grep, Glob, LS; Bash whose command starts with grep, rg, find, fd, ls,
   tree, git grep, git ls-files, ast-grep; graphify query/explain/path; serena's
-  symbol lookups; every tool of graff's and codebase-memory-mcp's MCP servers,
+  symbol lookups; every tool of graff's and codebase-memory-mcp's MCP servers
+  and graff's CLI questions (graff def, callers, ...),
   so that a map's own calls count where the searches they replace did;
 - a read to locate: Read, or Bash cat/head/tail/sed -n/nl/wc/bat on files, of a
   path that the session's next edit does not touch. Images, PDFs, logs, command
@@ -62,6 +63,7 @@ SEARCH_CMDS = {"grep", "egrep", "rg", "find", "fd", "ls", "tree", "ast-grep", "s
 READ_CMDS = {"cat", "head", "tail", "sed", "nl", "wc", "bat", "less", "awk"}
 SERENA_NAV = re.compile(r"^mcp__.*serena.*__(find_symbol|find_referencing_symbols|get_symbols_overview|search_for_pattern|list_dir|find_file)$")
 MAP_NAV = re.compile(r"^mcp__.*(graff|codebase[-_]memory).*__")
+GRAFF_CMDS = {"def", "callers", "callees", "outline", "impact", "search", "map"}
 EXT_LANG = {
     ".rs": "rust", ".nix": "nix", ".sh": "bash", ".bash": "bash", ".py": "python",
     ".c": "c", ".h": "c", ".cc": "c++", ".cpp": "c++", ".hpp": "c++",
@@ -164,6 +166,9 @@ def segment(tokens):
     if head == "git" and rest and rest[0] in ("grep", "ls-files"):
         return "search", paths
     if head == "graphify" and rest and rest[0] in ("query", "explain", "path"):
+        return "search", paths
+    # graff's CLI asks what its MCP tools ask (the verdict, task 25)
+    if head == "graff" and rest and rest[0] in GRAFF_CMDS:
         return "search", paths
     if head in SEARCH_CMDS:
         return "search", paths

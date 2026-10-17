@@ -18,6 +18,8 @@ CASES = [
     ("Read", {"file_path": "/home/roldant/Projetos/ekko/src/holder.rs"}, "read"),
     ("mcp__plugin_graff_graff__callers", {"symbol": "Holder::take"}, "search"),
     ("mcp__codebase-memory-mcp__search_graph", {"query": "prime"}, "search"),
+    ("Bash", {"command": "graff callers Holder::take"}, "search"),
+    ("Bash", {"command": "cd src && graff outline -C . --budget 1000 holder.rs | head"}, "search"),
     ("Bash", {"command": "sed -n 1,80p src/main.rs"}, "read"),
     ("Bash", {"command": "cat flake.nix"}, "read"),
     # not navigation
@@ -43,6 +45,9 @@ CASES = [
     ("Edit", {"file_path": "src/main.rs", "old_string": "a", "new_string": "b"}, "edit"),
     ("mcp__plugin_ekko_ekko__context", {"item": 1}, "other"),
     ("mcp__plugin_hm_nixos__nix", {"action": "search", "query": "graff"}, "other"),
+    ("Bash", {"command": "graff index"}, "other"),
+    ("Bash", {"command": "graff --version"}, "other"),
+    ("Bash", {"command": "cat graff.nix > /tmp/x"}, "other"),
 ]
 
 

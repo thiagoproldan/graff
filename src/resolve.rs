@@ -312,7 +312,9 @@ pub enum Resolution {
     /// One definition, found by a rule.
     Resolved(Definition, Rule),
     /// Several candidates; or, for a method called on what graff cannot tell
-    /// the type of, the crate's methods of a name std's types have too.
+    /// the type of, the crate's methods of a name std's types have too, the
+    /// methods of another package's library the crate names, or the method
+    /// the call is in, called on what is not `self`.
     Ambiguous(Vec<Definition>),
     /// None in the crate.
     External,
@@ -921,6 +923,9 @@ struct Index<'a> {
     libs: HashSet<String>,
     /// The crate each library is, by the name paths give it.
     libraries: HashMap<String, String>,
+    /// The libraries of the worktree's other packages that each crate
+    /// names in a path or a use item: what its values' types may come from.
+    depends: HashMap<String, Vec<String>>,
     /// The items of each module.
     items: HashMap<Scope, ByName<'a>>,
     /// The items nested in a function, by file, then by the function.
@@ -1024,6 +1029,7 @@ impl<'a> Index<'a> {
                 .map(|l| (l.name.to_string(), l.package.to_string()))
                 .collect(),
             libs,
+            depends: HashMap::new(),
             items: HashMap::new(),
             nested: files.iter().map(|_| HashMap::new()).collect(),
             associated: HashMap::new(),
@@ -1046,6 +1052,7 @@ impl<'a> Index<'a> {
             .iter()
             .map(|f| nesting(&f.extraction.branches))
             .collect();
+        index.depends = index.depends();
         let scripted = scripted(files);
         let applied = applied(files, &index.places);
         for (b, features) in [
@@ -1204,6 +1211,57 @@ impl<'a> Index<'a> {
         // bring in more now, `use Kind::*` an enum's variants.
         index.brought.borrow_mut().clear();
         index
+    }
+
+    /// The libraries of other packages each crate names at the start of a
+    /// path or a use item, `nixdk` in `use nixdk::dock::Dock;`: those its
+    /// package's own library aside, which `library` gives.
+    fn depends(&self) -> HashMap<String, Vec<String>> {
+        let mut depends: HashMap<String, Vec<String>> = HashMap::new();
+        for (f, file) in self.files.iter().enumerate() {
+            let extraction = file.extraction;
+            let paths = extraction
+                .imports
+                .iter()
+                .filter(|i| i.via.is_none())
+                .map(|i| i.path.as_str())
+                .chain(extraction.calls.iter().filter_map(|c| c.path.as_deref()))
+                .chain(
+                    extraction
+                        .references
+                        .iter()
+                        .filter_map(|r| r.path.as_deref()),
+                );
+            let mut named: Vec<&String> = Vec::new();
+            for path in paths {
+                let path = path.strip_prefix("::").unwrap_or(path);
+                let first = path.split("::").next().unwrap_or(path);
+                if let Some(library) = self.libraries.get(first)
+                    && !named.contains(&library)
+                {
+                    named.push(library);
+                }
+            }
+            for (crate_name, _) in self.places.all(f) {
+                let own = [Some(crate_name.as_str()), self.library(crate_name)];
+                let libraries = depends.entry(crate_name.clone()).or_default();
+                for library in &named {
+                    if !own.contains(&Some(library.as_str())) && !libraries.contains(library) {
+                        libraries.push((*library).clone());
+                    }
+                }
+            }
+        }
+        depends
+    }
+
+    /// The library of a crate's package, for its main.rs, tests and
+    /// examples.
+    fn library<'c>(&self, crate_name: &'c str) -> Option<&'c str> {
+        crate_name
+            .split_once(':')
+            .map(|(package, _)| package)
+            .filter(|package| self.libs.contains(*package))
     }
 
     /// Files a definition under its module, or the function it is nested
@@ -1818,28 +1876,50 @@ impl<'a> Index<'a> {
                 );
             }
         }
+        let named = |crates: &mut dyn Iterator<Item = &str>| -> Vec<Definition> {
+            let found: Vec<Definition> = crates
+                .flat_map(|crate_name| {
+                    self.methods_named
+                        .get(&(crate_name.to_string(), name))
+                        .into_iter()
+                        .flatten()
+                })
+                .copied()
+                .collect();
+            self.own(file, &found)
+        };
         // A package's main.rs, tests and examples call its library's methods too.
-        let library = scope
-            .0
-            .split_once(':')
-            .map(|(package, _)| package)
-            .filter(|package| self.libs.contains(*package));
-        let found: Vec<Definition> = [Some(scope.0.as_str()), library]
-            .into_iter()
-            .flatten()
-            .flat_map(|crate_name| {
-                self.methods_named
-                    .get(&(crate_name.to_string(), name))
-                    .into_iter()
-                    .flatten()
-            })
-            .copied()
-            .collect();
-        let found = self.own(file, &found);
-        if std_method(name) && !found.is_empty() {
-            return Resolution::Ambiguous(distinct(found));
+        let found = distinct(named(
+            &mut [Some(scope.0.as_str()), self.library(&scope.0)]
+                .into_iter()
+                .flatten(),
+        ));
+        // A value of a type of another package's library the crate names
+        // may be the receiver: where the crate has no one method of the
+        // name, that library's are candidates, and no more, as the crate's
+        // other dependencies, which graff does not read, have methods too.
+        let elsewhere = named(
+            &mut self
+                .depends
+                .get(&scope.0)
+                .into_iter()
+                .flatten()
+                .map(String::as_str),
+        );
+        // A method calling its own name on what is not `self` delegates, to
+        // a field or a value of another type, more often than it recurses.
+        let recursive = |d: &Definition| {
+            receiver != Some("self")
+                && d.file == file
+                && from == Some(self.symbol(*d).qualified.as_str())
+        };
+        // The crate's own method is still the one where it is the only one,
+        // as a name is looked up in the nearest scope first.
+        match found[..] {
+            [d] if !std_method(name) && !recursive(&d) => Resolution::Resolved(d, Rule::Unique),
+            [] if elsewhere.is_empty() => Resolution::External,
+            _ => Resolution::Ambiguous(distinct([found, elsewhere].concat())),
         }
-        one(found, Rule::Unique)
     }
 
     fn resolve(&self, file: usize, scope: &Scope, site: &Site) -> Resolution {
@@ -2245,6 +2325,17 @@ fn render() {}
     /// other than a .rs, its Cargo.toml, is read as `cargo::features` reads
     /// it.
     fn edges_of(package: &[(&str, &str)]) -> Vec<(String, u32, String, String, String)> {
+        edges_in(package, &[("", "demo")], false)
+    }
+
+    /// What `edges_of` gives for a worktree whose packages' libraries are
+    /// `libraries`, by folder and name; `listed` names an ambiguous edge's
+    /// candidates, by path and qualified name.
+    fn edges_in(
+        package: &[(&str, &str)],
+        libraries: &[(&str, &str)],
+        listed: bool,
+    ) -> Vec<(String, u32, String, String, String)> {
         let rust: Vec<&(&str, &str)> = package
             .iter()
             .filter(|(path, _)| path.ends_with(".rs"))
@@ -2262,10 +2353,10 @@ fn render() {}
                 extraction,
             })
             .collect();
-        let libraries = [Library {
-            package: "",
-            name: "demo",
-        }];
+        let libraries: Vec<Library> = libraries
+            .iter()
+            .map(|&(package, name)| Library { package, name })
+            .collect();
         let read = |path: &str| {
             package
                 .iter()
@@ -2285,6 +2376,18 @@ fn render() {}
                             rule.name()
                         )
                     }
+                    Resolution::Ambiguous(found) if listed => format!(
+                        "ambiguous: {}",
+                        found
+                            .iter()
+                            .map(|d| format!(
+                                "{} {}",
+                                files[d.file].path,
+                                files[d.file].extraction.symbols[d.symbol].qualified
+                            ))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
                     Resolution::Ambiguous(found) => format!("ambiguous, {}", found.len()),
                     Resolution::External => "external".to_string(),
                 };
@@ -2513,6 +2616,115 @@ fn render() {}
         assert_eq!(
             reaches(&edges, "src/main.rs:4", "fetch", "call method"),
             "src/store.rs Storage::fetch (unique)"
+        );
+    }
+
+    /// A workspace of two packages: deck, a library, and gui, a binary that
+    /// uses it and wraps its Dock in a View of methods of the same names.
+    const WORKSPACE: &[(&str, &str)] = &[
+        ("deck/src/lib.rs", "pub mod dock;\n"),
+        (
+            "deck/src/dock.rs",
+            "pub struct Dock;
+impl Dock {
+    pub fn new() -> Dock { Dock }
+    pub fn update_windows(&mut self) -> bool { true }
+    pub fn refresh_icons(&mut self) -> bool { true }
+    pub fn data_changed(&mut self) -> bool { true }
+}
+pub struct Tree;
+impl Tree {
+    pub fn walk(&self, other: &Tree) {
+        other.walk(self);
+    }
+}
+pub fn run(dock: &mut Dock) {
+    dock.update_windows();
+}
+",
+        ),
+        (
+            "gui/src/main.rs",
+            "mod view;
+use deck::dock::Dock;
+
+fn main() {
+    let mut dock = Dock::new();
+    dock.update_windows();
+}
+
+fn show(view: &mut view::View) {
+    view.data_changed();
+}
+",
+        ),
+        (
+            "gui/src/view.rs",
+            "use deck::dock::Dock;
+
+pub struct View {
+    dock: Option<Dock>,
+}
+
+impl View {
+    pub fn data_changed(&mut self) {
+        self.dock.as_mut().is_some_and(|dock| dock.data_changed());
+    }
+    pub fn refresh_all(&mut self) {
+        self.dock.as_mut().is_some_and(|dock| dock.refresh_icons());
+    }
+}
+",
+        ),
+    ];
+
+    #[test]
+    fn a_method_called_in_another_package_may_be_of_a_library_it_names() {
+        let edges = edges_in(WORKSPACE, &[("deck", "deck")], true);
+        // The path crosses to deck; the let-bound value's method too, as a
+        // candidate: gui's other dependencies have methods graff never read.
+        assert_eq!(
+            reaches(&edges, "gui/src/main.rs:5", "new", "call path"),
+            "deck/src/dock.rs Dock::new (path)"
+        );
+        assert_eq!(
+            reaches(&edges, "gui/src/main.rs:6", "update_windows", "call method"),
+            "ambiguous: deck/src/dock.rs Dock::update_windows"
+        );
+        // A closure's parameter, typed through Option<&mut Dock>.
+        assert_eq!(
+            reaches(&edges, "gui/src/view.rs:12", "refresh_icons", "call method"),
+            "ambiguous: deck/src/dock.rs Dock::refresh_icons"
+        );
+        // Inside deck, its only update_windows is still the one.
+        assert_eq!(
+            reaches(
+                &edges,
+                "deck/src/dock.rs:15",
+                "update_windows",
+                "call method"
+            ),
+            "deck/src/dock.rs Dock::update_windows (unique)"
+        );
+    }
+
+    #[test]
+    fn a_method_calling_its_own_name_on_what_is_not_self_is_no_certain_recursion() {
+        let edges = edges_in(WORKSPACE, &[("deck", "deck")], true);
+        // View::data_changed's closure calls Dock's data_changed, not View's.
+        assert_eq!(
+            reaches(&edges, "gui/src/view.rs:9", "data_changed", "call method"),
+            "ambiguous: deck/src/dock.rs Dock::data_changed, gui/src/view.rs View::data_changed"
+        );
+        // Elsewhere gui's only data_changed is still the one, deck's aside.
+        assert_eq!(
+            reaches(&edges, "gui/src/main.rs:10", "data_changed", "call method"),
+            "gui/src/view.rs View::data_changed (unique)"
+        );
+        // Within one crate too: `other` may be a Tree, or not.
+        assert_eq!(
+            reaches(&edges, "deck/src/dock.rs:11", "walk", "call method"),
+            "ambiguous: deck/src/dock.rs Tree::walk"
         );
     }
 

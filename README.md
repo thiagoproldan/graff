@@ -18,7 +18,11 @@ reading again only what changed (`src/store.rs`). It ties each call and
 reference to the definition it reaches, by Rust's rules for names rather
 than by types, a file being the module of each `mod` item that loads it as
 rustc finds it, through a `path` attribute too, and says what stays
-ambiguous (`src/resolve.rs`). In Nix, by
+ambiguous (`src/resolve.rs`). A method called on `self` reaches its type's;
+one called on anything else, the crate's only method of that name, unless a
+type of std has one too or it is the method the call is in, and else, as
+possible, those of the crate's and of the libraries of the worktree's other
+packages it names in a path or a use item. In Nix, by
 its syntax, each binding is a definition named by its path, a NixOS option
 declared with mkOption one too, and a file one, which a path imports: a name
 is tied to the `let` or `rec` binding it is bound to, a path to its file (a

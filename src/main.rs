@@ -105,6 +105,33 @@ enum Command {
         #[command(flatten)]
         asked: Asked,
     },
+    /// Why a symbol is as it is: the commits HEAD reaches that changed its
+    /// lines, newest first, the tasks their `Ekko:` trailers name, and those
+    /// tasks' decision and gotcha notes, read from the board with ekko's
+    /// command line
+    Why {
+        #[command(flatten)]
+        symbol: Symbol,
+        /// A folder whose ekko board to read, where `ekko` runs [default:
+        /// the worktree's top]
+        #[arg(long)]
+        board: Option<PathBuf>,
+        #[command(flatten)]
+        asked: Asked,
+    },
+    /// What a task changed: the commits HEAD reaches whose `Ekko:` trailer
+    /// names it, and the definitions their changed lines fall in, each once,
+    /// where the worktree has it now
+    Touched {
+        /// The task's id on the board, as a commit's `Ekko: 28` names it
+        task: String,
+        /// A folder whose ekko board to read, where `ekko` runs [default:
+        /// the worktree's top]
+        #[arg(long)]
+        board: Option<PathBuf>,
+        #[command(flatten)]
+        asked: Asked,
+    },
     /// The definitions that matter most, by signature under their files,
     /// ranked by PageRank over the graph of uses, around the files and
     /// symbols named: what a session reads first
@@ -187,6 +214,18 @@ fn main() -> ExitCode {
             asked,
         } => ask(asked, |store, root, options| {
             query::search(store, root, &words.join(" "), limit as usize, options)
+        }),
+        Command::Why {
+            symbol,
+            board,
+            asked,
+        } => ask(asked, |store, root, options| {
+            let board = board.as_deref().unwrap_or(root);
+            query::why(store, root, &symbol.symbol, board, options)
+        }),
+        Command::Touched { task, board, asked } => ask(asked, |store, root, options| {
+            let board = board.as_deref().unwrap_or(root);
+            query::touched(store, root, &task, board, options)
         }),
         Command::Map {
             focus,

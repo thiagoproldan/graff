@@ -2287,6 +2287,8 @@ fn mcp_answers_each_question_as_the_command_line_does() {
             json!({"focus": ["src/lib.rs"], "budget": 500}),
             vec!["map", "src/lib.rs", "--budget", "500"],
         ),
+        ("why", json!({"symbol": "Storage"}), vec!["why", "Storage"]),
+        ("touched", json!({"task": 28}), vec!["touched", "28"]),
     ];
     let names: Vec<&str> = rows.iter().map(|(name, _, _)| *name).collect();
     assert_eq!(names, graff::mcp::TOOLS, "a row for each tool, in order");
@@ -2676,4 +2678,316 @@ tools/base.py:2-5 method Base.run: 3 callees, 0 possible, 0 outside the worktree
 "
         )
     );
+}
+
+/// A repository whose commits name tasks of a board a stand-in for ekko
+/// answers from, in shell builtins alone: `ekko --json --context ID` prints
+/// `board/ID.json`, or
+/// ekko's refusal of an id it lacks, and writes the folder it ran in to
+/// `ran`. Its PATH holds the stand-in and git, and nothing else.
+struct Tasks {
+    top: PathBuf,
+    repo: PathBuf,
+    shas: Vec<String>,
+}
+
+impl Tasks {
+    fn new(name: &str) -> Tasks {
+        let top = folder(name);
+        let repo = top.join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let repo = fs::canonicalize(&repo).unwrap();
+        let bin = top.join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        let git = String::from_utf8(
+            Command::new("sh")
+                .args(["-c", "command -v git"])
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(git.trim(), bin.join("git")).unwrap();
+        let ekko = bin.join("ekko");
+        fs::write(
+            &ekko,
+            format!(
+                "#!/bin/sh\npwd >> '{top}/ran'\nif [ -f '{top}/board/'\"$3\".json ]; then while IFS= read -r line || [ -n \"$line\" ]; do printf '%s\\n' \"$line\"; done < '{top}/board/'\"$3\".json; else printf '{{\"ok\":false,\"error\":\"Unable to find item with id: %s\",\"code\":\"INVALID_ID\"}}\\n' \"$3\"; exit 1; fi\n",
+                top = top.display()
+            ),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&ekko, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::create_dir_all(top.join("board")).unwrap();
+        let mut tasks = Tasks {
+            top,
+            repo,
+            shas: Vec::new(),
+        };
+        tasks.git(&["init", "-q"]);
+        let file = |load: &str, keep: &str| {
+            format!("fn load() -> u32 {{\n    {load}\n}}\n\nfn keep() -> u32 {{\n    {keep}\n}}\n")
+        };
+        for (load, keep, message) in [
+            ("1", "1", "Add load and keep\n\nEkko: 7"),
+            (
+                "2",
+                "1",
+                "Change load\n\nEkko: 8\n\nCo-Authored-By: someone",
+            ),
+            ("2", "2", "Change keep\n\nEkko: 9"),
+            ("3", "2", "Tidy load\n\nEkko: 12"),
+            ("4", "2", "Touch load\n\nEkko: 404, 8"),
+        ] {
+            fs::write(tasks.repo.join("lib.rs"), file(load, keep)).unwrap();
+            tasks.git(&["add", "-A"]);
+            tasks.git(&["commit", "-q", "--no-verify", "-m", message]);
+            let sha = tasks.git(&["rev-parse", "HEAD"]);
+            tasks.shas.push(sha.trim().to_string());
+        }
+        tasks
+    }
+
+    fn git(&self, args: &[&str]) -> String {
+        let done = Command::new("git")
+            .args([
+                "-c",
+                "user.name=graff",
+                "-c",
+                "user.email=graff@example.org",
+            ])
+            .args([
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "core.hooksPath=/dev/null",
+            ])
+            .args(args)
+            .current_dir(&self.repo)
+            .env("GIT_AUTHOR_DATE", "2026-10-12T12:00:00Z")
+            .env("GIT_COMMITTER_DATE", "2026-10-12T12:00:00Z")
+            .output()
+            .unwrap();
+        assert!(done.status.success(), "{done:?}");
+        String::from_utf8(done.stdout).unwrap()
+    }
+
+    /// A task on the board, tied to the commits whose numbers are given.
+    fn task(&self, id: u64, title: &str, commits: &[usize], notes: Value) {
+        let commits: Vec<Value> = commits
+            .iter()
+            .map(|&n| json!({"sha": self.shas[n][..7], "date": "2026-10-12", "subject": "s", "landed": true}))
+            .collect();
+        let answer = json!({"ok": true, "command": "context", "context": {
+            "item": {"id": id, "state": "done", "description": format!("{title}\nMore text."), "notes": notes},
+            "commits": commits,
+        }});
+        fs::write(
+            self.top.join(format!("board/{id}.json")),
+            answer.to_string(),
+        )
+        .unwrap();
+    }
+
+    /// graff run in the repository with only the stand-in and git on PATH,
+    /// or git alone, and no project named to ekko.
+    fn run(&self, ekko: bool, args: &[&str]) -> Output {
+        self.run_named(ekko, None, args)
+    }
+
+    /// The same, with EKKO_PROJECT set to `project`, if given.
+    fn run_named(&self, ekko: bool, project: Option<&str>, args: &[&str]) -> Output {
+        let path = if ekko {
+            self.top.join("bin")
+        } else {
+            let lone = self.top.join("git-only");
+            fs::create_dir_all(&lone).unwrap();
+            let _ = std::os::unix::fs::symlink(
+                fs::read_link(self.top.join("bin/git")).unwrap(),
+                lone.join("git"),
+            );
+            lone
+        };
+        Command::new(env!("CARGO_BIN_EXE_graff"))
+            .args(args)
+            .current_dir(&self.repo)
+            .env("XDG_CACHE_HOME", self.top.join("cache"))
+            .env("PATH", path)
+            .env_remove("EKKO_PROJECT")
+            .envs(project.map(|project| ("EKKO_PROJECT", project)))
+            .output()
+            .expect("graff runs")
+    }
+
+    fn ask(&self, args: &[&str]) -> String {
+        let out = self.run(true, args);
+        assert!(out.status.success(), "{out:?}");
+        String::from_utf8(out.stdout).unwrap()
+    }
+
+    /// The folders the stand-in ran in, emptied.
+    fn ran(&self) -> Vec<String> {
+        let ran = fs::read_to_string(self.top.join("ran")).unwrap_or_default();
+        let _ = fs::remove_file(self.top.join("ran"));
+        ran.lines().map(String::from).collect()
+    }
+
+    fn short(&self, n: usize) -> &str {
+        &self.shas[n][..7]
+    }
+}
+
+impl Drop for Tasks {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.top);
+    }
+}
+
+#[test]
+fn why_gives_the_commits_their_tasks_and_those_tasks_decisions_and_gotchas() {
+    let tasks = Tasks::new("why");
+    tasks.task(
+        7,
+        "Add the loader",
+        &[0],
+        json!([
+            {"id": 70, "knowledge": "decision", "description": "LOAD READS ONCE\nWhy."},
+            {"id": 71, "knowledge": "procedure", "description": "Steps"},
+            {"id": 72, "description": "A plain note"},
+        ]),
+    );
+    tasks.task(
+        8,
+        "Make load faster",
+        &[1, 4],
+        json!([
+            {"id": 80, "knowledge": "gotcha", "description": "A TRAP", "supersededBy": [81]},
+            {"id": 81, "knowledge": "gotcha", "description": "THE TRAP, BETTER SAID"},
+        ]),
+    );
+    tasks.task(
+        9,
+        "Keep keep",
+        &[2],
+        json!([{"id": 90, "knowledge": "decision", "description": "KEEP IS KEPT"}]),
+    );
+    // Another repository's task 12, which ties none of these commits.
+    tasks.task(
+        12,
+        "Elsewhere",
+        &[],
+        json!([{"id": 120, "knowledge": "decision", "description": "WRONG BOARD"}]),
+    );
+    let root = tasks.repo.display().to_string();
+    let expected = format!(
+        "why load in {root}
+lib.rs:1-3 function load: 4 commits
+  {c4} 2026-10-12 +1 -1 Touch load · tasks 404, 8
+  {c3} 2026-10-12 +1 -1 Tidy load · task 12
+  {c1} 2026-10-12 +1 -1 Change load · task 8
+  {c0} 2026-10-12 +3 -0 Add load and keep · task 7
+task 404: not on the board ekko reads in {root}
+task 8 [done] Make load faster
+  gotcha 80 (superseded by 81): A TRAP
+  gotcha 81: THE TRAP, BETTER SAID
+task 12: the board ekko reads in {root} has a task 12, \"Elsewhere\", but ties none of these commits to it: another repository's task, whose notes are left out
+task 7 [done] Add the loader
+  decision 70: LOAD READS ONCE
+",
+        c0 = tasks.short(0),
+        c1 = tasks.short(1),
+        c3 = tasks.short(3),
+        c4 = tasks.short(4),
+    );
+    assert_eq!(tasks.ask(&["why", "load"]), expected);
+    // ekko ran in the worktree's top, once a task.
+    assert_eq!(tasks.ran(), vec![root.clone(); 4]);
+    // The input that says no: keep's decision is not load's, and load's
+    // gotchas are not keep's, though task 7 shaped both.
+    let keep = tasks.ask(&["why", "keep"]);
+    assert!(keep.contains("  decision 90: KEEP IS KEPT\n"), "{keep}");
+    assert!(keep.contains("  decision 70: LOAD READS ONCE\n"), "{keep}");
+    assert!(!keep.contains("TRAP"), "{keep}");
+    assert!(!expected.contains("KEEP IS KEPT"));
+
+    // A board EKKO_PROJECT names, which ekko reads instead, is said to be.
+    let out = tasks.run_named(true, Some("elsewhere"), &["why", "load"]);
+    let said = String::from_utf8(out.stdout).unwrap();
+    assert!(
+        said.contains(&format!(
+            "task 404: not on the board ekko reads in {root}, where EKKO_PROJECT names \"elsewhere\"\n"
+        )),
+        "{said}"
+    );
+    tasks.ran();
+
+    // Another folder's board, where told; one that cannot be read, said once.
+    let elsewhere = tasks.top.join("board");
+    tasks.ran();
+    tasks.ask(&["why", "keep", "--board", &elsewhere.display().to_string()]);
+    assert_eq!(tasks.ran(), vec![elsewhere.display().to_string(); 2]);
+    let out = tasks.run(false, &["why", "load"]);
+    assert!(out.status.success(), "{out:?}");
+    let said = String::from_utf8(out.stdout).unwrap();
+    assert_eq!(said.matches("could not be read").count(), 1, "{said}");
+    assert!(
+        said.contains(&format!(
+            "the board in {root} could not be read, so no task's notes are given: no ekko on PATH\n"
+        )),
+        "{said}"
+    );
+    assert!(
+        !said.contains("decision") && !said.contains("gotcha"),
+        "{said}"
+    );
+}
+
+#[test]
+fn touched_gives_a_tasks_commits_and_the_definitions_they_changed() {
+    let tasks = Tasks::new("touched");
+    tasks.task(8, "Make load faster", &[1, 4], json!([]));
+    let root = tasks.repo.display().to_string();
+    assert_eq!(
+        tasks.ask(&["touched", "8"]),
+        format!(
+            "touched 8 in {root}
+task 8 [done] Make load faster
+{c4} 2026-10-12 Touch load: 1 definition
+{c1} 2026-10-12 Change load: 1 definition
+lib.rs:1-3 function load: +2 -2 in 2 commits
+",
+            c1 = tasks.short(1),
+            c4 = tasks.short(4),
+        )
+    );
+    // The first commit adds both, and a task the board lacks is said so.
+    assert_eq!(
+        tasks.ask(&["touched", "7"]),
+        format!(
+            "touched 7 in {root}
+task 7: not on the board ekko reads in {root}
+{c0} 2026-10-12 Add load and keep: 2 definitions
+lib.rs:1-3 function load: +3 -0 in 1 commit
+lib.rs:5-7 function keep: +3 -0 in 1 commit
+",
+            c0 = tasks.short(0),
+        )
+    );
+    tasks.ran();
+    // A task no commit names is not asked for.
+    assert_eq!(
+        tasks.ask(&["touched", "13"]),
+        format!(
+            "touched 13 in {root}\nno commit HEAD reaches names task 13 in a `Ekko:` trailer\n"
+        )
+    );
+    assert!(tasks.ran().is_empty());
+    let out = tasks.run(true, &["touched", "--", "--destroy"]);
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("a task is named by its id, digits alone"),
+        "{out:?}"
+    );
+    assert!(tasks.ran().is_empty());
 }

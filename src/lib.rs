@@ -1,5 +1,6 @@
 //! graff: a code map for Claude Code.
 
+pub mod board;
 pub mod extract;
 pub mod hook;
 pub mod lang;

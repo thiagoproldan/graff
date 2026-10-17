@@ -30,6 +30,10 @@ use crate::resolve::{self, Definition, Edge, File, Library, Resolution, Use};
 use crate::search;
 use crate::store::{self, Sites, Store, Worktree};
 
+mod why;
+
+pub use why::{touched, why};
+
 /// Bytes to a token, as a budget counts them and evals/bar scores answers:
 /// an estimate, not a tokenizer's count.
 pub const BYTES_PER_TOKEN: usize = 4;

@@ -31,9 +31,10 @@ mod history;
 
 pub use history::{Commit, History, Mapped, Touch};
 
-/// Bumped whenever the tables change. The index file is named by it, so a
-/// build of another schema keeps an index of its own beside this one's.
-const SCHEMA: i64 = 14;
+/// Bumped whenever the tables change, or what their rows hold. The index
+/// file is named by it, so a build of another schema keeps an index of its
+/// own beside this one's.
+const SCHEMA: i64 = 15;
 
 /// A file written this close before graff saw it may be written again within
 /// the same tick of the file system's clock and keep its stat, so it is hashed

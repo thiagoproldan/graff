@@ -233,7 +233,7 @@ impl Store {
                 "--stdin",
                 "-z",
                 "--no-color",
-                "--format=%H%x1f%ct%x1f%s%x1f%(trailers:only,unfold,separator=%x1e)",
+                "--format=%H%x1f%ct%x1f%s%x1f%B",
             ],
             listed.clone(),
         )?)?;
@@ -500,22 +500,25 @@ impl Store {
     }
 
     /// The commits of a history whose message has this trailer, its key
-    /// matched as git does, whatever its case, newest first, each with the
-    /// definitions it touched.
+    /// matched as git does, whatever its case, and its value alone or in a
+    /// list, newest first, each with the definitions it touched.
     pub fn touched(
         &self,
         history: &History,
         key: &str,
         value: &str,
     ) -> Result<Vec<(Commit, Vec<Touch>)>, Error> {
-        let shas: HashSet<String> = self
-            .connection
-            .prepare(
-                "SELECT c.sha FROM trailers r JOIN commits c ON c.id = r.rev
-                 WHERE c.history = ?1 AND r.value = ?3 AND lower(r.key) = lower(?2)",
-            )?
-            .query_map(params![history.id, key, value], |row| row.get(0))?
-            .collect::<Result<_, _>>()?;
+        let mut shas: HashSet<String> = HashSet::new();
+        let mut query = self.connection.prepare(
+            "SELECT c.sha, r.value FROM trailers r JOIN commits c ON c.id = r.rev
+             WHERE c.history = ?1 AND lower(r.key) = lower(?2)",
+        )?;
+        let mut rows = query.query(params![history.id, key])?;
+        while let Some(row) = rows.next()? {
+            if names(&row.get::<_, String>(1)?, value) {
+                shas.insert(row.get(0)?);
+            }
+        }
         let mut query = self.connection.prepare(
             "SELECT t.path, t.qualified, t.kind, t.added, t.removed FROM touches t JOIN commits c ON c.id = t.rev
              WHERE c.history = ?1 AND c.sha = ?2 ORDER BY t.rowid",
@@ -646,7 +649,7 @@ fn blobs(root: &Path, ids: &[String]) -> Result<HashMap<String, Vec<u8>>, Error>
 }
 
 /// What the index keeps of each commit's message, out of `git log -z` with
-/// fields split by 0x1f and trailers by 0x1e.
+/// fields split by 0x1f, the whole message last.
 fn messages(said: &[u8]) -> Result<HashMap<String, Message>, Error> {
     let mut found = HashMap::new();
     for record in said.split(|byte| *byte == 0) {
@@ -656,27 +659,72 @@ fn messages(said: &[u8]) -> Result<HashMap<String, Message>, Error> {
             continue;
         }
         let fields: Vec<&str> = record.splitn(4, '\x1f').collect();
-        let [sha, time, subject, trailers] = fields[..] else {
+        let [sha, time, subject, body] = fields[..] else {
             return Err(Error::Git(format!("git log said {record}")));
         };
         let time = time
             .parse()
             .map_err(|_| Error::Git(format!("git log said {record}")))?;
-        let trailers = trailers
-            .split('\x1e')
-            .filter_map(|trailer| trailer.split_once(':'))
-            .map(|(key, value)| (key.trim().to_string(), value.trim().to_string()))
-            .collect();
         found.insert(
             sha.to_string(),
             Message {
                 time,
                 subject: subject.to_string(),
-                trailers,
+                trailers: trailers(body),
             },
         );
     }
     Ok(found)
+}
+
+/// The trailers of a message, in order: each `Key: value` line of every
+/// paragraph after the subject's that holds nothing else, a line that starts
+/// with a blank continuing the one before. Not git's rule, which reads the
+/// last paragraph alone: a message that ends `Ekko: 28`, a blank line, then
+/// `Co-Authored-By: ...`, as ekko's sessions write them, names its task
+/// above the paragraph git reads.
+fn trailers(body: &str) -> Vec<(String, String)> {
+    let mut found = Vec::new();
+    for paragraph in body.split("\n\n").skip(1) {
+        let mut block: Vec<(String, String)> = Vec::new();
+        let mut shaped = true;
+        for line in paragraph.lines().filter(|line| !line.trim().is_empty()) {
+            if line.starts_with([' ', '\t']) {
+                match block.last_mut() {
+                    Some((_, value)) => {
+                        value.push(' ');
+                        value.push_str(line.trim());
+                    }
+                    None => shaped = false,
+                }
+                continue;
+            }
+            match line.split_once(':') {
+                Some((key, value))
+                    if !key.is_empty()
+                        && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') =>
+                {
+                    block.push((key.to_string(), value.trim().to_string()));
+                }
+                _ => shaped = false,
+            }
+            if !shaped {
+                break;
+            }
+        }
+        if shaped {
+            found.extend(block);
+        }
+    }
+    found
+}
+
+/// Whether a trailer's value names `wanted`, alone or in a list: `Ekko: 28`
+/// names 28, and `Ekko: 383, 384` 383 and 384.
+pub fn names(value: &str, wanted: &str) -> bool {
+    value
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .any(|named| named == wanted)
 }
 
 /// Whether `rest` starts with a commit id and the NUL after it, as
@@ -957,6 +1005,32 @@ mod tests {
     }
 
     #[test]
+    fn trailers_are_the_paragraphs_of_key_and_value_lines_after_the_subject() {
+        let pairs = |body: &str| -> Vec<String> {
+            trailers(body)
+                .into_iter()
+                .map(|(key, value)| format!("{key}={value}"))
+                .collect()
+        };
+        assert_eq!(
+            pairs(
+                "Fix: a subject\n\nProse: then more prose.\nAnd a line.\n\nEkko: 28\n\nCo-Authored-By: A <a@b>\n"
+            ),
+            ["Ekko=28", "Co-Authored-By=A <a@b>"]
+        );
+        assert_eq!(
+            pairs("Subject\n\nEkko: 383, 384\nSee-Also: a long\n  value\n"),
+            ["Ekko=383, 384", "See-Also=a long value"]
+        );
+        // The subject's paragraph is not one, nor a key with a blank in it.
+        assert!(pairs("Ekko: 1\n").is_empty());
+        assert!(pairs("Subject\n\nRests on: x\n").is_empty());
+        assert!(pairs("Subject\n\n  Ekko: 1\n").is_empty());
+        assert!(names("383, 384", "384") && names("28", "28"));
+        assert!(!names("383, 384", "38") && !names("280", "28"));
+    }
+
+    #[test]
     fn a_change_touches_the_definitions_its_lines_fall_in_and_those_around_them() {
         let old = [
             place("Store", Kind::Impl, 1, 20),
@@ -1109,7 +1183,7 @@ mod tests {
         repository.write("notes.txt", "still not read\n");
         repository.commit("Move a to b and change load\n\nekko: 8");
         repository.write("src/b.rs", "fn keep() {\n    1;\n}\n");
-        repository.commit("Remove load");
+        repository.commit("Remove load\n\nEkko: 10, 11\n\nCo-Authored-By: someone");
 
         let history = store.history(&repository.0).unwrap();
         assert_eq!(
@@ -1184,6 +1258,24 @@ mod tests {
             ]
         );
         assert!(store.touched(&history, "Ekko", "9").unwrap().is_empty());
+        // A list names each task in it, and a trailer above another
+        // paragraph is one, though git's rule reads the last alone.
+        let found = store.touched(&history, "Ekko", "11").unwrap();
+        assert_eq!(
+            touches(&found),
+            [(
+                "Remove load".to_string(),
+                vec!["src/b.rs load +0 -4".to_string()]
+            )]
+        );
+        assert_eq!(
+            found[0].0.trailers,
+            [
+                ("Ekko".to_string(), "10, 11".to_string()),
+                ("Co-Authored-By".to_string(), "someone".to_string())
+            ]
+        );
+        assert!(store.touched(&history, "Ekko", "1").unwrap().is_empty());
 
         // Nothing new, nothing mapped; a new commit alone, its blob after
         // read from the index where a check read it.

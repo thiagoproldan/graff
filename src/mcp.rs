@@ -52,7 +52,7 @@ const LIMIT: usize = 20;
 
 /// The tools, in the order a reader takes them up.
 pub const TOOLS: &[&str] = &[
-    "def", "callers", "callees", "outline", "impact", "search", "map",
+    "def", "callers", "callees", "outline", "impact", "search", "map", "why", "touched",
 ];
 
 const INSTRUCTIONS: &str = "\
@@ -65,6 +65,7 @@ Reach for it before grep or reading whole files when the question is about a nam
 - outline: what a file defines, nested, with lines: Read only the range needed.
 - search: definitions by words, when the name is unknown; it says it found nothing when its best match holds too little of them.
 - map: what matters most in the worktree, or around files and symbols, for a first look.
+- why, touched: the commits, ekko tasks and decisions behind a definition; what a task's commits changed.
 
 grep does better for text that is not a definition's name (strings, messages, comments, config values), for every place a word is written, in languages graff does not read, and in files git ignores.";
 
@@ -223,6 +224,18 @@ impl Server {
                 let limit = number(args, "limit", 1, u32::MAX as usize, LIMIT)?;
                 Box::new(move |store, root, options| {
                     query::search(store, root, &words, limit, options)
+                })
+            }
+            "why" => {
+                let symbol = required(args, "symbol")?;
+                Box::new(move |store, root, options| {
+                    query::why(store, root, &symbol, root, options)
+                })
+            }
+            "touched" => {
+                let task = task(args)?;
+                Box::new(move |store, root, options| {
+                    query::touched(store, root, &task, root, options)
                 })
             }
             _ => {
@@ -401,6 +414,18 @@ fn number(
     }
 }
 
+/// Takes a task's id, as a text or a number: `"28"` or `28`.
+fn task(args: &mut Map<String, Value>) -> Result<String, String> {
+    match args.remove("task") {
+        Some(Value::Number(id)) => Ok(id.to_string()),
+        Some(other) => {
+            args.insert("task".into(), other);
+            required(args, "task")
+        }
+        None => Err("task is required".to_string()),
+    }
+}
+
 /// Takes a list of texts, empty if not given.
 fn texts(args: &mut Map<String, Value>, key: &str) -> Result<Vec<String>, String> {
     match args.remove(key) {
@@ -494,6 +519,23 @@ pub fn tool_definitions() -> Value {
                 &[],
             ),
         },
+        {
+            "name": "why",
+            "description": "Why a definition is as it is: the commits that changed it, newest first, the ekko tasks their Ekko: trailers name, and those tasks' decisions and gotchas; or why the board could not say.",
+            "inputSchema": about_symbol(),
+        },
+        {
+            "name": "touched",
+            "description": "What a task changed: the commits whose Ekko: trailer names it, then the definitions they changed, each once, where it is now.",
+            "inputSchema": object(
+                json!({
+                    "task": {"type": "string", "description": "Its id, as in Ekko: 28."},
+                    "folder": folder,
+                    "budget": budget(BUDGET),
+                }),
+                &["task"],
+            ),
+        },
     ]);
     // Each only reads: the index it writes is graff's cache.
     for tool in tools.as_array_mut().expect("an array") {
@@ -513,8 +555,8 @@ mod tests {
 
     /// What a session pays for graff, in characters: the instructions at
     /// its start, and the definitions on the ToolSearch that loads them.
-    const INSTRUCTIONS_BUDGET: usize = 1_200;
-    const DEFINITIONS_BUDGET: usize = 6_000;
+    const INSTRUCTIONS_BUDGET: usize = 1_300;
+    const DEFINITIONS_BUDGET: usize = 7_500;
 
     #[test]
     fn what_a_session_pays_for_stays_under_its_budget() {

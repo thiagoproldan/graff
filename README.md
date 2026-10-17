@@ -112,7 +112,7 @@ code span writes as code names one (`Storage::load`, `k3_mmw()`,
 `CTX_MIN`, not a bare `kind`) are tied to the file, the section, the
 definition holding the line, or the one definition out of test code
 whose full name ends as written; a Rust file stands for the `mod` items
-that load it (`src/resolve/markdown.rs`). It answers seven
+that load it (`src/resolve/markdown.rs`). It answers nine
 questions (`src/query.rs`):
 
     graff def Storage::load        # its lines, doc, signature, a type's impl blocks
@@ -122,6 +122,8 @@ questions (`src/query.rs`):
     graff impact Storage::load     # its callers, theirs, and so on, 3 levels deep
     graff search open store        # the definitions those words find, best first
     graff map src/store.rs         # what matters most around it, by file, 1,024 tokens
+    graff why Storage::load        # the commits that changed it, their tasks, those tasks' decisions
+    graff touched 28               # the definitions the commits of task 28 changed
 
 A symbol is named by the end of its path (`load`, `store::Storage::load`),
 with its file (`src/store.rs:Storage::load`) or by a line
@@ -181,7 +183,7 @@ each level asked SQL's LIKE for each name it reached, where one pass over
 the sites now tells which paths go through any of them. `graff index`
 runs the freshness check alone.
 
-`graff --mcp` serves the seven questions as tools over the Model
+`graff --mcp` serves the nine questions as tools over the Model
 Context Protocol, on stdin and stdout (`src/mcp.rs`), for the worktree
 of the folder `CLAUDE_PROJECT_DIR` names, as Claude Code sets it for the
 servers it starts, else of the folder it was started in; a call may name
@@ -194,9 +196,9 @@ names 2026-07-28 is served on its own, `server/discover` included, and an
 `initialize` handshake gets 2025-11-25 or the earlier revision it asks
 for. Claude Code loads only the tools' names and the server's instructions
 at a session's start, the definitions on the ToolSearch that wants them:
-the instructions, 1,100 characters, say when graff answers better than
-grep and when it does not, and a test holds them to 1,200 and the seven
-definitions to 6,000. In one server a `def` on graff's own worktree took
+the instructions, 1,277 characters, say when graff answers better than
+grep and when it does not, and a test holds them to 1,300 and the nine
+definitions, 7,348 characters, to 7,500. In one server a `def` on graff's own worktree took
 18 ms a call, against 24 ms for the command line (20 calls each, three
 rounds, 2026-10-12, TLP's balanced profile on battery, the load at 10 from
 other sessions).
@@ -214,14 +216,43 @@ definition's lines are. A definition's lines are the item's own, so a
 change to its doc comment alone falls in what holds it. The commits that
 touched a definition, following its file back through renames, and those
 whose message holds a trailer such as `Ekko: 27`, with what they touched,
-are what `Store::touching` and `Store::touched` give. On ekko at f9564f4
-(359 commits, 1,502 changes to files graff reads, 1,461 blobs, 100 MB) the
+are what `Store::touching` and `Store::touched` give. A trailer is a
+`Key: value` line of any paragraph after the subject that holds only such
+lines, not of git's last paragraph alone: ekko's sessions write `Ekko:
+28`, a blank line, then `Co-Authored-By:`, and git's rule finds the
+`Ekko:` trailer of 46 of the 79 commits of graff's history that have one
+and of 176 of ekko's 191 (2026-10-17); `Ekko: 383, 384` names both
+tasks. On ekko at f9564f4 (359 commits, 1,502 changes to files graff reads, 1,461 blobs, 100 MB) the
 whole history took 6.3 to 6.7 s, 37 s of CPU, most of it parsing; each of
 its last ten commits, mapped one at a time, 69 to 482 ms, parsing nothing,
 of which the worktree's check, extracting what the commit changed, takes
 the most: the history alone took 50 to 83 ms (three rounds and ten
 commits, 2026-10-17, TLP's performance profile on AC, the load at 17 to
 25 from other sessions; `evals/history/`).
+
+`graff why SYMBOL` gives, for each definition the name names, the commits
+HEAD reaches that changed its lines, newest first, the tasks their `Ekko:`
+trailers name, and those tasks' decision and gotcha notes, each by its
+first line, a superseded one marked and cut first (`src/query/why.rs`).
+`graff touched TASK` gives the commits whose trailer names the task, then
+the definitions they changed, each once, where the worktree has it now
+and with the lines added and removed, those changed most kept first. The
+board is read only through ekko's command line, `ekko --json --context
+ID` run in the worktree's top or the folder `--board` names, never from
+ekko's storage (`src/board.rs`); only digits are passed as an id, so a
+commit's message cannot hand ekko a flag. A task is believed only if the
+board ties one of the commits that name it to it, as ekko lists them:
+one it does not, as when `EKKO_PROJECT` makes ekko read another
+project's board (which the answer then names), is said to be another
+repository's task and its notes are left out; a task the board lacks, or
+a board that cannot be read, is said so, once, rather than guessed. A
+task no commit names is not asked for. On graff's worktree, warm, `why
+MODERN` returns task 21's decision 286 in 129 to 240 ms, `touched 21` 88
+to 196 ms and `why Store::check`, three tasks, 225 to 393 ms, against 35
+to 91 ms for `def MODERN` (ten rounds interleaved, 2026-10-17, TLP's
+performance profile on AC, the load at 30 to 37 from other sessions):
+most of the difference is the history's update and one `ekko` run, about
+50 ms, per task.
 
 The flake's `packages.plugin` is graff's Claude Code plugin: that
 server, and two hooks, `graff --hook` (`src/hook.rs`) at `SessionStart`

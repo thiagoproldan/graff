@@ -116,7 +116,7 @@ fn announcement(folder: &Path) -> Option<String> {
         "[graff] graff maps the code of this worktree, {}: {}. \
          Before grep or reading whole files, ask its tools, {TOOL_PREFIX}{{{}}}, \
          where a name is defined, what reaches it and what it reaches, what a change \
-         would touch, or what a file defines: each answer gives file:line ranges \
+         would touch, what a file defines, or which commits and tasks shaped a definition: each answer gives file:line ranges \
          within a token budget. grep does better for strings, comments and config values.",
         root.display(),
         and(&files),
@@ -211,7 +211,7 @@ mod tests {
         );
         assert!(
             text.contains(
-                "mcp__plugin_graff_graff__{def, callers, callees, outline, impact, search, map}"
+                "mcp__plugin_graff_graff__{def, callers, callees, outline, impact, search, map, why, touched}"
             ),
             "{text}"
         );

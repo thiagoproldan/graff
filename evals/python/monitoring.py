@@ -16,7 +16,9 @@ left out by its name, a dunder not written there.
 - precision: of graff's calls tied to a definition, at places where the
   trace shows a call of that name ran, the share tied to one the trace
   says ran (a call that reached only what is outside the repository's
-  files, `list.append`, is a wrong tie);
+  files, `list.append`, is a wrong tie, but where graff marks the tie
+  `fallback`, the Python definition of what a module may bind the name
+  to outside the files, `from _heapq import *`: that is counted apart);
 - recall: of the calls the trace shows reached a definition graff records
   (not a function local to another, which graff does not), the share
   graff ties so, by any use of the name at its place, a decorator's
@@ -262,6 +264,10 @@ def score(edges, trace, trees=None):
             judged[edge["rule"]]["held"] += 1
         elif target in ran:
             judged[edge["rule"]]["correct"] += 1
+        elif edge["rule"] == "fallback" and all(r[0] is None for r in ran):
+            # The Python fallback of what ran outside the files, as graff
+            # marks it: counted apart, neither right nor wrong.
+            judged[edge["rule"]]["fallback"] += 1
         else:
             judged[edge["rule"]]["wrong"] += 1
             wrong.append((edge, ran))
@@ -308,6 +314,7 @@ def summary(judged, found):
     return {"precision": ratio(correct, correct + wrong), "correct": correct, "wrong": wrong,
             "unjudged": sum(c["unjudged"] for c in judged.values()),
             "held": sum(c["held"] for c in judged.values()),
+            "fallback": sum(c["fallback"] for c in judged.values()),
             "recall": ratio(hits, sum(found.values())), "found": hits, "truth": sum(found.values())}
 
 
@@ -439,10 +446,11 @@ def main():
         "",
         f"broken resolver: precision {broken['precision']:.3f}, recall {broken['recall']:.3f}",
         f"graff: precision {real['precision']:.3f} ({real['correct']} of {real['correct'] + real['wrong']} judged; "
-        f"{real['unjudged']} unjudged, {real['held']} tied to what holds a function), recall {real['recall']:.3f} ({real['found']} of {real['truth']} calls; "
+        f"{real['unjudged']} unjudged, {real['held']} tied to what holds a function, {real['fallback']} to the fallback of what ran outside the files), recall {real['recall']:.3f} ({real['found']} of {real['truth']} calls; "
         f"{found['found, not as a call']} tied by a use other than a call)",
         "by rule: " + ", ".join(
-            f"{rule} {c['correct']}/{c['correct'] + c['wrong']} ({c['unjudged']} unjudged)"
+            f"{rule} {c['correct']}/{c['correct'] + c['wrong']} ({c['unjudged']} unjudged"
+            + (f", {c['fallback']} a fallback of what ran" if c["fallback"] else "") + ")"
             for rule, c in sorted(judged.items())),
         "wrong, by what ran: " + ", ".join(
             f"{n} {why}" for why, n in sorted(collections.Counter(why_wrong(e, r) for e, r in wrong).items())),

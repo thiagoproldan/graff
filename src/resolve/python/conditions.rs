@@ -69,7 +69,7 @@ fn host() -> Option<(&'static str, &'static str)> {
 /// winreg, winsound) and CPython's own `_winapi`, `_overlapped` and `nt`
 /// on Windows alone; those of "Unix Specific Services" that are no pure
 /// Python, and `_posixsubprocess`, on Linux and macOS. None for any other.
-fn host_has(module: &str) -> Option<bool> {
+pub(super) fn host_has(module: &str) -> Option<bool> {
     const WINDOWS: &[&str] = &[
         "msvcrt",
         "winreg",

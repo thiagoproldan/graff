@@ -48,6 +48,18 @@
 //! by its name alone is one no branch leaves out on the platform, unless
 //! each is.
 //!
+//! What a scope binds a name to again after that, as it runs, is what the
+//! name reaches once the scope has run past it, where the use sees it --
+//! a later def at the module's top, for code in a function, as locale.py's
+//! `setlocale`; or what it binds in a `try`'s block, over what an `except`
+//! clause of it binds. Where the scope may bind the name again to what has
+//! no source in the worktree -- an import of a module it does not hold, a
+//! star import of a module of the library written in C that binds the name
+//! (`python_stars.txt`), `from _heapq import *` after heapq.py's defs, a
+//! name or a path assigned alone that reaches nothing, `parse_int = int`
+//! -- the name stays tied to the worktree's code, its only source, marked
+//! `fallback`: not always what runs (the user's answer to question 390).
+//!
 //! Besides the calls and references read out of the files, each import is
 //! an edge, to the module or the name it names, a `from` import's module
 //! one to its file, and each class's base is a reference to that class; a
@@ -64,7 +76,7 @@ use std::sync::LazyLock;
 use tree_sitter::Parser;
 
 use crate::extract::python::is_identifier;
-use crate::extract::{Call, CallKind, Import, Kind, RefKind, Reference, Symbol};
+use crate::extract::{Branch, Call, CallKind, Import, Kind, RefKind, Reference, Symbol};
 use crate::lang::Language;
 
 use super::nix::{folder, joined};
@@ -72,7 +84,7 @@ use super::{DEPTH, Definition, Edge, File, Resolution, Rule, Use, around, nestin
 
 mod conditions;
 
-use conditions::{Condition, Given, Names};
+use conditions::{Condition, Given, Names, host_has};
 
 /// The names of the methods the types of Python's library have, as
 /// evals/python/builtin_methods.py wrote them.
@@ -82,6 +94,30 @@ static LIBRARY_METHODS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
         .filter(|line| !line.starts_with('#'))
         .collect()
 });
+
+/// What `from M import *` binds of each module of Python's library written
+/// in C, as evals/python/builtin_methods.py wrote them.
+static LIBRARY_STARS: LazyLock<HashMap<&'static str, HashSet<&'static str>>> =
+    LazyLock::new(|| {
+        include_str!("python_stars.txt")
+            .lines()
+            .filter(|line| !line.starts_with('#'))
+            .filter_map(|line| {
+                let mut names = line.split(' ');
+                Some((names.next()?, names.collect()))
+            })
+            .collect()
+    });
+
+/// Whether `from module import *` may bind a name, where the module has no
+/// source in the worktree: what the library's module written in C binds.
+/// Of any other module, what it binds is not known: `from nt import *` in
+/// os.py's branch for Windows would otherwise rebind each of its names.
+fn starred(module: &str, name: &str) -> bool {
+    LIBRARY_STARS
+        .get(module)
+        .is_some_and(|names| names.contains(name))
+}
 
 /// Whether the types of Python's library have a method of this name, which
 /// a method call graff cannot tell the receiver's type of may reach instead
@@ -113,6 +149,22 @@ enum Binding<'a> {
     Definition(Definition),
     Import(&'a Import),
 }
+
+impl Binding<'_> {
+    /// What tells it from any other: the definition, or the import's place
+    /// in memory.
+    fn key(self) -> (usize, usize, bool) {
+        match self {
+            Binding::Definition(d) => (d.file, d.symbol, false),
+            Binding::Import(import) => (std::ptr::from_ref(import) as usize, 0, true),
+        }
+    }
+}
+
+/// What `binding` keeps of `rebound`'s answers: the binding it read on,
+/// and the file of the use being resolved and the innermost branch around
+/// it there.
+type Rebind = ((usize, usize, bool), Option<(usize, Option<usize>)>);
 
 /// What looking a name or a path up comes to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -191,6 +243,22 @@ struct Index<'a> {
     registering: RefCell<HashSet<(usize, u32)>>,
     /// Each file's star imports, `from m import *`.
     stars: Vec<Vec<&'a Import>>,
+    /// Each file's names a scope defines and assigns a name or a path alone
+    /// too, `parse_int = int`, by the definition they are in, `` for the
+    /// module's top, and the name: what extraction gives `via` "value".
+    values: Vec<HashMap<&'a str, HashMap<&'a str, Vec<&'a Import>>>>,
+    /// Of each file's names a scope binds by more than one definition,
+    /// import or value, the definitions and the imports, by `Binding::key`:
+    /// what `rebound` reads on, with every name of the top of a file that
+    /// star imports a module of the library written in C (`c_stars`).
+    rebinding: Vec<HashSet<(usize, usize, bool)>>,
+    /// Whether each file star imports a module of the library written in C.
+    c_stars: Vec<bool>,
+    /// What `rebound` gave for a use in another file than the binding's.
+    rebinds: RefCell<HashMap<Rebind, (Binding<'a>, bool)>>,
+    /// The values and the imports being read for `rebound`, by file and
+    /// line, which one that reads itself again reads no further.
+    valuing: RefCell<HashSet<(usize, u32)>>,
     /// Each file's classes' bases, by the class's qualified name.
     bases: Vec<HashMap<&'a str, Vec<&'a Import>>>,
     /// The folders each file's absolute imports are looked for in, in order.
@@ -209,6 +277,9 @@ struct Index<'a> {
     /// The branch each branch of a file is in, by their places among the
     /// file's.
     parents: Vec<Vec<Option<usize>>>,
+    /// Of each `except` clause among a file's branches, the block of its
+    /// `try`, by their places among the file's.
+    tried: Vec<Vec<Option<usize>>>,
     /// Each branch's condition, parsed when first read.
     conditions: Vec<Vec<OnceCell<Condition<'a>>>>,
     parser: RefCell<Parser>,
@@ -252,12 +323,18 @@ impl<'a> Index<'a> {
             registered: vec![HashMap::new(); n],
             registering: RefCell::new(HashSet::new()),
             stars: vec![Vec::new(); n],
+            values: vec![HashMap::new(); n],
+            rebinding: vec![HashSet::new(); n],
+            c_stars: vec![false; n],
+            rebinds: RefCell::new(HashMap::new()),
+            valuing: RefCell::new(HashSet::new()),
             bases: vec![HashMap::new(); n],
             roots: vec![Vec::new(); n],
             methods: HashMap::new(),
             declared_names: HashSet::new(),
             siblings: vec![HashMap::new(); n],
             parents: vec![Vec::new(); n],
+            tried: vec![Vec::new(); n],
             conditions: Vec::with_capacity(n),
             parser: RefCell::new(crate::extract::python::parser()),
             names: Vec::with_capacity(n),
@@ -324,6 +401,7 @@ impl<'a> Index<'a> {
                 }
             }
             index.parents[f] = nesting(&file.extraction.branches);
+            index.tried[f] = tried(&file.extraction.branches, &index.parents[f]);
             let branched = |s: usize| {
                 around(
                     &file.extraction.branches,
@@ -365,6 +443,12 @@ impl<'a> Index<'a> {
                         .entry(bound(import))
                         .or_default()
                         .push(import),
+                    Some("value") => index.values[f]
+                        .entry(scope)
+                        .or_default()
+                        .entry(bound(import))
+                        .or_default()
+                        .push(import),
                     Some("sys.modules") => {
                         if let Some(name) = own_entry(file.path, &import.path) {
                             index.registered[f].entry(name).or_insert(import);
@@ -373,6 +457,47 @@ impl<'a> Index<'a> {
                     _ => {}
                 }
             }
+            let mut names: HashSet<(&str, &str)> = index.siblings[f]
+                .keys()
+                .map(|&s| {
+                    let qualified = file.extraction.symbols[s].qualified.as_str();
+                    qualified.rsplit_once('.').unwrap_or(("", qualified))
+                })
+                .collect();
+            for (scope, name) in index.imports[f]
+                .iter()
+                .chain(&index.values[f])
+                .flat_map(|(&scope, names)| names.keys().map(move |&name| (scope, name)))
+            {
+                let bound = usize::from(index.in_scope(f, scope, name).is_some())
+                    + listed(&index.imports[f], scope, name).len()
+                    + listed(&index.values[f], scope, name).len();
+                if bound > 1 {
+                    names.insert((scope, name));
+                }
+            }
+            let mut rebinding = HashSet::new();
+            for (scope, name) in names {
+                if let Some(s) = index.in_scope(f, scope, name) {
+                    let all = index.siblings[f]
+                        .get(&s)
+                        .cloned()
+                        .unwrap_or_else(|| vec![s]);
+                    rebinding.extend(
+                        all.into_iter()
+                            .map(|s| Binding::Definition(Definition { file: f, symbol: s }).key()),
+                    );
+                }
+                rebinding.extend(
+                    listed(&index.imports[f], scope, name)
+                        .iter()
+                        .map(|import| Binding::Import(import).key()),
+                );
+            }
+            index.rebinding[f] = rebinding;
+            index.c_stars[f] = index.stars[f]
+                .iter()
+                .any(|star| LIBRARY_STARS.contains_key(star.path.as_str()));
         }
         for file in files {
             let branches = &file.extraction.branches;
@@ -535,21 +660,50 @@ impl<'a> Index<'a> {
         self.files[d.file].extraction.symbols[d.symbol].start
     }
 
-    /// What a scope of a file binds a name to, `` for the module's top: of
-    /// the definitions it gives the name, `f` and `f#2`, and the imports
-    /// that bind it there, the first definition no branch leaves out where
-    /// the use being resolved is, else the first such import, else the
-    /// first definition, else the first import.
-    fn binding(&self, file: usize, scope: &str, name: &str) -> Option<Binding<'a>> {
+    /// What a scope of a file binds a name to, `` for the module's top:
+    /// what `first_bound` gives, as `rebound` reads it on, with whether it
+    /// is the fallback of what has no source in the worktree.
+    fn binding(&self, file: usize, scope: &str, name: &str) -> Option<(Binding<'a>, bool)> {
+        let first = self.first_bound(file, scope, name)?;
+        if !(scope.is_empty() && self.c_stars[file]) && !self.rebinding[file].contains(&first.key())
+        {
+            return Some((first, false));
+        }
+        // From another file, what `rebound` gives depends on the branches
+        // around the use alone, which its innermost tells.
+        let key = match self.at.get() {
+            Some((f, _)) if f == file => return Some(self.rebound(file, scope, name, first)),
+            Some((f, line)) => {
+                let branches = &self.files[f].extraction.branches;
+                (
+                    first.key(),
+                    Some((f, around(branches, &self.parents[f], line).next())),
+                )
+            }
+            None => (first.key(), None),
+        };
+        if let Some(&found) = self.rebinds.borrow().get(&key) {
+            return Some(found);
+        }
+        let found = self.rebound(file, scope, name, first);
+        self.rebinds.borrow_mut().insert(key, found);
+        Some(found)
+    }
+
+    /// Of the definitions a scope of a file gives a name, `f` and `f#2`,
+    /// and the imports that bind it there, the first definition no branch
+    /// leaves out where the use being resolved is, else the first such
+    /// import, else the first definition, else the first import.
+    fn first_bound(&self, file: usize, scope: &str, name: &str) -> Option<Binding<'a>> {
         let first = self.in_scope(file, scope, name);
         let definition = |s: usize| Definition { file, symbol: s };
         // A definition in no branch is what the scope binds the name to.
         if let Some(s) = first
             && !self.siblings[file].contains_key(&s)
         {
-            let branches = &self.files[file].extraction.branches;
+            // A `try`'s block runs where nothing in it fails.
             let line = self.symbol_line(definition(s));
-            if around(branches, &self.parents[file], line).next().is_none() {
+            if self.conditional(file, line).next().is_none() {
                 return Some(Binding::Definition(definition(s)));
             }
         }
@@ -588,6 +742,235 @@ impl<'a> Index<'a> {
             .or_else(|| imports.first().map(|import| Binding::Import(import)))
     }
 
+    /// What a scope binds a name to once it has run as far as the use being
+    /// resolved sees, from `first`, what `first_bound` gives: the last of
+    /// the definitions and the imports of the worktree that run wherever
+    /// `first` does, after it -- in no branch it is not in, a `try`'s block
+    /// aside -- or in its stead, in the block of the `try` whose `except`
+    /// clause holds it, as locale.py's `def setlocale` after the one its
+    /// `except ImportError:` gives. With whether the scope may bind the
+    /// name again, after that or in its stead, to what has no source in
+    /// the worktree, which it is then the fallback of: an import of a
+    /// module the worktree does not hold, as posixpath.py's `try: from
+    /// posix import _path_normpath as normpath` before its `def normpath`;
+    /// a star import of one that may bind the name, `from _heapq import *`
+    /// after heapq.py's defs; a name or a path assigned alone that reaches
+    /// nothing there, `parse_int = int`.
+    fn rebound(
+        &self,
+        file: usize,
+        scope: &str,
+        name: &str,
+        first: Binding<'a>,
+    ) -> (Binding<'a>, bool) {
+        let one = self.in_scope(file, scope, name).map(|s| [s]);
+        let definitions = match &one {
+            Some(one) => self.siblings[file]
+                .get(&one[0])
+                .map(Vec::as_slice)
+                .unwrap_or(one),
+            None => &[],
+        };
+        let (imports, values) = (
+            listed(&self.imports[file], scope, name),
+            listed(&self.values[file], scope, name),
+        );
+        let stars = || {
+            self.stars[file]
+                .iter()
+                .filter(|star| scope.is_empty() && starred(&star.path, name))
+        };
+        if definitions.len() + imports.len() + values.len() + stars().count() < 2 {
+            return (first, false);
+        }
+        let given = self.given();
+        let line = |b: Binding| match b {
+            Binding::Definition(d) => self.symbol_line(d),
+            Binding::Import(import) => import.line,
+        };
+        let at = line(first);
+        let held: Vec<usize> = self.conditional(file, at).collect();
+        let replaced = definitions
+            .iter()
+            .map(|&s| Binding::Definition(Definition { file, symbol: s }))
+            .chain(
+                imports
+                    .iter()
+                    .filter(|import| !self.foreign(file, import) && self.on_host(file, import))
+                    .map(|import| Binding::Import(import)),
+            )
+            .filter(|&b| {
+                let l = line(b);
+                l != at
+                    && self.runs_after(file, scope, at, l, &given)
+                    && self.conditional(file, l).all(|b| held.contains(&b))
+            })
+            .max_by_key(|&b| {
+                let l = line(b);
+                (l > at, l)
+            });
+        let chosen = replaced.unwrap_or(first);
+        if let Binding::Import(import) = chosen
+            && self.foreign(file, import)
+        {
+            return (chosen, false);
+        }
+        let at = line(chosen);
+        let after = |l: u32| self.runs_after(file, scope, at, l, &given);
+        // An import of a module the host's CPython lacks fails, and binds
+        // nothing: ntpath.py's `from nt import _path_splitroot_ex as
+        // splitroot` on Linux.
+        let fallback = imports.iter().any(|import| {
+            after(import.line)
+                && self.foreign(file, import)
+                && host_has(&imported_module(import)) != Some(false)
+        }) || stars()
+            .any(|star| after(star.line) && self.module(file, &star.path).is_none())
+            || values
+                .iter()
+                .any(|value| after(value.line) && self.sourceless(file, value));
+        (chosen, fallback)
+    }
+
+    /// Whether what a scope of a file binds on a line runs after what it
+    /// binds at `at`, or in its stead, where the use being resolved is:
+    /// later, or in the block of a `try` whose `except` clause holds `at`;
+    /// in no branch left out there; and before the use, which runs later
+    /// where it is in another file or in a function of the scope.
+    fn runs_after(&self, file: usize, scope: &str, at: u32, line: u32, given: &Given<'a>) -> bool {
+        (line > at || self.instead(file, at, line))
+            && !self.left_out(file, line, given)
+            && self.sees(file, scope, line)
+    }
+
+    /// Whether the use being resolved runs after a scope of a file has run
+    /// past a line: in another file, past the line, or in a function the
+    /// scope holds, which runs once called.
+    fn sees(&self, file: usize, scope: &str, line: u32) -> bool {
+        let Some((f, at)) = self.at.get() else {
+            return true;
+        };
+        f != file
+            || at > line
+            || self.files[file].extraction.symbols.iter().any(|symbol| {
+                matches!(symbol.kind, Kind::Function | Kind::Method)
+                    && symbol.start <= at
+                    && at <= symbol.end
+                    && (scope.is_empty()
+                        || symbol
+                            .qualified
+                            .strip_prefix(scope)
+                            .is_some_and(|rest| rest.starts_with('.')))
+            })
+    }
+
+    /// The branches a line of a file is in that it runs under a condition
+    /// in: all but a `try`'s block, which runs where nothing in it fails.
+    fn conditional(&self, file: usize, line: u32) -> impl Iterator<Item = usize> + '_ {
+        let branches = &self.files[file].extraction.branches;
+        around(branches, &self.parents[file], line).filter(|&b| branches[b].condition != "try")
+    }
+
+    /// Whether a line of a file is in an `except` clause of a `try` whose
+    /// block holds another line: what it binds there, it binds in the stead
+    /// of what that block binds.
+    fn instead(&self, file: usize, at: u32, line: u32) -> bool {
+        let branches = &self.files[file].extraction.branches;
+        around(branches, &self.parents[file], at).any(|b| {
+            self.tried[file][b]
+                .is_some_and(|t| branches[t].start <= line && line <= branches[t].end)
+        })
+    }
+
+    /// Whether the module an import names has no source in the worktree.
+    fn foreign(&self, file: usize, import: &Import) -> bool {
+        self.module(file, &imported_module(import)).is_none()
+    }
+
+    /// Whether an import runs on the host and binds its name past what an
+    /// `except` clause binds: in a `try`'s block, where no import there
+    /// fails, which runs the clause. An import fails where its module is one the
+    /// host's CPython lacks, or one of the worktree whose name it reaches
+    /// is under a branch the host leaves out: _pyrepl/windows_console.py's
+    /// `from ctypes import get_last_error, .., WinError` reaches defs under
+    /// ctypes's `if _os.name == "nt":`, so on Linux its `except` clause's
+    /// defs run.
+    fn on_host(&self, file: usize, import: &'a Import) -> bool {
+        let branches = &self.files[file].extraction.branches;
+        let Some(block) = around(branches, &self.parents[file], import.line)
+            .find(|&b| branches[b].condition == "try")
+        else {
+            return self.import_runs(file, import);
+        };
+        let (start, end) = (branches[block].start, branches[block].end);
+        self.files[file]
+            .extraction
+            .imports
+            .iter()
+            .filter(|other| {
+                matches!(other.via.as_deref(), Some("import" | "from"))
+                    && !other.glob
+                    && start <= other.line
+                    && other.line <= end
+            })
+            .all(|other| self.import_runs(file, other))
+    }
+
+    /// Whether an import alone binds its name on the host: `on_host`'s.
+    fn import_runs(&self, file: usize, import: &'a Import) -> bool {
+        if self.foreign(file, import) {
+            return host_has(&imported_module(import)) != Some(false);
+        }
+        let key = (file, import.line);
+        if !self.valuing.borrow_mut().insert(key) {
+            return true;
+        }
+        let at = self.at.replace(Some(key));
+        let target = self.imported(file, import, 1);
+        self.at.set(at);
+        self.valuing.borrow_mut().remove(&key);
+        match target {
+            Some((Target::Definition(d), _)) => {
+                !self.left_out(d.file, self.symbol_line(d), &Given::new())
+            }
+            _ => true,
+        }
+    }
+
+    /// Whether a name or a path a scope assigns alone, `via` "value",
+    /// reaches nothing in the worktree, where it is assigned: a builtin,
+    /// `int`, or what a module the worktree does not hold binds.
+    fn sourceless(&self, file: usize, value: &'a Import) -> bool {
+        let key = (file, value.line);
+        if !self.valuing.borrow_mut().insert(key) {
+            return false;
+        }
+        let at = self.at.replace(Some(key));
+        let reach = self
+            .path(file, value.from.as_deref(), &value.path, None, None, 1)
+            .0;
+        self.at.set(at);
+        self.valuing.borrow_mut().remove(&key);
+        matches!(reach, Reach::Outside | Reach::Unbound)
+    }
+
+    /// Whether a star import of a module with no source in the worktree may
+    /// bind a name after the star import of a file that brings it, or in its
+    /// stead: datetime.py's `from _datetime import *` in the `try` whose
+    /// `except ImportError:` brings _pydatetime's.
+    fn starred_over(&self, file: usize, found: &Import, name: &str) -> bool {
+        if !self.c_stars[file] {
+            return false;
+        }
+        let given = self.given();
+        self.stars[file].iter().any(|star| {
+            !std::ptr::eq(*star, found)
+                && starred(&star.path, name)
+                && self.runs_after(file, "", found.line, star.line, &given)
+                && self.module(file, &star.path).is_none()
+        })
+    }
+
     /// What a name extraction tied to a definition of its file reaches:
     /// what the definition's scope binds the name to, `binding`'s.
     fn local(&self, file: usize, s: usize) -> Reach<'a> {
@@ -595,11 +978,15 @@ impl<'a> Index<'a> {
         let (scope, name) = qualified.rsplit_once('.').unwrap_or(("", qualified));
         let name = name.split('#').next().unwrap_or(name);
         match self.binding(file, scope, name) {
-            Some(Binding::Import(import)) => match self.imported(file, import, 1) {
-                Some(target) => Reach::Found(target, Rule::Import),
+            Some((Binding::Import(import), fallback)) => match self.imported(file, import, 1) {
+                Some((target, fell)) => {
+                    Reach::Found(target, marked(Rule::Import, fallback || fell))
+                }
                 None => Reach::Outside,
             },
-            Some(Binding::Definition(d)) => Reach::Found(Target::Definition(d), Rule::Scope),
+            Some((Binding::Definition(d), fallback)) => {
+                Reach::Found(Target::Definition(d), marked(Rule::Scope, fallback))
+            }
             None => Reach::Found(
                 Target::Definition(Definition { file, symbol: s }),
                 Rule::Scope,
@@ -671,12 +1058,14 @@ impl<'a> Index<'a> {
     fn name(&self, file: usize, from: Option<&str>, name: &str) -> Reach<'a> {
         for scope in self.scopes(file, from) {
             match self.binding(file, scope, name) {
-                Some(Binding::Definition(d)) => {
-                    return Reach::Found(Target::Definition(d), Rule::Scope);
+                Some((Binding::Definition(d), fallback)) => {
+                    return Reach::Found(Target::Definition(d), marked(Rule::Scope, fallback));
                 }
-                Some(Binding::Import(import)) => {
+                Some((Binding::Import(import), fallback)) => {
                     return match self.imported(file, import, 1) {
-                        Some(target) => Reach::Found(target, Rule::Import),
+                        Some((target, fell)) => {
+                            Reach::Found(target, marked(Rule::Import, fallback || fell))
+                        }
                         None => Reach::Outside,
                     };
                 }
@@ -685,9 +1074,10 @@ impl<'a> Index<'a> {
         }
         for star in &self.stars[file] {
             if let Some(module) = self.module(file, &star.path)
-                && let Some((target, _)) = self.attribute(module, name, 1)
+                && let Some((target, rule)) = self.attribute(module, name, 1)
             {
-                return Reach::Found(target, Rule::Glob);
+                let fallback = rule == Rule::Fallback || self.starred_over(file, star, name);
+                return Reach::Found(target, marked(Rule::Glob, fallback));
             }
         }
         Reach::Unbound
@@ -695,21 +1085,23 @@ impl<'a> Index<'a> {
 
     /// What the name an import binds reaches: the module `import a.b as m`
     /// names, the package `import a.b` binds `a` to, the name or the
-    /// submodule `from m import x` names.
-    fn imported(&self, file: usize, import: &Import, depth: usize) -> Option<Target<'a>> {
+    /// submodule `from m import x` names; with whether that is a fallback.
+    fn imported(&self, file: usize, import: &Import, depth: usize) -> Option<(Target<'a>, bool)> {
         if import.via.as_deref() == Some("import") {
             let path = match import.alias {
                 Some(_) => import.path.as_str(),
                 None => import.path.split('.').next()?,
             };
-            return self.module(file, path).map(Target::Module);
+            return self
+                .module(file, path)
+                .map(|module| (Target::Module(module), false));
         }
         let (module, name) = split_last(&import.path);
         let module = self
             .module(file, &module)
             .or_else(|| self.module_by_names(file, &module, depth))?;
         self.attribute(module, name, depth)
-            .map(|(target, _)| target)
+            .map(|(target, rule)| (target, rule == Rule::Fallback))
     }
 
     /// The module a `from` import's dotted path names where no file or
@@ -850,19 +1242,22 @@ impl<'a> Index<'a> {
         }
         if let Module::File(f) = module {
             match self.binding(f, "", name) {
-                Some(Binding::Definition(d)) => return Some((Target::Definition(d), Rule::Path)),
-                Some(Binding::Import(import)) => {
+                Some((Binding::Definition(d), fallback)) => {
+                    return Some((Target::Definition(d), marked(Rule::Path, fallback)));
+                }
+                Some((Binding::Import(import), fallback)) => {
                     return self
                         .imported(f, import, depth + 1)
-                        .map(|target| (target, Rule::Path));
+                        .map(|(target, fell)| (target, marked(Rule::Path, fallback || fell)));
                 }
                 None => {}
             }
             for star in &self.stars[f] {
                 if let Some(held) = self.module(f, &star.path)
-                    && let Some((target, _)) = self.attribute(held, name, depth + 1)
+                    && let Some((target, rule)) = self.attribute(held, name, depth + 1)
                 {
-                    return Some((target, Rule::Glob));
+                    let fallback = rule == Rule::Fallback || self.starred_over(f, star, name);
+                    return Some((target, marked(Rule::Glob, fallback)));
                 }
             }
         }
@@ -1306,6 +1701,8 @@ impl<'a> Index<'a> {
             let Reach::Found(target, rule) = reach else {
                 break;
             };
+            // What a path reaches past a fallback, it reaches through one.
+            let fell = rule == Rule::Fallback;
             reach = match target {
                 Target::Module(module) => match self.attribute(module, name, depth) {
                     Some((target, rule)) => Reach::Found(target, rule),
@@ -1335,6 +1732,9 @@ impl<'a> Index<'a> {
                     }
                 }
             };
+            if let Reach::Found(target, rule) = reach {
+                reach = Reach::Found(target, marked(rule, fell));
+            }
             written_as = name;
         }
         (reach, through)
@@ -1543,7 +1943,9 @@ impl<'a> Index<'a> {
                     .and_then(|module| self.attribute(module, name, 1))
                 {
                     Some((target @ Target::Module(_), _)) => Reach::Found(target, Rule::File),
-                    Some((target, _)) => Reach::Found(target, Rule::Path),
+                    Some((target, rule)) => {
+                        Reach::Found(target, marked(Rule::Path, rule == Rule::Fallback))
+                    }
                     None => Reach::Outside,
                 };
                 (Use::Import, self.resolution(reach))
@@ -1672,6 +2074,54 @@ fn names<'a>(file: &File<'a>) -> Names<'a> {
         }
     }
     names
+}
+
+/// What a file's scope lists by a name: its imports or its values.
+fn listed<'m, 'a>(
+    names: &'m HashMap<&'a str, HashMap<&'a str, Vec<&'a Import>>>,
+    scope: &str,
+    name: &str,
+) -> &'m [&'a Import] {
+    names
+        .get(scope)
+        .and_then(|names| names.get(name))
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+}
+
+/// The module an import names: the package `import a.b` binds `a` to,
+/// the module `import a.b as m` names, a `from` import's module.
+fn imported_module(import: &Import) -> String {
+    match (import.via.as_deref(), &import.alias) {
+        (Some("import"), None) => import.path.split('.').next().unwrap_or("").to_string(),
+        (Some("import"), Some(_)) => import.path.clone(),
+        _ => split_last(&import.path).0,
+    }
+}
+
+/// A rule, or `fallback` where what it found is the fallback of what has
+/// no source in the worktree.
+fn marked(rule: Rule, fallback: bool) -> Rule {
+    if fallback { Rule::Fallback } else { rule }
+}
+
+/// Of each `except` clause among a file's branches, the block of its
+/// `try`: the branch before it with the same parent and the condition
+/// `try`, past the statement's other `except` clauses.
+fn tried(branches: &[Branch], parents: &[Option<usize>]) -> Vec<Option<usize>> {
+    let caught = |b: &Branch| b.condition == "except" || b.condition.starts_with("except ");
+    let mut found = vec![None; branches.len()];
+    for (b, branch) in branches.iter().enumerate() {
+        if !caught(branch) {
+            continue;
+        }
+        found[b] = (0..b)
+            .rev()
+            .filter(|&t| parents[t] == parents[b])
+            .find(|&t| !caught(&branches[t]))
+            .filter(|&t| branches[t].condition == "try");
+    }
+    found
 }
 
 /// The name a use reaches what it reaches by: its path's last, which is
@@ -3151,5 +3601,232 @@ sys.modules['elsewhere.abc'] = _collections_abc
             ("elsewhere/__init__.py", b""),
             ("other.py", other),
         ]);
+    }
+
+    #[test]
+    fn a_name_a_c_module_may_bind_again_reaches_its_python_fallback() {
+        // Python 3.14's heapq.py defines heappush, then takes _heapq's with
+        // `from _heapq import *`, and functools.py takes _functools's
+        // partial after its class: what runs has no source in the
+        // worktree, so a use stays tied to the Python definition, marked
+        // (the user's answer 390). merge, which _heapq does not bind, and
+        // a name _heapq binds nowhere here stay as they were.
+        let heapq = br#"def heappush(heap, item):
+    pass
+
+
+def merge():
+    heappush([], 1)  # heappush -> heappush (fallback)
+
+
+try:
+    from _heapq import *
+except ImportError:
+    pass
+"#;
+        let functools = br#"class partial:
+    pass
+
+
+try:
+    from _functools import partial
+except ImportError:
+    pass
+
+
+def wraps():
+    return partial()  # partial -> partial (fallback)
+"#;
+        let user = br#"import heapq
+from heapq import heappush  # heappush -> heapq.py heappush (fallback)
+from heapq import merge  # merge -> heapq.py merge (path)
+import functools
+
+heapq.heappush([], 1)  # heappush -> heapq.py heappush (fallback)
+heapq.merge()  # merge -> heapq.py merge (path)
+functools.partial()  # partial -> functools.py partial (fallback)
+"#;
+        written_edges(&[
+            ("heapq.py", heapq),
+            ("functools.py", functools),
+            ("user.py", user),
+        ]);
+    }
+
+    #[test]
+    fn a_name_an_import_binds_before_its_except_clause_reaches_the_fallback() {
+        // posixpath.py: `try: from posix import _path_normpath as
+        // normpath`, else a def; warnings.py: `from _py_warnings import
+        // warn`, then _warnings's where it can; datetime.py: _datetime's
+        // star import, else _pydatetime's.
+        let posixpath = br#"try:
+    from posix import _path_normpath as normpath
+except ImportError:
+    def normpath(path):
+        pass
+
+
+def abspath(path):
+    return normpath(path)  # normpath -> normpath (fallback)
+"#;
+        let warnings = br#"from _py_warnings import warn
+
+try:
+    from _warnings import warn
+except ImportError:
+    pass
+"#;
+        let py_warnings = b"def warn(message):\n    pass\n";
+        let datetime = br#"try:
+    from _datetime import *
+except ImportError:
+    from _pydatetime import *
+"#;
+        let pydatetime = b"class date:\n    pass\n\n\ndef helper():\n    pass\n";
+        // On Linux, ntpath.py's import from nt fails: its def runs. os.py's
+        // star import from nt, in its branch for Windows, binds what is not
+        // known, which rebinds none of its names.
+        let ntpath = br#"try:
+    from nt import _path_splitroot_ex as splitroot
+except ImportError:
+    def splitroot(p):
+        pass
+
+
+def splitdrive(p):
+    return splitroot(p)  # splitroot -> splitroot (scope)
+"#;
+        let os = br#"import sys
+_names = sys.builtin_module_names
+if 'posix' in _names:
+    name = 'posix'
+    from posix import *
+    import posixpath as path
+elif 'nt' in _names:
+    name = 'nt'
+    from nt import *
+    import ntpath as path
+"#;
+        let user = br#"import warnings
+import datetime
+import os
+
+warnings.warn("x")  # warn -> _py_warnings.py warn (fallback)
+datetime.date()  # date -> _pydatetime.py date (fallback)
+datetime.helper()  # helper -> _pydatetime.py helper (glob)
+os.path.abspath("x")  # abspath -> posixpath.py abspath (path)
+print(os.name)  # name -> os.py name (path)
+"#;
+        written_edges(&[
+            ("ntpath.py", ntpath),
+            ("os.py", os),
+            ("warnings.py", warnings),
+            ("_py_warnings.py", py_warnings),
+            ("datetime.py", datetime),
+            ("_pydatetime.py", pydatetime),
+            ("posixpath.py", posixpath),
+            ("user.py", user),
+        ]);
+    }
+
+    #[test]
+    fn a_def_a_branch_rebinds_to_a_builtin_reaches_the_def_marked() {
+        // _strptime.py's `parse_int`: a def where the locale has its own
+        // digits, else `parse_int = int`. A name rebound to one of the
+        // worktree's stays as it was.
+        let strptime = br#"def helper(s):
+    pass
+
+
+def _strptime(digits, found):
+    if digits:
+        def parse_int(s):
+            pass
+    else:
+        parse_int = int
+    parse_int(found)  # parse_int -> _strptime.parse_int (fallback)
+    if digits:
+        def other(s):
+            pass
+    else:
+        other = helper
+    other(found)  # other -> _strptime.other (scope)
+"#;
+        written_edges(&[("_strptime.py", strptime)]);
+    }
+
+    #[test]
+    fn what_a_try_s_block_imports_wins_over_its_except_clause_where_it_runs() {
+        // _pyrepl/windows_console.py takes ctypes's WinError, which ctypes
+        // defines on Windows alone: on Linux the import fails, and the
+        // `except` clause's defs run, the import's other names' included.
+        // An import that runs there wins.
+        let ctypes = br#"import os as _os
+
+
+def CDLL():
+    pass
+
+
+if _os.name == "nt":
+    def WinError(code=None):
+        pass
+"#;
+        let console = br#"try:
+    from ctypes import (CDLL as WinDLL,
+                        WinError)
+except ImportError:
+    def WinDLL():
+        pass
+
+    def WinError(code=None):
+        pass
+
+
+def f():
+    WinDLL()  # WinDLL -> WinDLL (scope)
+    WinError()  # WinError -> WinError (scope)
+"#;
+        let unix = br#"try:
+    from ctypes import CDLL
+except ImportError:
+    def CDLL():
+        pass
+
+
+def f():
+    CDLL()  # CDLL -> ctypes/__init__.py CDLL (import)
+"#;
+        written_edges(&[
+            ("ctypes/__init__.py", ctypes),
+            ("console.py", console),
+            ("unix.py", unix),
+        ]);
+    }
+
+    #[test]
+    fn a_later_top_level_def_wins_over_one_in_an_except_clause() {
+        // locale.py defines setlocale under `except ImportError:` when
+        // _locale is missing, then again at its top, which is what a
+        // function reads once called; code between the two reads the
+        // first, or _locale's.
+        let locale = br#"try:
+    from _locale import *
+except ImportError:
+    def setlocale(category, value=None):
+        pass
+
+
+def getpreferredencoding():
+    return setlocale(0)  # setlocale -> setlocale#2 (scope)
+
+
+setlocale(0)  # setlocale -> setlocale (fallback)
+
+
+def setlocale(category, locale=None):
+    pass
+"#;
+        written_edges(&[("locale.py", locale)]);
     }
 }

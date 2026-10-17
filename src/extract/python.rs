@@ -36,6 +36,9 @@
 //! putting a module in `sys.modules` under a dotted name,
 //! `sys.modules['collections.abc'] = _collections_abc`, is an import of
 //! that name, `via` "sys.modules", whose alias is the value as written.
+//! A name a scope defines with a def or a class and assigns a name or a
+//! path alone too, `parse_int = int`, is an import of the value as
+//! written, `via` "value", under the name.
 
 use std::collections::{HashMap, HashSet};
 
@@ -104,6 +107,7 @@ pub fn extract(source: &[u8]) -> Extraction {
         aliases: HashMap::new(),
         comments: HashMap::new(),
         ifs: Vec::new(),
+        tries: Vec::new(),
         too_deep: false,
     };
     scan.visit(root, 0, 0);
@@ -116,15 +120,18 @@ pub fn extract(source: &[u8]) -> Extraction {
 
 /// The branches of the file's `if` statements that hold a definition or an
 /// import, what a name reaches, or a use of a name a scope binds twice, by
-/// a def, a class or an import: those resolution reads. Of two that start
-/// on one line, the outer first.
+/// a def, a class or an import; and of its `try` statements that hold a
+/// definition or an import, the block and the `except` clauses that do:
+/// those resolution reads. Of two that start on one line, the outer first.
 fn kept_branches(reader: &Reader, source: &[u8]) -> Vec<Branch> {
-    if reader.scan.ifs.is_empty() {
+    if reader.scan.ifs.is_empty() && reader.scan.tries.is_empty() {
         return Vec::new();
     }
     let out = &reader.out;
     let mut held: Vec<u32> = out.symbols[1..].iter().map(|s| s.start).collect();
     held.extend(out.imports.iter().map(|i| i.line));
+    held.sort_unstable();
+    let defined = held.clone();
     let mut bindings: HashMap<(usize, &str), u32> = HashMap::new();
     let definitions = reader
         .scan
@@ -155,10 +162,11 @@ fn kept_branches(reader: &Reader, source: &[u8]) -> Vec<Branch> {
         );
     }
     held.sort_unstable();
-    let holds = |(start, end): (u32, u32)| {
-        let at = held.partition_point(|&line| line < start);
-        held.get(at).is_some_and(|&line| line <= end)
+    let within = |lines: &[u32], (start, end): (u32, u32)| {
+        let at = lines.partition_point(|&line| line < start);
+        lines.get(at).is_some_and(|&line| line <= end)
     };
+    let holds = |lines| within(&held, lines);
     let mut kept = Vec::new();
     for clauses in &reader.scan.ifs {
         if clauses.iter().any(|&(_, block)| block.is_some_and(holds)) {
@@ -167,6 +175,20 @@ fn kept_branches(reader: &Reader, source: &[u8]) -> Vec<Branch> {
                     .into_iter()
                     .filter(|b| holds((b.start, b.end))),
             );
+        }
+    }
+    // A `try`'s block is kept with each `except` clause that is, which
+    // resolution reads it with.
+    for clauses in &reader.scan.tries {
+        let mut clauses = clauses
+            .iter()
+            .enumerate()
+            .filter(|(c, b)| *c == 0 || within(&defined, (b.start, b.end)));
+        if let Some((_, block)) = clauses.next()
+            && (within(&defined, (block.start, block.end)) || clauses.clone().next().is_some())
+        {
+            kept.push(block.clone());
+            kept.extend(clauses.map(|(_, b)| b.clone()));
         }
     }
     kept.sort_by_key(|b| (b.start, std::cmp::Reverse(b.end)));
@@ -292,6 +314,8 @@ struct Scan<'s, 't> {
     comments: HashMap<u32, (Node<'t>, bool)>,
     /// Each `if` statement's clauses, as they are met.
     ifs: Vec<Vec<Clause<'t>>>,
+    /// Each `try` statement's block and `except` clauses, as they are met.
+    tries: Vec<Vec<Branch>>,
     too_deep: bool,
 }
 
@@ -513,6 +537,7 @@ impl<'s, 't> Scan<'s, 't> {
                 return;
             }
             "if_statement" => self.clauses(node),
+            "try_statement" => self.attempt(node),
             _ => {}
         }
         for child in children(node) {
@@ -541,6 +566,47 @@ impl<'s, 't> Scan<'s, 't> {
             }
         }
         self.ifs.push(clauses);
+    }
+
+    /// A `try` statement's block, with the condition `try`, and each of
+    /// its `except` clauses', with `except` and what it catches as written,
+    /// `except ImportError`: what runs where the block fails, in its stead.
+    /// Neither condition is a test a platform decides.
+    fn attempt(&mut self, node: Node<'t>) {
+        let Some(body) = node.child_by_field_name("body") else {
+            return;
+        };
+        let mut found = vec![Branch {
+            start: line(body),
+            end: end_line(body),
+            condition: "try".to_string(),
+        }];
+        for clause in named_children(node) {
+            let Some(block) = named_children(clause)
+                .into_iter()
+                .find(|child| child.kind() == "block")
+                .filter(|_| clause.kind() == "except_clause")
+            else {
+                continue;
+            };
+            // `except E as e` catches E.
+            let caught = clause
+                .child_by_field_name("value")
+                .map(|value| match value.kind() {
+                    "as_pattern" => value.named_child(0).unwrap_or(value),
+                    _ => value,
+                });
+            let condition = match caught {
+                Some(caught) => format!("except {}", condition(caught, self.source)),
+                None => "except".to_string(),
+            };
+            found.push(Branch {
+                start: line(block),
+                end: end_line(block),
+                condition,
+            });
+        }
+        self.tries.push(found);
     }
 
     /// A def or a class: its name, then what it holds in a scope of its own.
@@ -1725,6 +1791,7 @@ impl<'s, 't> Reader<'s, 't> {
                     self.store(left, scope, depth + 1);
                 }
                 self.sys_modules(node);
+                self.rebinding(node, scope);
             }
             "augmented_assignment" => {
                 if let Some(right) = node.child_by_field_name("right") {
@@ -2216,6 +2283,45 @@ impl<'s, 't> Reader<'s, 't> {
             line: line(assignment),
             from: None,
             via: Some("sys.modules".to_string()),
+            condition: None,
+        });
+    }
+
+    /// A name a scope defines with a def or a class, assigned a name or a
+    /// path alone, `parse_int = int`: an import of the value as written,
+    /// `via` "value", under the name, which resolution reads as what the
+    /// scope may bind the name to in the definition's stead.
+    fn rebinding(&mut self, assignment: Node<'t>, scope: usize) {
+        let (Some(left), Some(right)) = (
+            assignment.child_by_field_name("left"),
+            assignment.child_by_field_name("right"),
+        ) else {
+            return;
+        };
+        let name = self.text(left);
+        if left.kind() != "identifier"
+            || !matches!(
+                self.scan.scopes[scope].names.get(name),
+                Some(Binding::Definition(_))
+            )
+        {
+            return;
+        }
+        let Some((head, rest)) = chain(right, self.source) else {
+            return;
+        };
+        let value = std::iter::once(self.text(head))
+            .chain(rest)
+            .collect::<Vec<_>>()
+            .join(".");
+        self.out.imports.push(Import {
+            path: value,
+            alias: Some(name.to_string()),
+            glob: false,
+            public: false,
+            line: line(assignment),
+            from: self.from(),
+            via: Some("value".to_string()),
             condition: None,
         });
     }

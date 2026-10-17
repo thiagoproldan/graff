@@ -187,6 +187,36 @@ def test_score_judges_ties_at_calls_that_ran_and_says_no():
     assert monitoring.summary(*monitoring.score(broken, trace)[:2])["correct"] == 0
 
 
+def test_a_fallback_tie_is_counted_apart_where_what_ran_is_outside():
+    records = [
+        {"path": "main.py", "line": line, "end_line": line, "column": 0, "end_column": 10, "called": called}
+        for line, called in [
+            (1, {"outside": "heappush"}),
+            (2, {"path": "main.py", "qualified": "heappush", "line": 9}),
+            (3, {"path": "main.py", "qualified": "other", "line": 10}),
+            (4, {"outside": "heappush"}),
+        ]
+    ]
+    text = "heappush()\nheappush()\nheappush()\nheappush()\n"
+    symbols = {"main.py": [{"qualified": q, "start": start, "end": start}
+                           for q, start in [("heappush", 9), ("other", 10)]]}
+    trace = monitoring.Trace(records, {"main.py": text}, symbols)
+    edges = [
+        # _heapq's ran: the fallback is counted apart.
+        edge(1, "heappush", "heappush", rule="fallback"),
+        # The fallback ran: right.
+        edge(2, "heappush", "heappush", rule="fallback"),
+        # Another definition of the files ran: wrong, fallback or not.
+        edge(3, "heappush", "heappush", rule="fallback"),
+        # What ran is outside, and graff did not mark the tie: wrong.
+        edge(4, "heappush", "heappush"),
+    ]
+    judged, found, wrong, _ = monitoring.score(edges, trace)
+    summary = monitoring.summary(judged, found)
+    assert (summary["correct"], summary["wrong"], summary["fallback"]) == (1, 2, 1), summary
+    assert [w[0]["line"] for w in wrong] == [3, 4]
+
+
 def test_what_ran_maps_to_graffs_definition_by_its_line():
     symbols = {"m.py": [{"qualified": "Popen.send_signal", "start": 10, "end": 12},
                         {"qualified": "Popen.send_signal#2", "start": 20, "end": 22},

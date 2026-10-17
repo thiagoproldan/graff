@@ -30,7 +30,10 @@ one name and the imports that bind it there, a name reaches the first in
 no branch of an `if` false on the host, as pyright reads `sys.platform`
 and `os.name`, as a name the module assigns such a test once reads, or
 as the host's CPython lacks a module only some platforms build, or false
-where the name is used. Two checks hold it
+where the name is used; then the last the scope binds where the use sees
+it, and where the scope may bind the name again to what has no source in
+the worktree, the Python definition, marked `fallback` (task 382). Two
+checks hold it
 against what knows more:
 
 - **pyright.py**: graff's ties of names, each call, reference, import,
@@ -476,8 +479,10 @@ ran; graff names a function local to another as Python does, but for
 - **precision**: of graff's calls tied to a function, a method or a
   class, at a place where the trace shows a call of that name ran, the
   share tied to one that ran; a call that reached only what is outside
-  the corpus is a wrong tie. A call tied to a variable is not judged:
-  what it holds, only a run tells.
+  the corpus is a wrong tie, but for one graff marks `fallback`, the
+  Python definition of a name its module may bind again to what has no
+  source in the corpus: that is counted apart (task 382). A call tied to a
+  variable is not judged: what it holds, only a run tells.
 - **recall**: of the calls the trace shows reached a definition graff
   records, the share graff ties so, by any use of the name at its place.
 
@@ -669,3 +674,58 @@ main 4cd348a:
 - **Calls**: of monitoring.py's, 3 more right and 1 more wrong,
   Mapping.__eq__'s `self.items()` to RawConfigParser.items, an override
   no test ran there.
+
+### Result, 2026-10-17 (task 382)
+
+A name a module binds again as it runs reaches what it binds last where
+the use sees it: a later def at the module's top for code in a function
+(locale.py's `setlocale` and `localeconv`, under `except ImportError:`
+and again at the top), and what a `try`'s block binds over what its
+`except` clause binds, where every import in the block runs on the host
+(_pyrepl/windows_console.py's `from ctypes import .., WinError` does
+not on Linux, so its own defs stay). Where the module may bind the name
+again to what has no source in the corpus -- an import of a module it
+does not hold, a star import of a module of the library written in C
+that binds the name (`src/resolve/python_stars.txt`, which
+builtin_methods.py writes from the library), a name assigned alone that
+reaches nothing, `parse_int = int` -- the edge keeps the Python
+definition and is marked `fallback`, as the user chose (question 390):
+it is the only source to read, though not always what runs.
+monitoring.py counts such an edge apart where what ran is outside the
+corpus. The trace was made again at main bc7e6f8 (the one of task 124
+went with /tmp), then both builds rescored with its calls:
+
+|                                 | main, bc7e6f8          | task 382                              |
+| ------------------------------- | ---------------------- | ------------------------------------- |
+| monitoring, the library         | 0.917, recall 0.774    | 0.943, recall 0.775                   |
+| ..., calls tied right           | 4,263 of 4,651 (4,475) | 4,268 of 4,525 (4,480), 126 apart     |
+| ..., wrong: a C function ran    | 104                    | 5                                     |
+| ..., wrong: another value ran   | 38                     | 12                                    |
+| ..., wrong: another definition  | 13                     | 8                                     |
+| pyright.py, the library         | 0.992, recall 0.946    | 0.992, recall 0.946                   |
+| ..., names tied right           | 84,611 of 85,331       | 84,611 of 85,331                      |
+| resolution, callgrind           | 1,248 M instructions   | 1,357 M instructions                  |
+
+- **No call is newly wrong**: of the 388 wrong ties, 131 are gone, 126
+  counted apart (warnings.warn, functools.partial, datetime's types,
+  operator's, stat's, heapq's, posixpath's normpath, `parse_int`) and 5
+  right; 11 `fallback` ties ran the Python definition. The 5 left where
+  a function outside ran are uuid.py's `UUID` and `SafeUUID` (4) and
+  `importlib.util.cache_from_source` (1), not read here.
+- **Edges**: examples/resolve ties 1,234 of the library's 147,726 edges
+  otherwise than main: 1,201 only by the rule, now `fallback`, and 33 to
+  locale.py's later `setlocale` and `localeconv`. pyright.py's three
+  small corpora are as on main.
+- **The branches kept**: 1,607 against 1,148, the `try` blocks and the
+  `except` clauses that hold a definition or an import (445); 35 names
+  assigned alone a name the scope defines.
+- **Cost**: callgrind counts 8.8% more instructions in resolution,
+  which `rebound` keeps for a use in another file by the binding and
+  the branch around the use. Wall time could not tell it on the day:
+  examples/resolve alternating with main, 10-20 runs each on AC, TLP's
+  performance profile, boost on, load 5 to 14 from other sessions, gave
+  medians of 211-236 ms for main and 242-257 ms for this tree, with
+  quartiles overlapping (timing*.txt beside the reports).
+- **Kept outside /tmp**, in ~/.local/state/graff-382/: the calls
+  (stdlib-calls.jsonl, 21 MB), the 55 tests, both builds' monitoring.py
+  and pyright.py reports, the edges, and the scripts that made them.

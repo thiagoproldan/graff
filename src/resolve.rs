@@ -261,6 +261,13 @@ pub enum Rule {
     /// instance is of that subclass, past the one its own class reads, as
     /// class hierarchy analysis has it: an override of the method.
     Override,
+    /// Python: the definition, or what an import binds a name to, that a
+    /// module or a function may bind the name again, as it runs, to what
+    /// has no source in the worktree -- a module written in C, `from _heapq
+    /// import *` after heapq.py's defs, or a builtin, `parse_int = int` --
+    /// in whose stead it runs where that fails or is not taken: the
+    /// worktree's only code for the name, though not always what runs.
+    Fallback,
     /// C: a definition of a file the file includes, or of one that
     /// includes it; or the definition a prototype found there declares.
     Include,
@@ -294,6 +301,7 @@ impl Rule {
             Rule::Environment => "environment",
             Rule::Caller => "caller",
             Rule::Override => "override",
+            Rule::Fallback => "fallback",
             Rule::Include => "include",
             Rule::Field => "field",
             Rule::Computed => "computed",

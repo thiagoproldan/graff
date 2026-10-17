@@ -18,7 +18,7 @@ use crate::lang::Language;
 
 /// Bumped whenever what an extractor produces changes, so that results kept
 /// from an older extractor are read again rather than trusted.
-pub const VERSION: u32 = 30;
+pub const VERSION: u32 = 31;
 
 /// What the index keeps this build's extractions under: VERSION for a
 /// release, which a rebuild keeps reusing; for any other build, VERSION and

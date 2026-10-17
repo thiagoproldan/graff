@@ -9,6 +9,12 @@ shipped as its extensions, or of the types a module written in Python
 binds at its top with `X = type(..)`, as re's `Pattern` and `Match`. Names private to a class, `_x` but not `__x__`,
 are left out: a call of one is the worktree's own.
 
+It writes src/resolve/python_stars.txt too: what `from M import *` binds
+for each module of the library written in C, the names its `__all__` lists
+or else those `dir()` gives that do not start with `_`, which the resolver
+reads as what the module may bind in place of a definition of the
+worktree, as `from _heapq import *` binds heappush over heapq.py's.
+
     nix develop -c python3 evals/python/builtin_methods.py
 
 It reads the library of the Python it runs on.
@@ -24,6 +30,7 @@ import sysconfig
 HERE = os.path.dirname(os.path.abspath(__file__))
 GRAFF = os.path.dirname(os.path.dirname(HERE))
 OUT = os.path.join(GRAFF, "src", "resolve", "python_methods.txt")
+STARS = os.path.join(GRAFF, "src", "resolve", "python_stars.txt")
 
 # Folders of the library that hold its tests, its demos and IDLE, not its types.
 LEFT_OUT = {"test", "tests", "idlelib", "turtledemo", "__phello__", "site-packages"}
@@ -110,6 +117,30 @@ def methods(cls):
     return found
 
 
+def c_modules(stdlib):
+    """The library's modules written in C: those built into the interpreter
+    and those shipped as its extensions, each imported, by name."""
+    names = set(sys.builtin_module_names)
+    dynload = os.path.join(stdlib, "lib-dynload")
+    if os.path.isdir(dynload):
+        names |= {n.split(".")[0] for n in os.listdir(dynload) if n.endswith(".so")}
+    modules = {}
+    for name in sorted(names - NOT_IMPORTED):
+        try:
+            modules[name] = importlib.import_module(name)
+        except Exception:
+            continue
+    return modules
+
+
+def starred(module):
+    """What `from module import *` binds."""
+    names = getattr(module, "__all__", None)
+    if names is None:
+        names = [n for n in dir(module) if not n.startswith("_")]
+    return sorted(set(names))
+
+
 def from_c(stdlib, bound):
     """The methods of the classes the builtins and the library's C modules
     hold, and of the types `bound` names in the modules that bind them."""
@@ -117,15 +148,7 @@ def from_c(stdlib, bound):
     for value in vars(builtins).values():
         if isinstance(value, type):
             found |= methods(value)
-    names = set(sys.builtin_module_names)
-    dynload = os.path.join(stdlib, "lib-dynload")
-    if os.path.isdir(dynload):
-        names |= {n.split(".")[0] for n in os.listdir(dynload) if n.endswith(".so")}
-    for name in sorted(names - NOT_IMPORTED):
-        try:
-            module = importlib.import_module(name)
-        except Exception:
-            continue
+    for module in c_modules(stdlib).values():
         for value in list(vars(module).values()):
             if isinstance(value, type):
                 found |= methods(value)
@@ -151,6 +174,13 @@ def main():
         for name in names:
             f.write(name + "\n")
     print(f"{len(names)} names to {os.path.relpath(OUT, GRAFF)}")
+    modules = c_modules(stdlib)
+    with open(STARS, "w") as f:
+        f.write(f"# Written by evals/python/builtin_methods.py from the library of Python {version}:\n")
+        f.write("# a module written in C, then what `from` it `import *` binds.\n")
+        for name, module in sorted(modules.items()):
+            f.write(" ".join([name] + starred(module)) + "\n")
+    print(f"{len(modules)} modules to {os.path.relpath(STARS, GRAFF)}")
 
 
 if __name__ == "__main__":

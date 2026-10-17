@@ -92,7 +92,12 @@ branch of an `if` false on the host, as pyright reads `sys.platform` and
 `os.name`, as a name the module assigns such a test once reads, or as the
 host's CPython lacks a module only some platforms build (`msvcrt`, `pwd`),
 or false where the name is used, an `else`'s for code in the
-`if`'s block (`src/resolve/python.rs`). In C, a
+`if`'s block; then the last the module binds where the use sees it, a later
+top-level def for code in a function, what a `try`'s block binds over its
+`except` clause's. Where the module may bind the name again to what has no
+source in the worktree, `from _heapq import *` after heapq.py's defs,
+`parse_int = int`, the name stays tied to the Python definition, marked
+`fallback` (`src/resolve/python.rs`). In C, a
 file's functions, variables, structs, unions and enums (by the tag, else by
 the typedef that names one), enumerators, typedefs and macros, those a
 function defines for itself among them, the prototypes of what it does not

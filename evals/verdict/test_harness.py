@@ -155,6 +155,19 @@ def main():
         if harness.at_night(datetime.time.fromisoformat(moment)) != want:
             failed.append(f"at_night {moment}: want {want}")
 
+    # ctx's guard-window refusing a subagent discards the run; its name in a
+    # session's own text does not.
+    refused = {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t", "content":
+               "ctx refused a subagent: the 5-hour window is at 96%, past the 95% cap, until 00:00. Past the cap ..."}]}}
+    talk = {"type": "assistant", "message": {"content": [{"type": "text", "text": "ctx refused nothing here; the guard-window hook is idle"}]}}
+    for name, rows, want in (("a refusal", [talk, refused], True), ("talk about it", [talk], False)):
+        handle = tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False)
+        handle.write("".join(json.dumps(row) + "\n" for row in rows))
+        handle.close()
+        if harness.ctx_refused(handle.name) != want:
+            failed.append(f"ctx_refused, {name}: want {want}")
+        os.unlink(handle.name)
+
     for line in failed:
         print("FAIL " + line)
     total = len(FENCE) + len(GRAFF_USES) + 1

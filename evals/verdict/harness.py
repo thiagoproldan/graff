@@ -561,6 +561,19 @@ def graff_calls(paths):
     return count
 
 
+CTX_REFUSED = re.compile(r"ctx refused (?:a subagent|a new schedule|a headless claude run): the (?:5-hour|7-day) window")
+
+
+def ctx_refused(path):
+    """Whether ctx's guard-window refused a call in a session's stream: past
+    its cap a session loses its subagents, which would make a pair unequal
+    (note 671). It reads the window from $CTX_STATE/window/, which a run's own
+    ctx-state never holds (no status line writes it), so it should never fire;
+    a run where it did is discarded and run again, as one cut by the limit."""
+    with open(path, errors="replace") as handle:
+        return any(CTX_REFUSED.search(raw) for raw in handle if "ctx refused" in raw)
+
+
 def init_event(stream):
     with open(stream, errors="replace") as handle:
         for raw in handle:
@@ -735,6 +748,9 @@ def run(name, cell, rep, effort="max", prompt=None, cap=CAP, build=True, kind="p
         record["sessions"].append(session)
         if result.get("is_error") and re.search(r"limit|rate", str(result.get("result")), re.I):
             status = "limit"
+        if ctx_refused(stream):
+            status = "limit"
+            session["ctx_refused"] = True
         if status != "done" or not fired:
             break
         text = "continuando"

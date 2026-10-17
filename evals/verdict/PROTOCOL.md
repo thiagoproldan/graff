@@ -57,6 +57,13 @@ Task 25 runs it as written. Nothing here moves after a result is seen.
       warnings` and the flake's build (ekko's grade.py); for nixos-789, the
       checks in its entry. The judge's correctness for a task with no hidden
       test is averaged over its two orders.
+    - A run in which ctx's guard-window refused a subagent, a schedule or a
+      headless run (past ctx's cap on a window, it would make a pair unequal:
+      task 529's note 671, before any pair ran) is discarded and run again,
+      as one cut by the usage limit. It should never fire: ctx reads the
+      window from `$CTX_STATE/window/`, which no status line writes in a
+      run's own ctx-state (the probe's stayed empty), so the start rule
+      stays five + 1.3M under 95%.
     - Each task's cells are shuffled with seed 25 (`harness.py gate --dry-run`
       prints the order).
 

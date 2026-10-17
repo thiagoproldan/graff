@@ -950,6 +950,8 @@ struct Index<'a> {
     implements: HashMap<Definition, Vec<Definition>>,
     /// Every method of a crate, by name.
     methods_named: HashMap<(String, &'a str), Vec<Definition>>,
+    /// The name of every method of the worktree.
+    method_names: HashSet<&'a str>,
     /// Every item of a crate's modules, by name.
     items_named: HashMap<(String, &'a str), Vec<Definition>>,
     /// The use items of each module: names brought in, and globs.
@@ -1046,6 +1048,7 @@ impl<'a> Index<'a> {
             unplaced: HashMap::new(),
             implements: HashMap::new(),
             methods_named: HashMap::new(),
+            method_names: HashSet::new(),
             items_named: HashMap::new(),
             imports: HashMap::new(),
             brought: RefCell::new(HashMap::new()),
@@ -1208,6 +1211,7 @@ impl<'a> Index<'a> {
                 }
             }
             if symbol.kind == Kind::Method {
+                index.method_names.insert(name);
                 for crate_name in crates {
                     index
                         .methods_named
@@ -1890,10 +1894,12 @@ impl<'a> Index<'a> {
         }
         if receiver != Some("self")
             && let Some(typed) = typed
+            && self.method_names.contains(name)
         {
             // A type of the crate's, or of a library it names, that has no
             // method of the name may reach one through Deref or a trait graff
-            // does not read: then the name alone tells, as for any receiver.
+            // does not read: then the name alone tells, as for any receiver;
+            // where the worktree has no method of the name, at once.
             let found: Vec<Definition> = self
                 .receiver_types(file, scope, from, typed)
                 .into_iter()
@@ -1953,11 +1959,13 @@ impl<'a> Index<'a> {
         }
     }
 
-    /// The types a local or a field holds, as `Call::typed` gives them: a
-    /// type as written; one whose function the local was built by, where that
-    /// function's written return type is `Self` or the type -- or, unwrapped,
-    /// a Result or an Option of it; the type a free function's return names;
-    /// a field's, as the struct that holds it writes it.
+    /// The types a receiver holds, as `Call::typed` gives it: a type as
+    /// written; `T::f()`, `f()` or `path::f()` for what the function's
+    /// written return type names; `Self`; then, joined by `.`, a field, as
+    /// the struct that holds it writes it, or a method's call, `m()`, for
+    /// what the method's written return type names, and `?` for the value
+    /// inside an Option or a Result. Through std's wrappers, which graff
+    /// does not read, as `WRAPPED` and `DEREF` tell.
     fn receiver_types(
         &self,
         file: usize,
@@ -1965,27 +1973,65 @@ impl<'a> Index<'a> {
         from: Option<&str>,
         typed: &str,
     ) -> Vec<Definition> {
-        if let Some((holder, field)) = typed.rsplit_once('.') {
-            let holders = match holder {
-                "Self" => from
-                    .map(|from| self.self_types(file, from))
-                    .unwrap_or_default(),
-                _ => self.receiver_types(file, scope, from, holder),
-            };
-            return distinct(
-                holders
-                    .into_iter()
-                    .flat_map(|holder| self.field_types(holder, field))
-                    .collect(),
-            );
+        let here = Here { file, scope, from };
+        let mut steps = typed.split('.');
+        let base = steps.next().unwrap_or_default();
+        let unwraps = base.len() - base.trim_end_matches('?').len();
+        let base = &base[..base.len() - unwraps];
+        let mut held = match base {
+            "Self" => from
+                .map(|from| self.self_types(file, from))
+                .unwrap_or_default()
+                .into_iter()
+                .map(Held::of)
+                .collect(),
+            _ if base.ends_with("()") => self.called(&here, &base[..base.len() - 2]),
+            _ => self.settled(&here, Held::parse(base, At::Here, &[], None), 0),
+        };
+        for _ in 0..unwraps {
+            held = self.inside(&here, held);
         }
-        let (built, unwrapped) = match typed.strip_suffix("()?") {
-            Some(built) => (Some(built), true),
-            None => (typed.strip_suffix("()"), false),
-        };
-        let Some(built) = built else {
-            return self.types_written(file, scope, from, typed, 0).0;
-        };
+        for step in steps {
+            let unwraps = step.len() - step.trim_end_matches('?').len();
+            let step = &step[..step.len() - unwraps];
+            held = match step.strip_suffix("()") {
+                Some(method) => held
+                    .into_iter()
+                    .flat_map(|h| self.method_gives(&here, h, method, 0))
+                    .collect(),
+                None => held
+                    .into_iter()
+                    .flat_map(|h| self.field_holds(&here, h, step, 0))
+                    .collect(),
+            };
+            for _ in 0..unwraps {
+                held = self.inside(&here, held);
+            }
+        }
+        let mut types = Vec::new();
+        for held in held {
+            let mut held = Some(held);
+            let mut depth = 0;
+            while let Some(h) = held.take()
+                && depth < DEPTH
+            {
+                depth += 1;
+                match h.head {
+                    Head::Type(ty) => types.push(ty),
+                    Head::Written(_) => {
+                        held = h
+                            .deref()
+                            .and_then(|inner| self.settled(&here, inner, 0).into_iter().next());
+                    }
+                }
+            }
+        }
+        distinct(types)
+    }
+
+    /// What a function's call at `built`, `T::f`, `f` or `path::f`, gives,
+    /// as its written return type names it, read where the function is.
+    fn called(&self, here: &Here, built: &str) -> Vec<Held> {
         let parts = segments(built);
         let Some((function, prefix)) = parts.split_last() else {
             return Vec::new();
@@ -1993,93 +2039,198 @@ impl<'a> Index<'a> {
         let types = if prefix.is_empty() {
             Vec::new()
         } else {
-            self.type_of(file, scope, prefix, from, 0).0
+            self.type_of(here.file, here.scope, prefix, here.from, 0).0
         };
         if types.is_empty() {
-            return self.returned(file, scope, from, &parts, unwrapped);
+            let found = match parts[..] {
+                [name] => self
+                    .visible(here.file, here.scope, here.from, name, 0)
+                    .or_else(|| self.unique(here.file, &here.scope.0, name, |_| true)),
+                _ => self.path(here.file, here.scope, &parts, here.from, 0),
+            };
+            let functions = found.map(|(found, _)| found).unwrap_or_default();
+            return functions
+                .into_iter()
+                .filter(|f| self.symbol(*f).kind == Kind::Function)
+                .flat_map(|f| self.gives(here, f, &[], None))
+                .collect();
         }
         types
             .into_iter()
-            .filter(|ty| {
-                let own = &self.symbol(*ty).name;
-                self.associated(*ty, function).iter().any(|f| {
-                    self.symbol(*f)
-                        .typed
-                        .as_deref()
-                        .is_some_and(|returned| returns(returned, own, unwrapped))
-                })
+            .flat_map(|ty| {
+                let this = Held::of(ty);
+                self.associated(ty, function)
+                    .into_iter()
+                    .filter(|f| matches!(self.symbol(*f).kind, Kind::Function | Kind::Method))
+                    .flat_map(|f| self.gives(here, f, &[], Some(&this)))
+                    .collect::<Vec<_>>()
             })
             .collect()
     }
 
-    /// The types a struct's field holds, as its `Symbol::typed` writes it,
-    /// read where the struct is defined.
-    fn field_types(&self, holder: Definition, field: &str) -> Vec<Definition> {
-        let symbol = self.symbol(holder);
-        if symbol.kind != Kind::Struct {
-            return Vec::new();
-        }
-        let Some(written) = symbol.typed.as_deref().and_then(|held| {
-            held.split(';')
-                .filter_map(|f| f.split_once(':'))
-                .find_map(|(name, ty)| (name == field).then_some(ty))
-        }) else {
+    /// What a function or a method returns, as its written return type
+    /// names it: the type arguments its type was given stand for its
+    /// impl's parameters, `this` for `Self`.
+    fn gives(
+        &self,
+        here: &Here,
+        function: Definition,
+        given: &[Held],
+        this: Option<&Held>,
+    ) -> Vec<Held> {
+        let Some(returned) = self.symbol(function).typed.as_deref() else {
             return Vec::new();
         };
-        if written == "Self" {
-            return vec![holder];
-        }
-        let scope = self.scope_of(holder.file, Some(&symbol.qualified), symbol.start);
-        self.types_written(holder.file, &scope, None, written, 0).0
+        let held = Held::parse(returned, At::Of(function), given, this);
+        self.settled(here, held, 0)
     }
 
-    /// The types a function at `parts` returns, as its written return type
-    /// names one, read where the function is defined: `open()` or
-    /// `store::open()`; unwrapped, as `returns` reads it.
-    fn returned(
-        &self,
-        file: usize,
-        scope: &Scope,
-        from: Option<&str>,
-        parts: &[&str],
-        unwrapped: bool,
-    ) -> Vec<Definition> {
-        let found = match parts {
-            [name] => self
-                .visible(file, scope, from, name, 0)
-                .or_else(|| self.unique(file, &scope.0, name, |_| true)),
-            _ => self.path(file, scope, parts, from, 0),
+    /// A held type as graff reads it: a type of the worktree, an alias
+    /// followed to what it names, or, where graff reads none, as written.
+    fn settled(&self, here: &Here, held: Held, depth: usize) -> Vec<Held> {
+        let Head::Written(name) = &held.head else {
+            return vec![held];
         };
-        let functions = found.map(|(found, _)| found).unwrap_or_default();
-        let functions = functions
-            .into_iter()
-            .filter(|f| self.symbol(*f).kind == Kind::Function);
-        let mut types = Vec::new();
-        for function in functions {
-            let symbol = self.symbol(function);
-            let Some(ty) = symbol
-                .typed
-                .as_deref()
-                .and_then(|returned| returned_type(returned, unwrapped))
-            else {
-                continue;
-            };
-            // A reference, `impl Trait`, a tuple: none of a type's paths.
-            if ty == "Self"
-                || !ty
-                    .chars()
-                    .all(|c| c.is_alphanumeric() || c == '_' || c == ':')
-            {
-                continue;
-            }
-            let qualified = symbol.qualified.as_str();
-            let scope = self.scope_of(function.file, Some(qualified), symbol.start);
-            types.extend(
-                self.types_written(function.file, &scope, Some(qualified), ty, 0)
-                    .0,
-            );
+        if depth >= DEPTH
+            || name == "_"
+            || !name
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == ':')
+        {
+            return Vec::new();
         }
-        distinct(types)
+        let (file, scope, from) = self.place(here, held.at);
+        let types = self.types_written(file, &scope, from.as_deref(), name, 0).0;
+        if types.is_empty() {
+            return vec![held];
+        }
+        types
+            .into_iter()
+            .flat_map(|ty| {
+                let symbol = self.symbol(ty);
+                if symbol.kind != Kind::TypeAlias {
+                    return vec![Held {
+                        head: Head::Type(ty),
+                        arguments: held.arguments.clone(),
+                        at: held.at,
+                    }];
+                }
+                match symbol.typed.as_deref() {
+                    Some(aliased) => self.settled(
+                        here,
+                        Held::parse(aliased, At::Of(ty), &held.arguments, None),
+                        depth + 1,
+                    ),
+                    None => Vec::new(),
+                }
+            })
+            .collect()
+    }
+
+    /// The file, the scope and the definition a held type is read from.
+    fn place(&self, here: &Here, at: At) -> (usize, Scope, Option<String>) {
+        match at {
+            At::Here => (here.file, here.scope.clone(), here.from.map(str::to_string)),
+            At::Of(d) => {
+                let symbol = self.symbol(d);
+                let qualified = symbol.qualified.as_str();
+                let from = matches!(symbol.kind, Kind::Function | Kind::Method)
+                    .then(|| qualified.to_string());
+                (
+                    d.file,
+                    self.scope_of(d.file, Some(qualified), symbol.start),
+                    from,
+                )
+            }
+        }
+    }
+
+    /// What a held type's field holds, as the struct writes it.
+    fn field_holds(&self, here: &Here, held: Held, field: &str, depth: usize) -> Vec<Held> {
+        match held.head {
+            Head::Type(ty) => {
+                let symbol = self.symbol(ty);
+                if symbol.kind != Kind::Struct {
+                    return Vec::new();
+                }
+                let Some(written) = symbol.typed.as_deref().and_then(|fields| {
+                    fields
+                        .split(';')
+                        .filter_map(|f| f.split_once(':'))
+                        .find_map(|(name, ty)| (name == field).then_some(ty))
+                }) else {
+                    return Vec::new();
+                };
+                let inner = Held::parse(written, At::Of(ty), &held.arguments, Some(&held));
+                self.settled(here, inner, 0)
+            }
+            Head::Written(_) if depth < DEPTH => match held.deref() {
+                Some(inner) => self
+                    .settled(here, inner, 0)
+                    .into_iter()
+                    .flat_map(|h| self.field_holds(here, h, field, depth + 1))
+                    .collect(),
+                None => Vec::new(),
+            },
+            Head::Written(_) => Vec::new(),
+        }
+    }
+
+    /// What a held type's method of the name returns: a type's of the
+    /// worktree, as its written return type names it; a wrapper's of std,
+    /// as `WRAPPED` tells, or what it derefs to's.
+    fn method_gives(&self, here: &Here, held: Held, method: &str, depth: usize) -> Vec<Held> {
+        match &held.head {
+            Head::Type(ty) => self
+                .associated(*ty, method)
+                .into_iter()
+                .filter(|f| self.symbol(*f).kind == Kind::Method)
+                .flat_map(|f| self.gives(here, f, &held.arguments, Some(&held)))
+                .collect(),
+            Head::Written(name) => {
+                let wrapper = last(name);
+                let gives = WRAPPED
+                    .iter()
+                    .find(|(w, methods, _)| *w == wrapper && methods.contains(&method));
+                if let Some((_, _, gives)) = gives {
+                    let given = match gives {
+                        Gives::Same => Some(held.clone()),
+                        Gives::Inner => held.arguments.first().cloned(),
+                        Gives::Wrapped(outer) => Some(Held {
+                            head: Head::Written((*outer).to_string()),
+                            arguments: held.arguments.iter().take(1).cloned().collect(),
+                            at: held.at,
+                        }),
+                    };
+                    return given.map(|h| self.settled(here, h, 0)).unwrap_or_default();
+                }
+                if depth >= DEPTH {
+                    return Vec::new();
+                }
+                match held.deref() {
+                    Some(inner) => self
+                        .settled(here, inner, 0)
+                        .into_iter()
+                        .flat_map(|h| self.method_gives(here, h, method, depth + 1))
+                        .collect(),
+                    None => Vec::new(),
+                }
+            }
+        }
+    }
+
+    /// The values inside Options and Results, as `?`, `Some(x)` or `Ok(x)`
+    /// takes them out.
+    fn inside(&self, here: &Here, held: Vec<Held>) -> Vec<Held> {
+        held.into_iter()
+            .filter_map(|h| match &h.head {
+                Head::Written(name) if matches!(last(name), "Option" | "Result") => {
+                    h.arguments.first().cloned()
+                }
+                _ => None,
+            })
+            .flat_map(|h| self.settled(here, h, 0))
+            .collect()
     }
 
     fn resolve(&self, file: usize, scope: &Scope, site: &Site) -> Resolution {
@@ -2197,40 +2348,175 @@ fn distinct(definitions: Vec<Definition>) -> Vec<Definition> {
     definitions
 }
 
-/// Whether a function whose return type is written `returned`, unspaced,
-/// gives a value of the type named `ty`: `Self` or `ty`, or, `unwrapped`, a
-/// Result or an Option of one, as `Result<Self,Error>` or `io::Result<Self>`.
-fn returns(returned: &str, ty: &str, unwrapped: bool) -> bool {
-    returned_type(returned, unwrapped).is_some_and(|base| base == "Self" || last(base) == ty)
+/// Where a receiver's call is: what its held types written there are read from.
+struct Here<'a> {
+    file: usize,
+    scope: &'a Scope,
+    from: Option<&'a str>,
 }
 
-/// The type a function whose return type is written `returned`, unspaced,
-/// gives, without its generic arguments: `Storage` for `Storage<'a>`, or,
-/// `unwrapped`, for `Result<Storage,Error>`.
-fn returned_type(returned: &str, unwrapped: bool) -> Option<&str> {
-    let returned = if unwrapped {
-        let (outer, inner) = returned.split_once('<')?;
-        if !matches!(last(outer), "Result" | "Option") {
-            return None;
-        }
-        let mut depth = 0usize;
-        let end = inner
-            .find(|c| {
-                match c {
-                    '<' => depth += 1,
-                    '>' if depth > 0 => depth -= 1,
-                    ',' | '>' => return true,
-                    _ => {}
-                }
-                false
-            })
-            .unwrap_or(inner.len());
-        &inner[..end]
-    } else {
-        returned
-    };
-    returned.split('<').next()
+/// Where a held type is written: at the call, or in a definition -- a
+/// struct's field, a function's return, an alias.
+#[derive(Clone, Copy)]
+enum At {
+    Here,
+    Of(Definition),
 }
+
+#[derive(Clone)]
+enum Head {
+    /// A type of the worktree.
+    Type(Definition),
+    /// A type as written, which graff reads none of: `Mutex`, `Option`;
+    /// `_` for one unknown.
+    Written(String),
+}
+
+/// A type a receiver's value holds, with the type arguments it was given,
+/// each read where it is written.
+#[derive(Clone)]
+struct Held {
+    head: Head,
+    arguments: Vec<Held>,
+    at: At,
+}
+
+impl Held {
+    fn of(ty: Definition) -> Self {
+        Held {
+            head: Head::Type(ty),
+            arguments: Vec::new(),
+            at: At::Here,
+        }
+    }
+
+    /// A type as `Symbol::typed` writes it, `Arc<Mutex<Term>>`: `$0` the
+    /// first of the `given` arguments, `Self` what `this` holds.
+    fn parse(text: &str, at: At, given: &[Held], this: Option<&Held>) -> Self {
+        let unknown = || Held {
+            head: Head::Written("_".to_string()),
+            arguments: Vec::new(),
+            at,
+        };
+        let (base, inner) = match text.split_once('<') {
+            Some((base, inner)) if text.ends_with('>') => (base, &inner[..inner.len() - 1]),
+            _ => (text, ""),
+        };
+        if let Some(place) = base.strip_prefix('$') {
+            return place
+                .parse::<usize>()
+                .ok()
+                .and_then(|place| given.get(place).cloned())
+                .unwrap_or_else(unknown);
+        }
+        if base == "Self"
+            && let Some(this) = this
+        {
+            return this.clone();
+        }
+        let mut arguments = Vec::new();
+        let (mut depth, mut start) = (0usize, 0);
+        for (i, c) in inner.char_indices() {
+            match c {
+                '<' => depth += 1,
+                '>' => depth = depth.saturating_sub(1),
+                ',' if depth == 0 => {
+                    arguments.push(Held::parse(&inner[start..i], at, given, this));
+                    start = i + 1;
+                }
+                _ => {}
+            }
+        }
+        if !inner.is_empty() {
+            arguments.push(Held::parse(&inner[start..], at, given, this));
+        }
+        Held {
+            head: Head::Written(base.to_string()),
+            arguments,
+            at,
+        }
+    }
+
+    /// What a pointer or a guard of std's points to, whose methods and
+    /// fields a call on it reaches.
+    fn deref(&self) -> Option<Held> {
+        match &self.head {
+            Head::Written(name) if DEREF.contains(&last(name)) => self.arguments.first().cloned(),
+            _ => None,
+        }
+    }
+}
+
+/// The pointers and guards of std's -- and of parking_lot's, by the same
+/// names -- whose methods and fields a call on one reaches, through Deref,
+/// as their first type argument's.
+const DEREF: &[&str] = &[
+    "Box",
+    "Rc",
+    "Arc",
+    "MutexGuard",
+    "RwLockReadGuard",
+    "RwLockWriteGuard",
+    "Ref",
+    "RefMut",
+];
+
+/// What a method of one of std's wrappers gives, of the type the wrapper holds.
+enum Gives {
+    /// The wrapper again: `Option<T>`'s as_mut, as Option<&mut T>.
+    Same,
+    /// What it holds: `Option<T>`'s unwrap.
+    Inner,
+    /// What it holds, in another wrapper: `Mutex<T>`'s lock, `MutexGuard<T>`.
+    Wrapped(&'static str),
+}
+
+/// std's wrappers' methods, by the wrapper's name, and what each gives; a
+/// wrapper or a method not here gives nothing graff follows, and a type of
+/// the worktree by the same name is followed through its own methods instead.
+const WRAPPED: &[(&str, &[&str], Gives)] = &[
+    ("Mutex", &["lock"], Gives::Wrapped("MutexGuard")),
+    ("RwLock", &["read"], Gives::Wrapped("RwLockReadGuard")),
+    ("RwLock", &["write"], Gives::Wrapped("RwLockWriteGuard")),
+    // std's lock gives a LockResult of the guard, parking_lot's the guard
+    // itself: unwrapped, the guard either way.
+    ("MutexGuard", &["unwrap", "expect"], Gives::Same),
+    ("RwLockReadGuard", &["unwrap", "expect"], Gives::Same),
+    ("RwLockWriteGuard", &["unwrap", "expect"], Gives::Same),
+    ("RefCell", &["borrow"], Gives::Wrapped("Ref")),
+    ("RefCell", &["borrow_mut"], Gives::Wrapped("RefMut")),
+    (
+        "Option",
+        &[
+            "as_ref",
+            "as_mut",
+            "as_deref",
+            "as_deref_mut",
+            "take",
+            "clone",
+            "cloned",
+            "copied",
+        ],
+        Gives::Same,
+    ),
+    (
+        "Option",
+        &["unwrap", "expect", "unwrap_or_default", "unwrap_unchecked"],
+        Gives::Inner,
+    ),
+    ("Result", &["as_ref", "as_mut", "clone"], Gives::Same),
+    (
+        "Result",
+        &["unwrap", "expect", "unwrap_or_default"],
+        Gives::Inner,
+    ),
+    ("Box", &["clone"], Gives::Same),
+    ("Rc", &["clone"], Gives::Same),
+    ("Arc", &["clone"], Gives::Same),
+    ("Box", &["as_ref", "as_mut"], Gives::Inner),
+    ("Rc", &["as_ref"], Gives::Inner),
+    ("Arc", &["as_ref"], Gives::Inner),
+];
 
 fn one(definitions: Vec<Definition>, rule: Rule) -> Resolution {
     let definitions = distinct(definitions);
@@ -2814,7 +3100,7 @@ fn render() {}
         );
         assert_eq!(
             reaches(&edges, "src/main.rs:4", "fetch", "call method"),
-            "src/store.rs Storage::fetch (unique)"
+            "src/store.rs Storage::fetch (receiver)"
         );
     }
 
@@ -2889,11 +3175,10 @@ impl View {
             reaches(&edges, "gui/src/main.rs:6", "update_windows", "call method"),
             "deck/src/dock.rs Dock::update_windows (receiver)"
         );
-        // A closure's parameter, typed only through Option<&mut Dock>: a
-        // candidate, as gui's other dependencies have methods graff never read.
+        // A closure's parameter, typed through the field's Option<Dock>.
         assert_eq!(
             reaches(&edges, "gui/src/view.rs:12", "refresh_icons", "call method"),
-            "ambiguous: deck/src/dock.rs Dock::refresh_icons"
+            "deck/src/dock.rs Dock::refresh_icons (receiver)"
         );
         // Inside deck, through the parameter's written type.
         assert_eq!(
@@ -2910,10 +3195,11 @@ impl View {
     #[test]
     fn a_method_calling_its_own_name_on_what_is_not_self_is_no_certain_recursion() {
         let edges = edges_in(WORKSPACE, &[("deck", "deck")], true);
-        // View::data_changed's closure calls Dock's data_changed, not View's.
+        // View::data_changed's closure calls Dock's data_changed, not View's:
+        // its parameter takes what the field's Option<Dock> holds.
         assert_eq!(
             reaches(&edges, "gui/src/view.rs:9", "data_changed", "call method"),
-            "ambiguous: deck/src/dock.rs Dock::data_changed, gui/src/view.rs View::data_changed"
+            "deck/src/dock.rs Dock::data_changed (receiver)"
         );
         // Elsewhere gui's view is written a View, deck's data_changed aside.
         assert_eq!(
@@ -3754,5 +4040,155 @@ fn elsewhere() -> impl Fn() { || {} }
             reaches(&edges, "src/lib.rs:13", "open", "call free"),
             "src/b.rs open (glob)"
         );
+    }
+
+    /// Two types with a method `run`, so that a call graff cannot type is
+    /// tied by the name alone, among both.
+    const RUN: &str = "pub struct Net;
+impl Net { pub fn run(&self) {} }
+pub struct Other;
+impl Other { pub fn run(&self) {} }
+";
+
+    #[test]
+    fn each_of_std_s_wrappers_methods_gives_what_its_table_says() {
+        let run_at = |field: &str, call: &str| {
+            let source = format!(
+                "{RUN}pub struct Hold {{ w: {field} }}
+impl Hold {{ fn go(&self) {{ {call}.run(); }} }}
+"
+            );
+            let edges = edges_of(&[("src/lib.rs", &source)]);
+            reaches(&edges, "src/lib.rs:6", "run", "call method")
+        };
+        for (wrapper, methods, gives) in WRAPPED {
+            for method in *methods {
+                // What Same gives is the wrapper again: an Option or a Result
+                // is then unwrapped; a pointer or a guard derefs to what it holds.
+                let after = match gives {
+                    Gives::Same if matches!(*wrapper, "Option" | "Result") => ".unwrap()",
+                    _ => "",
+                };
+                let field = match *wrapper {
+                    "Result" => "Result<Net, ()>".to_string(),
+                    _ => format!("{wrapper}<Net>"),
+                };
+                assert_eq!(
+                    run_at(&field, &format!("self.w.{method}(){after}")),
+                    "src/lib.rs Net::run (receiver)",
+                    "{wrapper}::{method}"
+                );
+            }
+        }
+        for pointer in DEREF {
+            assert_eq!(
+                run_at(&format!("{pointer}<Net>"), "self.w"),
+                "src/lib.rs Net::run (receiver)",
+                "{pointer}"
+            );
+        }
+        // A wrapper not in the table, a method of one that is not, and `?`
+        // on what is no Option or Result: the name alone, as before.
+        assert_eq!(run_at("Cell<Net>", "self.w.get()"), "ambiguous, 2");
+        assert_eq!(run_at("Mutex<Net>", "self.w.into_inner()"), "ambiguous, 2");
+        assert_eq!(
+            run_at("Vec<Net>", "self.w.first().unwrap()"),
+            "ambiguous, 2"
+        );
+        // A type of the worktree named as a wrapper is read through its own methods.
+        let source = format!(
+            "{RUN}pub struct Mutex<T>(T);
+impl<T> Mutex<T> {{ pub fn lock(&self) -> Other {{ Other }} }}
+pub struct Hold {{ w: Mutex<Net> }}
+impl Hold {{ fn go(&self) {{ self.w.lock().run(); }} }}
+"
+        );
+        let edges = edges_of(&[("src/lib.rs", &source)]);
+        assert_eq!(
+            reaches(&edges, "src/lib.rs:8", "run", "call method"),
+            "src/lib.rs Other::run (receiver)"
+        );
+    }
+
+    #[test]
+    fn a_method_call_s_receiver_takes_what_the_method_returns() {
+        let source = format!(
+            "{RUN}pub struct Lock<T> {{ data: T }}
+impl<T> Lock<T> {{
+    pub fn lock(&self) -> std::sync::MutexGuard<'_, T> {{ todo!() }}
+    pub fn peek(&self) -> &T {{ &self.data }}
+}}
+pub type Shared = std::sync::Arc<Lock<Emu>>;
+pub struct Emu {{ term: Net }}
+impl Emu {{ fn other(&self) -> Other {{ Other }} fn quiet(&self) {{}} }}
+pub struct View {{ emu: Shared }}
+impl View {{
+    fn emulator(&self) -> &Shared {{ &self.emu }}
+    fn go(&self) {{
+        self.emulator().lock().term.run();
+        let emu = self.emulator().lock();
+        let term = &emu.term;
+        term.run();
+        emu.other().run();
+        self.emu.peek().term.run();
+        Emu::other(&emu).run();
+        self.go().run();
+    }}
+}}
+"
+        );
+        let edges = edges_of(&[("src/lib.rs", &source)]);
+        let run = |line: &str| reaches(&edges, &format!("src/lib.rs:{line}"), "run", "call method");
+        // Through a method's written return, an alias, Arc, the impl's T
+        // given as Emu, and the guard it returns.
+        assert_eq!(run("17"), "src/lib.rs Net::run (receiver)");
+        // A let of what a chain holds, and a reference to its field.
+        assert_eq!(run("20"), "src/lib.rs Net::run (receiver)");
+        // A method of the type's own, and a reference return.
+        assert_eq!(run("21"), "src/lib.rs Other::run (receiver)");
+        assert_eq!(run("22"), "src/lib.rs Net::run (receiver)");
+        // An associated function's return of another type than its own.
+        assert_eq!(run("23"), "src/lib.rs Other::run (receiver)");
+        // A method of no written return: the name alone.
+        assert_eq!(run("24"), "ambiguous, 2");
+    }
+
+    #[test]
+    fn what_an_option_holds_is_what_its_closure_or_some_binds() {
+        let source = format!(
+            "{RUN}pub struct View {{ net: std::cell::RefCell<Option<Net>>, nets: Vec<Net> }}
+impl View {{
+    fn go(&self, found: Option<&Other>) {{
+        self.net.borrow_mut().as_mut().is_some_and(|n| n.run());
+        self.net.borrow().as_ref().map(|n| n.run());
+        if let Some(n) = self.net.borrow().as_ref() {{ n.run(); }}
+        let net = self.net.borrow_mut();
+        let Some(n) = net.as_ref() else {{ return }};
+        n.run();
+        while let Some(n) = found {{ n.run(); }}
+        self.nets.iter().map(|n| n.run());
+        self.nets.first().map(|n| n.run());
+        if let Some(n) = self.go(None) {{ n.run(); }}
+        net.as_ref().map(|n: &Other| n.run());
+    }}
+}}
+"
+        );
+        let edges = edges_of(&[("src/lib.rs", &source)]);
+        let run = |line: &str| reaches(&edges, &format!("src/lib.rs:{line}"), "run", "call method");
+        // A closure given to the Option's method, through RefCell's borrows.
+        assert_eq!(run("8"), "src/lib.rs Net::run (receiver)");
+        assert_eq!(run("9"), "src/lib.rs Net::run (receiver)");
+        // `if let Some(n)`, `let Some(n) = .. else`, `while let Some(n)`.
+        assert_eq!(run("10"), "src/lib.rs Net::run (receiver)");
+        assert_eq!(run("13"), "src/lib.rs Net::run (receiver)");
+        assert_eq!(run("14"), "src/lib.rs Other::run (receiver)");
+        // An iterator's map, an Option from a method graff does not read,
+        // and one from a method of no written return: the name alone.
+        assert_eq!(run("15"), "ambiguous, 2");
+        assert_eq!(run("16"), "ambiguous, 2");
+        assert_eq!(run("17"), "ambiguous, 2");
+        // A closure's written parameter type stands.
+        assert_eq!(run("18"), "src/lib.rs Other::run (receiver)");
     }
 }

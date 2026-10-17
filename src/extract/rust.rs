@@ -110,6 +110,8 @@ pub fn extract(source: &[u8]) -> Extraction {
         locals: HashSet::new(),
         typed: HashMap::new(),
         generics: Vec::new(),
+        placed: Vec::new(),
+        closure_typed: None,
         taken: HashMap::new(),
         depth: 0,
     };
@@ -143,6 +145,14 @@ struct Reader<'s> {
     typed: HashMap<String, String>,
     /// The generic parameters of the items the walk is in.
     generics: Vec<HashSet<String>>,
+    /// Of each of those items' generic parameters, its place among the type
+    /// arguments of the type the item is: `T` in `impl<T> Cell<T>` or in
+    /// `struct Cell<T>` is 0; a function's and a trait's have none.
+    placed: Vec<HashMap<String, usize>>,
+    /// What the closure about to be read takes as its first parameter, as
+    /// `Call::typed` gives it: the inner value of the Option or Result whose
+    /// method it is given to.
+    closure_typed: Option<String>,
     /// How many times each qualified name was given.
     taken: HashMap<String, u32>,
     /// How many levels deep the walk is.
@@ -167,6 +177,20 @@ fn fields<'t>(node: Node<'t>) -> Vec<(Option<&'t str>, Node<'t>)> {
 fn named_children(node: Node) -> Vec<Node> {
     let mut cursor = node.walk();
     node.named_children(&mut cursor).collect()
+}
+
+/// A type's arguments, by their place: `Term` in `Ref<'a, Term>`; a
+/// binding, `Item = Entry`, has none.
+fn type_arguments(arguments: Node) -> Vec<Node> {
+    named_children(arguments)
+        .into_iter()
+        .filter(|a| {
+            !matches!(
+                a.kind(),
+                "lifetime" | "line_comment" | "block_comment" | "type_binding"
+            )
+        })
+        .collect()
 }
 
 fn all_children(node: Node) -> Vec<Node> {
@@ -417,8 +441,21 @@ impl<'s> Reader<'s> {
                     }
                 }
             }),
-            "block" | "closure_expression" | "while_expression" => {
+            "block" | "while_expression" => {
                 self.local_scope(|reader| reader.children(node));
+            }
+            "closure_expression" => {
+                let typed = self.closure_typed.take();
+                self.local_scope(|reader| {
+                    for (field, child) in fields(node) {
+                        reader.visit(child);
+                        if field == Some("parameters")
+                            && let Some(first) = named_children(child).first()
+                        {
+                            reader.type_local(*first, typed.clone());
+                        }
+                    }
+                });
             }
             "if_expression" => {
                 // What `if let` binds holds in its block, not in the else.
@@ -443,11 +480,14 @@ impl<'s> Reader<'s> {
             }
             "let_condition" => {
                 // The value first: in `if let Some(x) = x`, the right `x` is the outer one.
-                if let Some(value) = node.child_by_field_name("value") {
+                let value = node.child_by_field_name("value");
+                if let Some(value) = value {
                     self.visit(value);
                 }
                 if let Some(pattern) = node.child_by_field_name("pattern") {
+                    let held = value.and_then(|value| self.held(value));
                     self.bind(pattern);
+                    self.type_inner(pattern, held);
                 }
             }
             "match_arm" => self.local_scope(|reader| {
@@ -595,6 +635,96 @@ impl<'s> Reader<'s> {
         self.generics.iter().any(|names| names.contains(name))
     }
 
+    /// A struct's or an alias's type parameters by their place: `T` 0 and
+    /// `U` 1 in `struct Pair<'a, T, U>`.
+    fn declared_places(&self, item: Node) -> HashMap<String, usize> {
+        let Some(parameters) = item.child_by_field_name("type_parameters") else {
+            return HashMap::new();
+        };
+        named_children(parameters)
+            .into_iter()
+            .filter(|p| p.kind() != "lifetime_parameter")
+            .filter_map(|p| p.child_by_field_name("name"))
+            .enumerate()
+            .map(|(place, name)| (self.text(name).to_string(), place))
+            .collect()
+    }
+
+    /// An impl's type parameters by their place among its type's arguments:
+    /// `T` 0 in `impl<T> Cell<T>`, none in `impl<T> Cell<Vec<T>>`.
+    fn impl_places(&self, item: Node) -> HashMap<String, usize> {
+        let names = self.generic_names(item);
+        let Some(arguments) = item
+            .child_by_field_name("type")
+            .filter(|ty| ty.kind() == "generic_type")
+            .and_then(|ty| ty.child_by_field_name("type_arguments"))
+        else {
+            return HashMap::new();
+        };
+        type_arguments(arguments)
+            .into_iter()
+            .enumerate()
+            .filter(|(_, a)| a.kind() == "type_identifier" && names.contains(self.text(*a)))
+            .map(|(place, a)| (self.text(a).to_string(), place))
+            .collect()
+    }
+
+    /// A type as `Symbol::typed` writes a field's, a function's return or an
+    /// alias's: unspaced, without references or lifetimes, `Arc<Mutex<Term>>`
+    /// for `&'a Arc<Mutex<Term>>`; a generic parameter `$0`, `$1` where the
+    /// impl's or the struct's type takes it at that place among its
+    /// arguments, else `_`, as is a tuple, a slice, `dyn` or `impl` a trait,
+    /// or `Self::Item`. None where the whole is `_`.
+    fn type_text(&self, node: Node) -> Option<String> {
+        let text = self.type_part(node);
+        (text != "_").then_some(text)
+    }
+
+    fn type_part(&self, node: Node) -> String {
+        match node.kind() {
+            "reference_type" => node
+                .child_by_field_name("type")
+                .map_or_else(|| "_".to_string(), |ty| self.type_part(ty)),
+            "type_identifier" => {
+                let name = self.text(node);
+                let frame = self.generics.iter().rposition(|names| names.contains(name));
+                match frame {
+                    Some(frame) => self.placed[frame]
+                        .get(name)
+                        .map_or_else(|| "_".to_string(), |place| format!("${place}")),
+                    None => name.to_string(),
+                }
+            }
+            "scoped_type_identifier" => {
+                let path = path_text(self.text(node)).replace(' ', "");
+                let first = path.split("::").next().unwrap_or("");
+                if first == "Self" || self.is_generic(first) || path.contains('<') {
+                    "_".to_string()
+                } else {
+                    path
+                }
+            }
+            "generic_type" => {
+                let base = node
+                    .child_by_field_name("type")
+                    .map_or_else(|| "_".to_string(), |ty| self.type_part(ty));
+                let arguments: Vec<String> = node
+                    .child_by_field_name("type_arguments")
+                    .map(type_arguments)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|a| self.type_part(a))
+                    .collect();
+                match base.as_str() {
+                    "_" => base,
+                    _ if arguments.is_empty() => base,
+                    _ => format!("{base}<{}>", arguments.join(",")),
+                }
+            }
+            _ => "_".to_string(),
+        }
+    }
+
     /// The qualified name of the innermost module the walk is in, none at the
     /// file's own level.
     fn module_qualified(&self) -> Option<String> {
@@ -627,12 +757,13 @@ impl<'s> Reader<'s> {
             return self.children(node);
         };
         self.generics.push(self.generic_names(node));
+        self.placed.push(HashMap::new());
         let from = self.from.replace(qualified.clone());
         let locals = std::mem::take(&mut self.locals);
         let typed = std::mem::take(&mut self.typed);
         let returned = node
             .child_by_field_name("return_type")
-            .map(|returned| path_text(self.text(returned)).replace(' ', ""));
+            .and_then(|returned| self.type_text(returned));
         if let Some(symbol) = self.out.symbols.last_mut() {
             symbol.typed = returned;
         }
@@ -653,6 +784,7 @@ impl<'s> Reader<'s> {
         self.typed = typed;
         self.from = from;
         self.generics.pop();
+        self.placed.pop();
     }
 
     /// struct, enum, union and type alias: their name, then the types they hold.
@@ -661,11 +793,18 @@ impl<'s> Reader<'s> {
             return;
         };
         self.generics.push(self.generic_names(node));
-        if kind == Kind::Struct {
-            let held = self.fields_held(node);
-            if let Some(symbol) = self.out.symbols.last_mut() {
-                symbol.typed = held;
-            }
+        self.placed.push(self.declared_places(node));
+        let held = match kind {
+            Kind::Struct => self.fields_held(node),
+            Kind::TypeAlias => node
+                .child_by_field_name("type")
+                .and_then(|ty| self.type_text(ty)),
+            _ => None,
+        };
+        if held.is_some()
+            && let Some(symbol) = self.out.symbols.last_mut()
+        {
+            symbol.typed = held;
         }
         let from = self.from.replace(qualified.clone());
         for (field, child) in fields(node) {
@@ -691,6 +830,7 @@ impl<'s> Reader<'s> {
         }
         self.from = from;
         self.generics.pop();
+        self.placed.pop();
     }
 
     fn value_item(&mut self, node: Node, kind: Kind) {
@@ -868,6 +1008,7 @@ impl<'s> Reader<'s> {
             return;
         };
         self.generics.push(self.generic_names(node));
+        self.placed.push(HashMap::new());
         let from = self.from.replace(qualified.clone());
         for (field, child) in fields(node) {
             match field {
@@ -883,6 +1024,7 @@ impl<'s> Reader<'s> {
         }
         self.from = from;
         self.generics.pop();
+        self.placed.pop();
     }
 
     /// The name an impl gives its type: `Storage` for `Storage<T>` or `&Storage`.
@@ -912,6 +1054,7 @@ impl<'s> Reader<'s> {
         let qualified = self.qualify(&name);
         let qualified = self.symbol(node, ty, qualified, Kind::Impl);
         self.generics.push(self.generic_names(node));
+        self.placed.push(self.impl_places(node));
         let from = self.from.replace(qualified);
         for (field, child) in fields(node) {
             match field {
@@ -927,6 +1070,7 @@ impl<'s> Reader<'s> {
         }
         self.from = from;
         self.generics.pop();
+        self.placed.pop();
     }
 
     // ---- use items -----------------------------------------------------------------
@@ -1041,8 +1185,44 @@ impl<'s> Reader<'s> {
             self.callee(function);
         }
         if let Some(arguments) = node.child_by_field_name("arguments") {
+            self.closure_typed = self.closure_takes(node, arguments);
             self.visit(arguments);
+            self.closure_typed = None;
         }
+    }
+
+    /// What a closure given first to an Option's or a Result's method that
+    /// calls it with the value inside -- `x.map(|v| ..)`, `x.is_some_and(|v|
+    /// ..)` -- takes, as `Call::typed` gives it: `?` after what `x` holds.
+    fn closure_takes(&self, call: Node, arguments: Node) -> Option<String> {
+        let function = call.child_by_field_name("function")?;
+        if function.kind() != "field_expression" {
+            return None;
+        }
+        let method = self.text(function.child_by_field_name("field")?);
+        if !matches!(
+            method,
+            "and_then"
+                | "filter"
+                | "inspect"
+                | "is_none_or"
+                | "is_ok_and"
+                | "is_some_and"
+                | "map"
+                | "take_if"
+        ) {
+            return None;
+        }
+        let first = named_children(arguments)
+            .into_iter()
+            .find(|a| !matches!(a.kind(), "line_comment" | "block_comment"))?;
+        if first.kind() != "closure_expression" {
+            return None;
+        }
+        Some(format!(
+            "{}?",
+            self.held(function.child_by_field_name("value")?)?
+        ))
     }
 
     fn callee(&mut self, function: Node) {
@@ -1549,14 +1729,41 @@ impl<'s> Reader<'s> {
             }
         }
         if let Some(pattern) = node.child_by_field_name("pattern") {
+            // Before the pattern binds: in `let x = x.next()`, the right `x` is the outer one.
+            let held = node
+                .child_by_field_name("value")
+                .and_then(|value| self.held(value));
             self.bind(pattern);
             let typed = match node.child_by_field_name("type") {
-                Some(written) => self.written_type(written),
-                None => node
-                    .child_by_field_name("value")
-                    .and_then(|value| self.built_type(value)),
+                Some(written) => self.type_text(written),
+                None => held.clone(),
             };
             self.type_local(pattern, typed);
+            self.type_inner(pattern, held);
+        }
+    }
+
+    /// Gives the name `Some(x)` or `Ok(x)` binds the type inside the Option
+    /// or Result it is matched against, which holds `held`.
+    fn type_inner(&mut self, pattern: Node, held: Option<String>) {
+        let Some(held) = held else {
+            return;
+        };
+        if pattern.kind() != "tuple_struct_pattern" {
+            return;
+        }
+        let Some(variant) = pattern.child_by_field_name("type") else {
+            return;
+        };
+        if !matches!(self.text(variant).rsplit("::").next(), Some("Some" | "Ok")) {
+            return;
+        }
+        let inner: Vec<Node> = named_children(pattern)
+            .into_iter()
+            .filter(|p| p.id() != variant.id())
+            .collect();
+        if let [inner] = inner[..] {
+            self.type_local(inner, Some(format!("{held}?")));
         }
     }
 
@@ -1579,25 +1786,10 @@ impl<'s> Reader<'s> {
         self.typed.remove(name);
     }
 
-    /// The type a type as written is, or refers to: `Storage` for
-    /// `Storage`, `&mut Storage` or `Storage<'a>`, `store::Storage`; none for
-    /// a tuple, a slice, `dyn` or `impl` a trait, a generic parameter.
-    fn written_type(&self, node: Node) -> Option<String> {
-        match node.kind() {
-            "reference_type" | "generic_type" => {
-                self.written_type(node.child_by_field_name("type")?)
-            }
-            "type_identifier" | "scoped_type_identifier" => {
-                let written = path_text(self.text(node));
-                (!self.is_generic(written.split("::").next()?)).then_some(written)
-            }
-            _ => None,
-        }
-    }
-
     /// What a receiver holds, as `Call::typed` gives it: a local's type, or
     /// a field's of what holds it, `Self.store` for `self.store`, `Disk.0`
-    /// for `d.0` where `d` holds a Disk.
+    /// for `d.0` where `d` holds a Disk; what a method returns, `Self.data()`
+    /// for `self.data()`, and `?` after it for `self.data()?`.
     fn held(&self, node: Node) -> Option<String> {
         match node.kind() {
             "self" => Some("Self".to_string()),
@@ -1610,6 +1802,26 @@ impl<'s> Reader<'s> {
                 let held = self.held(node.child_by_field_name("value")?)?;
                 Some(format!("{held}.{}", self.text(field)))
             }
+            "call_expression" => {
+                if let Some(built) = self.built_type(node) {
+                    return Some(built);
+                }
+                let function = node.child_by_field_name("function")?;
+                if function.kind() != "field_expression" {
+                    return None;
+                }
+                let method = function.child_by_field_name("field")?;
+                let held = self.held(function.child_by_field_name("value")?)?;
+                Some(format!("{held}.{}()", self.text(method)))
+            }
+            "try_expression" => Some(format!("{}?", self.held(node.named_child(0)?)?)),
+            "reference_expression" | "parenthesized_expression" => {
+                let value = node
+                    .child_by_field_name("value")
+                    .or_else(|| node.named_child(0))?;
+                self.held(value)
+            }
+            "struct_expression" => self.built_type(node),
             _ => None,
         }
     }
@@ -1625,7 +1837,7 @@ impl<'s> Reader<'s> {
                 for field in named_children(body) {
                     if let Some(name) = field.child_by_field_name("name")
                         && let Some(ty) = field.child_by_field_name("type")
-                        && let Some(ty) = self.pointee(ty)
+                        && let Some(ty) = self.type_text(ty)
                     {
                         held.push(format!("{}:{ty}", self.text(name)));
                     }
@@ -1635,7 +1847,7 @@ impl<'s> Reader<'s> {
                 let mut cursor = body.walk();
                 let types: Vec<Node> = body.children_by_field_name("type", &mut cursor).collect();
                 for (index, ty) in types.into_iter().enumerate() {
-                    if let Some(ty) = self.pointee(ty) {
+                    if let Some(ty) = self.type_text(ty) {
                         held.push(format!("{index}:{ty}"));
                     }
                 }
@@ -1643,28 +1855,6 @@ impl<'s> Reader<'s> {
             _ => {}
         }
         (!held.is_empty()).then(|| held.join(";"))
-    }
-
-    /// The type a field's methods are called on: its written type's, or,
-    /// for a `Box`, an `Rc` or an `Arc`, what it points to.
-    fn pointee(&self, node: Node) -> Option<String> {
-        if node.kind() == "reference_type" {
-            return self.pointee(node.child_by_field_name("type")?);
-        }
-        if node.kind() == "generic_type"
-            && let Some(base) = node.child_by_field_name("type")
-            && matches!(
-                self.text(base).rsplit("::").next(),
-                Some("Box" | "Rc" | "Arc")
-            )
-        {
-            let arguments = node.child_by_field_name("type_arguments")?;
-            let first = named_children(arguments)
-                .into_iter()
-                .find(|a| !matches!(a.kind(), "lifetime" | "line_comment" | "block_comment"))?;
-            return self.pointee(first);
-        }
-        self.written_type(node)
     }
 
     /// The type a value is built as, as `Call::typed` gives it: `Storage` for
@@ -1727,7 +1917,7 @@ impl<'s> Reader<'s> {
                 if let Some(pattern) = node.child_by_field_name("pattern") {
                     let typed = node
                         .child_by_field_name("type")
-                        .and_then(|written| self.written_type(written));
+                        .and_then(|written| self.type_text(written));
                     self.type_local(pattern, typed);
                 }
             }
@@ -2100,7 +2290,7 @@ mod tests {
             typed,
             vec![
                 ("a", Some("store::Disk")),
-                ("b", Some("Vec")),
+                ("b", Some("Vec<_>")),
                 ("c", Some("Disk::new()")),
                 ("d", Some("Disk::open()?")),
                 ("e", Some("Disk::find()?")),
@@ -2111,7 +2301,7 @@ mod tests {
                 ("c", Some("make()")),
                 ("c", Some("Disk::new()")),
                 ("m", Some("Net")),
-                ("c", None),
+                ("c", Some("Disk::new().into()")),
             ]
         );
         assert_eq!(out.symbols[0].typed.as_deref(), Some("Result<Self,E>"));
@@ -2138,9 +2328,9 @@ impl S<u8> {
         };
         assert_eq!(
             held("S").as_deref(),
-            Some("a:store::Disk;b:Net;c:Mutex;d:Net;g:Self")
+            Some("a:store::Disk;b:Box<Net>;c:Arc<Mutex<Net>>;d:Rc<Net>;e:$0;g:Self")
         );
-        assert_eq!(held("P").as_deref(), Some("0:Disk;2:Net"));
+        assert_eq!(held("P").as_deref(), Some("0:Disk;2:Rc<Net>"));
         let typed: Vec<Option<&str>> = out
             .calls
             .iter()
@@ -2155,7 +2345,7 @@ impl S<u8> {
                 Some("P.0"),
                 Some("P.2"),
                 None,
-                None,
+                Some("Self.get()"),
                 None
             ]
         );

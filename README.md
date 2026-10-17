@@ -23,8 +23,15 @@ and so does one called on a local whose parameter or `let` writes its type
 or builds it, by `Type { .. }`, a `Type::f(..)` written to return the type or
 a function written to return one -- or, through `?` or `unwrap()`, a Result
 or an Option of it -- or on such a value's field, `self.store` too, as the
-struct writes its type (`T`, `&T`, `Box<T>`, `Rc<T>`, `Arc<T>`), where that
-type has a method of the name; one called on anything else, the crate's only
+struct writes its type, or on what its method returns, as the method writes
+it (`self.emulator().lock().term`), its impl's type parameters given as the
+type was; through an alias, std's pointers and guards (`&T`, `Box<T>`,
+`Rc<T>`, `Arc<T>`, `MutexGuard<T>`, `Ref<T>`), and the methods of std's
+wrappers a table in `src/resolve.rs` lists (`Mutex::lock`,
+`RefCell::borrow_mut`, `Option::as_mut`, `unwrap`); and on what `Some(x)`,
+`Ok(x)` or an Option's `map(|x| ..)` or `is_some_and(|x| ..)` binds, the
+value inside -- where that type has a method of the name; one called on
+anything else, the crate's only
 method of that name, unless a type of std or a library of the worktree's
 other packages the crate names in a path or a use item has one too, or it is
 the method the call is in, and else, as possible, those of the crate's and

@@ -18,7 +18,7 @@ use crate::lang::Language;
 
 /// Bumped whenever what an extractor produces changes, so that results kept
 /// from an older extractor are read again rather than trusted.
-pub const VERSION: u32 = 31;
+pub const VERSION: u32 = 32;
 
 /// What the index keeps this build's extractions under: VERSION for a
 /// release, which a rebuild keeps reusing; for any other build, VERSION and
@@ -82,10 +82,13 @@ pub struct Symbol {
     /// function's return annotation names, as written: `Shards` for
     /// `sh = Shards(d)` or `sh: Shards`, `K3Config` for `def tiny() ->
     /// K3Config`; for a value a call returns, the callee, `tiny_config`.
-    /// Rust: a function's return type as written, unspaced: `Self`,
-    /// `Result<Storage,Error>`; a struct's fields and the type each holds,
-    /// `name:Type` joined by `;`, a tuple struct's named 0, 1, ..., the type
-    /// a `Box`, an `Rc` or an `Arc` points to for one: `store:Storage;0:Disk`.
+    /// Rust: a function's return type as written, unspaced, without
+    /// references or lifetimes: `Self`, `Result<Storage,Error>`,
+    /// `MutexGuard<$0>` for `MutexGuard<'_, T>` in `impl<T> Lock<T>`, a
+    /// generic parameter `$` and its place among the arguments of the type
+    /// the impl or the struct is, any other `_`; a struct's fields and the
+    /// type each holds so, `name:Type` joined by `;`, a tuple struct's named
+    /// 0, 1, ...: `store:Arc<Storage>;0:Disk`; the type an alias names.
     #[serde(default)]
     pub typed: Option<String>,
     /// Nix: whether the binding is in what a function that makes a package,
@@ -220,7 +223,12 @@ pub struct Call {
     /// returns; `Storage::open()?` after `Storage::open(..)?`, `.unwrap()` or
     /// `.expect(..)`, if it returns a Result or an Option of it. For a
     /// field, what holds it, a dot and the field's name: `Self.store` for
-    /// `self.store`, `Storage.disk.0` for `store.disk.0`.
+    /// `self.store`, `Storage.disk.0` for `store.disk.0`; for a method's
+    /// call, what it is called on, a dot and `m()`: `Self.emulator().lock()`;
+    /// `?` after any of them for `?`, and for what `Some(x)` or `Ok(x)` binds
+    /// of it or an Option's `map(|x| ..)` or `is_some_and(|x| ..)` gives
+    /// `x`: `Self.dock.borrow_mut().as_mut()?`. A local bound to one holds
+    /// it too: `let term = &emulator.term`.
     #[serde(default)]
     pub typed: Option<String>,
 }

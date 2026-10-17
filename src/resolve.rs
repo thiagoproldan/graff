@@ -1854,8 +1854,8 @@ impl<'a> Index<'a> {
         Some((found, Rule::Path))
     }
 
-    /// A method call: through `self`'s type in a method, or the type of a
-    /// local `typed` gives, else by its name.
+    /// A method call: through `self`'s type in a method, or the type `typed`
+    /// gives a local or a field, else by its name.
     fn method(
         &self,
         file: usize,
@@ -1933,19 +1933,23 @@ impl<'a> Index<'a> {
                 && d.file == file
                 && from == Some(self.symbol(*d).qualified.as_str())
         };
-        // The crate's own method is still the one where it is the only one,
-        // as a name is looked up in the nearest scope first.
+        // A method is found by its receiver's type, not in the nearest scope:
+        // the crate's only method of the name is the one only where no
+        // library it names has one too.
         match found[..] {
-            [d] if !std_method(name) && !recursive(&d) => Resolution::Resolved(d, Rule::Unique),
+            [d] if !std_method(name) && !recursive(&d) && elsewhere.is_empty() => {
+                Resolution::Resolved(d, Rule::Unique)
+            }
             [] if elsewhere.is_empty() => Resolution::External,
             _ => Resolution::Ambiguous(distinct([found, elsewhere].concat())),
         }
     }
 
-    /// The types a local holds, as `Call::typed` gives them: a type as
-    /// written, or one whose function the local was built by, where that
+    /// The types a local or a field holds, as `Call::typed` gives them: a
+    /// type as written; one whose function the local was built by, where that
     /// function's written return type is `Self` or the type -- or, unwrapped,
-    /// a Result or an Option of it.
+    /// a Result or an Option of it; the type a free function's return names;
+    /// a field's, as the struct that holds it writes it.
     fn receiver_types(
         &self,
         file: usize,
@@ -1953,6 +1957,20 @@ impl<'a> Index<'a> {
         from: Option<&str>,
         typed: &str,
     ) -> Vec<Definition> {
+        if let Some((holder, field)) = typed.rsplit_once('.') {
+            let holders = match holder {
+                "Self" => from
+                    .map(|from| self.self_types(file, from))
+                    .unwrap_or_default(),
+                _ => self.receiver_types(file, scope, from, holder),
+            };
+            return distinct(
+                holders
+                    .into_iter()
+                    .flat_map(|holder| self.field_types(holder, field))
+                    .collect(),
+            );
+        }
         let (built, unwrapped) = match typed.strip_suffix("()?") {
             Some(built) => (Some(built), true),
             None => (typed.strip_suffix("()"), false),
@@ -1964,11 +1982,15 @@ impl<'a> Index<'a> {
         let Some((function, prefix)) = parts.split_last() else {
             return Vec::new();
         };
-        if prefix.is_empty() {
-            return Vec::new();
+        let types = if prefix.is_empty() {
+            Vec::new()
+        } else {
+            self.type_of(file, scope, prefix, from, 0).0
+        };
+        if types.is_empty() {
+            return self.returned(file, scope, from, &parts, unwrapped);
         }
-        self.type_of(file, scope, prefix, from, 0)
-            .0
+        types
             .into_iter()
             .filter(|ty| {
                 let own = &self.symbol(*ty).name;
@@ -1980,6 +2002,76 @@ impl<'a> Index<'a> {
                 })
             })
             .collect()
+    }
+
+    /// The types a struct's field holds, as its `Symbol::typed` writes it,
+    /// read where the struct is defined.
+    fn field_types(&self, holder: Definition, field: &str) -> Vec<Definition> {
+        let symbol = self.symbol(holder);
+        if symbol.kind != Kind::Struct {
+            return Vec::new();
+        }
+        let Some(written) = symbol.typed.as_deref().and_then(|held| {
+            held.split(';')
+                .filter_map(|f| f.split_once(':'))
+                .find_map(|(name, ty)| (name == field).then_some(ty))
+        }) else {
+            return Vec::new();
+        };
+        if written == "Self" {
+            return vec![holder];
+        }
+        let scope = self.scope_of(holder.file, Some(&symbol.qualified), symbol.start);
+        self.types_written(holder.file, &scope, None, written, 0).0
+    }
+
+    /// The types a function at `parts` returns, as its written return type
+    /// names one, read where the function is defined: `open()` or
+    /// `store::open()`; unwrapped, as `returns` reads it.
+    fn returned(
+        &self,
+        file: usize,
+        scope: &Scope,
+        from: Option<&str>,
+        parts: &[&str],
+        unwrapped: bool,
+    ) -> Vec<Definition> {
+        let found = match parts {
+            [name] => self
+                .visible(file, scope, from, name, 0)
+                .or_else(|| self.unique(file, &scope.0, name, |_| true)),
+            _ => self.path(file, scope, parts, from, 0),
+        };
+        let functions = found.map(|(found, _)| found).unwrap_or_default();
+        let functions = functions
+            .into_iter()
+            .filter(|f| self.symbol(*f).kind == Kind::Function);
+        let mut types = Vec::new();
+        for function in functions {
+            let symbol = self.symbol(function);
+            let Some(ty) = symbol
+                .typed
+                .as_deref()
+                .and_then(|returned| returned_type(returned, unwrapped))
+            else {
+                continue;
+            };
+            // A reference, `impl Trait`, a tuple: none of a type's paths.
+            if ty == "Self"
+                || !ty
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '_' || c == ':')
+            {
+                continue;
+            }
+            let qualified = symbol.qualified.as_str();
+            let scope = self.scope_of(function.file, Some(qualified), symbol.start);
+            types.extend(
+                self.types_written(function.file, &scope, Some(qualified), ty, 0)
+                    .0,
+            );
+        }
+        distinct(types)
     }
 
     fn resolve(&self, file: usize, scope: &Scope, site: &Site) -> Resolution {
@@ -2101,12 +2193,17 @@ fn distinct(definitions: Vec<Definition>) -> Vec<Definition> {
 /// gives a value of the type named `ty`: `Self` or `ty`, or, `unwrapped`, a
 /// Result or an Option of one, as `Result<Self,Error>` or `io::Result<Self>`.
 fn returns(returned: &str, ty: &str, unwrapped: bool) -> bool {
+    returned_type(returned, unwrapped).is_some_and(|base| base == "Self" || last(base) == ty)
+}
+
+/// The type a function whose return type is written `returned`, unspaced,
+/// gives, without its generic arguments: `Storage` for `Storage<'a>`, or,
+/// `unwrapped`, for `Result<Storage,Error>`.
+fn returned_type(returned: &str, unwrapped: bool) -> Option<&str> {
     let returned = if unwrapped {
-        let Some((outer, inner)) = returned.split_once('<') else {
-            return false;
-        };
+        let (outer, inner) = returned.split_once('<')?;
         if !matches!(last(outer), "Result" | "Option") {
-            return false;
+            return None;
         }
         let mut depth = 0usize;
         let end = inner
@@ -2124,8 +2221,7 @@ fn returns(returned: &str, ty: &str, unwrapped: bool) -> bool {
     } else {
         returned
     };
-    let base = returned.split('<').next().unwrap_or(returned);
-    base == "Self" || last(base) == ty
+    returned.split('<').next()
 }
 
 fn one(definitions: Vec<Definition>, rule: Rule) -> Resolution {
@@ -2901,6 +2997,135 @@ pub fn go(net: &mut Net, held: Option<Net>) -> Result<(), Error> {
         // A block's own binding, and the outer one after it.
         assert_eq!(run("40", "run"), "src/lib.rs Net::run (receiver)");
         assert_eq!(run("42", "run"), "src/lib.rs Disk::run (receiver)");
+        // Rebound to what a free function returns, as its return type names it.
+        assert_eq!(run("44", "run"), "src/lib.rs Disk::run (receiver)");
+    }
+
+    /// A library and two packages, one that names it and one that does not,
+    /// each with a method of a name the library has too.
+    const NAMED: &[(&str, &str)] = &[
+        (
+            "term/src/lib.rs",
+            "pub struct Term;
+impl Term {
+    pub fn grid(&self) -> u8 { 0 }
+    pub fn resize(&mut self) {}
+}
+",
+        ),
+        (
+            "app/src/main.rs",
+            "use term::Term;
+struct Image;
+impl Image {
+    fn grid(&self) -> u8 { 0 }
+    fn paint(&self) {}
+}
+fn show(t: &Term, i: &Image, held: Vec<Image>) {
+    for x in held { x.grid(); }
+    for x in held { x.paint(); }
+    for x in held { x.resize(); }
+    for x in held { x.vanish(); }
+    i.grid();
+    t.grid();
+}
+",
+        ),
+        (
+            "other/src/main.rs",
+            "struct Image;
+impl Image { fn grid(&self) -> u8 { 0 } }
+fn show(held: Vec<Image>) { for x in held { x.grid(); } }
+",
+        ),
+    ];
+
+    #[test]
+    fn a_method_of_a_name_a_library_the_crate_names_has_too_is_no_certain_tie() {
+        let edges = edges_in(NAMED, &[("term", "term")], true);
+        let at = |at: &str, name: &str| reaches(&edges, at, name, "call method");
+        // The rule: on a receiver of no type graff reads, a name the crate
+        // has one method of is that method only where no library the crate
+        // names has one of the name; else each is a candidate.
+        assert_eq!(
+            at("app/src/main.rs:8", "grid"),
+            "ambiguous: term/src/lib.rs Term::grid, app/src/main.rs Image::grid"
+        );
+        assert_eq!(
+            at("app/src/main.rs:9", "paint"),
+            "app/src/main.rs Image::paint (unique)"
+        );
+        assert_eq!(
+            at("app/src/main.rs:10", "resize"),
+            "ambiguous: term/src/lib.rs Term::resize"
+        );
+        assert_eq!(at("app/src/main.rs:11", "vanish"), "external");
+        // A crate that does not name the library keeps its own.
+        assert_eq!(
+            at("other/src/main.rs:3", "grid"),
+            "other/src/main.rs Image::grid (unique)"
+        );
+        // A receiver of a type graff reads is that type's, either way.
+        assert_eq!(
+            at("app/src/main.rs:12", "grid"),
+            "app/src/main.rs Image::grid (receiver)"
+        );
+        assert_eq!(
+            at("app/src/main.rs:13", "grid"),
+            "term/src/lib.rs Term::grid (receiver)"
+        );
+    }
+
+    /// Fields of types graff reads, behind a reference or a pointer, and
+    /// functions that return a type.
+    const FIELDS: &[(&str, &str)] = &[(
+        "src/lib.rs",
+        "use std::rc::Rc;
+mod store {
+    pub struct Disk;
+    impl Disk { pub fn run(&self) {} }
+    pub fn open() -> Result<Disk, ()> { Ok(Disk) }
+}
+pub struct Net;
+impl Net { pub fn run(&self) {} }
+pub struct Node { next: Box<Self>, net: Rc<Net>, disk: store::Disk }
+pub struct Pair(Net, store::Disk);
+impl Node {
+    fn go(&self, pair: &Pair) {
+        self.net.run();
+        self.disk.run();
+        self.next.net.run();
+        pair.0.run();
+        pair.1.run();
+        let disk = store::open().unwrap();
+        disk.run();
+        let net = made();
+        net.run();
+        let other = elsewhere();
+        other.run();
+    }
+}
+fn made() -> Net { Net }
+fn elsewhere() -> impl Fn() { || {} }
+",
+    )];
+
+    #[test]
+    fn a_method_call_on_a_field_or_on_what_a_function_returns_is_that_types() {
+        let edges = edges_of(FIELDS);
+        let run = |line: &str| reaches(&edges, &format!("src/lib.rs:{line}"), "run", "call method");
+        // A field's written type, through Rc and Box; Self's own field.
+        assert_eq!(run("13"), "src/lib.rs Net::run (receiver)");
+        assert_eq!(run("14"), "src/lib.rs store::Disk::run (receiver)");
+        assert_eq!(run("15"), "src/lib.rs Net::run (receiver)");
+        // A tuple struct's fields by their place.
+        assert_eq!(run("16"), "src/lib.rs Net::run (receiver)");
+        assert_eq!(run("17"), "src/lib.rs store::Disk::run (receiver)");
+        // A free function's written return type, unwrapped, read where it is.
+        assert_eq!(run("19"), "src/lib.rs store::Disk::run (receiver)");
+        assert_eq!(run("21"), "src/lib.rs Net::run (receiver)");
+        // One graff cannot tell: the name alone, as before.
+        assert_eq!(run("23"), "ambiguous, 2");
     }
 
     #[test]
@@ -2909,8 +3134,6 @@ pub fn go(net: &mut Net, held: Option<Net>) -> Result<(), Error> {
         let run = |line: &str, name: &str| {
             reaches(&edges, &format!("src/lib.rs:{line}"), name, "call method")
         };
-        // Shadowed by a free function's value: what make returns is not read.
-        assert_eq!(run("44", "run"), "ambiguous, 2");
         // Disk::plain returns another type, whose run comes through Deref.
         assert_eq!(run("46", "run"), "ambiguous, 2");
         assert_eq!(run("47", "close"), "src/lib.rs Net::close (unique)");

@@ -18,7 +18,7 @@ use crate::lang::Language;
 
 /// Bumped whenever what an extractor produces changes, so that results kept
 /// from an older extractor are read again rather than trusted.
-pub const VERSION: u32 = 29;
+pub const VERSION: u32 = 30;
 
 /// What the index keeps this build's extractions under: VERSION for a
 /// release, which a rebuild keeps reusing; for any other build, VERSION and
@@ -83,7 +83,9 @@ pub struct Symbol {
     /// `sh = Shards(d)` or `sh: Shards`, `K3Config` for `def tiny() ->
     /// K3Config`; for a value a call returns, the callee, `tiny_config`.
     /// Rust: a function's return type as written, unspaced: `Self`,
-    /// `Result<Storage,Error>`.
+    /// `Result<Storage,Error>`; a struct's fields and the type each holds,
+    /// `name:Type` joined by `;`, a tuple struct's named 0, 1, ..., the type
+    /// a `Box`, an `Rc` or an `Arc` points to for one: `store:Storage;0:Disk`.
     #[serde(default)]
     pub typed: Option<String>,
     /// Nix: whether the binding is in what a function that makes a package,
@@ -213,9 +215,12 @@ pub struct Call {
     /// call is, as its `let` or its parameter writes or builds it: `Storage`
     /// with `store: &mut Storage`, `let store: Storage` or `let store =
     /// Storage { .. }`; `Storage::open()` after `let store =
-    /// Storage::open(..)`, the type if that function returns it;
-    /// `Storage::open()?` after `Storage::open(..)?`, `.unwrap()` or
-    /// `.expect(..)`, if it returns a Result or an Option of it.
+    /// Storage::open(..)`, the type if that function returns it, and
+    /// `open()` or `store::open()` after a function's call, the type it
+    /// returns; `Storage::open()?` after `Storage::open(..)?`, `.unwrap()` or
+    /// `.expect(..)`, if it returns a Result or an Option of it. For a
+    /// field, what holds it, a dot and the field's name: `Self.store` for
+    /// `self.store`, `Storage.disk.0` for `store.disk.0`.
     #[serde(default)]
     pub typed: Option<String>,
 }

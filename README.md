@@ -20,13 +20,15 @@ than by types, a file being the module of each `mod` item that loads it as
 rustc finds it, through a `path` attribute too, and says what stays
 ambiguous (`src/resolve.rs`). A method called on `self` reaches its type's,
 and so does one called on a local whose parameter or `let` writes its type
-or builds it, by `Type { .. }` or a `Type::f(..)` written to return the type
-or, through `?` or `unwrap()`, a Result or an Option of it, where that type
-has a method of the name; one called on anything else, the crate's only
-method of that name, unless a type of std has one too or it is the method
-the call is in, and else, as possible, those of the crate's and of the
-libraries of the worktree's other packages it names in a path or a use
-item. In Nix, by
+or builds it, by `Type { .. }`, a `Type::f(..)` written to return the type or
+a function written to return one -- or, through `?` or `unwrap()`, a Result
+or an Option of it -- or on such a value's field, `self.store` too, as the
+struct writes its type (`T`, `&T`, `Box<T>`, `Rc<T>`, `Arc<T>`), where that
+type has a method of the name; one called on anything else, the crate's only
+method of that name, unless a type of std or a library of the worktree's
+other packages the crate names in a path or a use item has one too, or it is
+the method the call is in, and else, as possible, those of the crate's and
+of those libraries. In Nix, by
 its syntax, each binding is a definition named by its path, a NixOS option
 declared with mkOption one too, and a file one, which a path imports: a name
 is tied to the `let` or `rec` binding it is bound to, a path to its file (a

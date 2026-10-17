@@ -661,6 +661,12 @@ impl<'s> Reader<'s> {
             return;
         };
         self.generics.push(self.generic_names(node));
+        if kind == Kind::Struct {
+            let held = self.fields_held(node);
+            if let Some(symbol) = self.out.symbols.last_mut() {
+                symbol.typed = held;
+            }
+        }
         let from = self.from.replace(qualified.clone());
         for (field, child) in fields(node) {
             match (field, child.kind()) {
@@ -1017,12 +1023,12 @@ impl<'s> Reader<'s> {
 
     /// A method call, and its receiver when it is `self` or a name.
     fn record_method(&mut self, at: Node, name: &str, receiver: Option<Node>) {
+        let typed = receiver
+            .filter(|r| r.kind() != "self")
+            .and_then(|r| self.held(r));
         let receiver = receiver
             .filter(|r| matches!(r.kind(), "self" | "identifier"))
             .map(|r| self.text(r).to_string());
-        let typed = receiver
-            .as_ref()
-            .and_then(|receiver| self.typed.get(receiver).cloned());
         self.record_call(at, name, None, CallKind::Method);
         if let Some(call) = self.out.calls.last_mut() {
             call.receiver = receiver;
@@ -1589,10 +1595,83 @@ impl<'s> Reader<'s> {
         }
     }
 
+    /// What a receiver holds, as `Call::typed` gives it: a local's type, or
+    /// a field's of what holds it, `Self.store` for `self.store`, `Disk.0`
+    /// for `d.0` where `d` holds a Disk.
+    fn held(&self, node: Node) -> Option<String> {
+        match node.kind() {
+            "self" => Some("Self".to_string()),
+            "identifier" => self.typed.get(self.text(node)).cloned(),
+            "field_expression" => {
+                let field = node.child_by_field_name("field")?;
+                if !matches!(field.kind(), "field_identifier" | "integer_literal") {
+                    return None;
+                }
+                let held = self.held(node.child_by_field_name("value")?)?;
+                Some(format!("{held}.{}", self.text(field)))
+            }
+            _ => None,
+        }
+    }
+
+    /// A struct's fields and the type each holds, as `Symbol::typed` gives
+    /// them: `name:Type`, joined by `;`, a tuple struct's named 0, 1, ...; a
+    /// field of no type graff reads left out.
+    fn fields_held(&self, node: Node) -> Option<String> {
+        let body = node.child_by_field_name("body")?;
+        let mut held = Vec::new();
+        match body.kind() {
+            "field_declaration_list" => {
+                for field in named_children(body) {
+                    if let Some(name) = field.child_by_field_name("name")
+                        && let Some(ty) = field.child_by_field_name("type")
+                        && let Some(ty) = self.pointee(ty)
+                    {
+                        held.push(format!("{}:{ty}", self.text(name)));
+                    }
+                }
+            }
+            "ordered_field_declaration_list" => {
+                let mut cursor = body.walk();
+                let types: Vec<Node> = body.children_by_field_name("type", &mut cursor).collect();
+                for (index, ty) in types.into_iter().enumerate() {
+                    if let Some(ty) = self.pointee(ty) {
+                        held.push(format!("{index}:{ty}"));
+                    }
+                }
+            }
+            _ => {}
+        }
+        (!held.is_empty()).then(|| held.join(";"))
+    }
+
+    /// The type a field's methods are called on: its written type's, or,
+    /// for a `Box`, an `Rc` or an `Arc`, what it points to.
+    fn pointee(&self, node: Node) -> Option<String> {
+        if node.kind() == "reference_type" {
+            return self.pointee(node.child_by_field_name("type")?);
+        }
+        if node.kind() == "generic_type"
+            && let Some(base) = node.child_by_field_name("type")
+            && matches!(
+                self.text(base).rsplit("::").next(),
+                Some("Box" | "Rc" | "Arc")
+            )
+        {
+            let arguments = node.child_by_field_name("type_arguments")?;
+            let first = named_children(arguments)
+                .into_iter()
+                .find(|a| !matches!(a.kind(), "lifetime" | "line_comment" | "block_comment"))?;
+            return self.pointee(first);
+        }
+        self.written_type(node)
+    }
+
     /// The type a value is built as, as `Call::typed` gives it: `Storage` for
     /// `Storage { .. }`; `Storage::open()` for `Storage::open(..)`, whose
-    /// return type tells; `Storage::open()?` for that call followed by `?`,
-    /// `.unwrap()` or `.expect(..)`.
+    /// return type tells; `open()` or `store::open()` for a function's call,
+    /// whose return type names the type; `Storage::open()?` for such a call
+    /// followed by `?`, `.unwrap()` or `.expect(..)`.
     fn built_type(&self, node: Node) -> Option<String> {
         let unwrapped = |built: String| built.ends_with("()").then(|| built + "?");
         match node.kind() {
@@ -1611,9 +1690,12 @@ impl<'s> Reader<'s> {
                         let path = function.child_by_field_name("path")?;
                         let name = function.child_by_field_name("name")?;
                         let path = without_generics(&path_text(self.text(path)));
-                        (starts_upper(path.rsplit("::").next()?)
-                            && !self.is_generic(path.split("::").next()?))
-                        .then(|| format!("{path}::{}()", self.text(name)))
+                        (!self.is_generic(path.split("::").next()?))
+                            .then(|| format!("{path}::{}()", self.text(name)))
+                    }
+                    "identifier" => {
+                        let name = self.text(function);
+                        (!self.locals.contains(name)).then(|| format!("{name}()"))
                     }
                     "field_expression"
                         if function.child_by_field_name("field").is_some_and(|field| {
@@ -2024,9 +2106,9 @@ mod tests {
                 ("e", Some("Disk::find()?")),
                 ("g", Some("Net")),
                 ("h", Some("Net")),
-                ("i", None),
+                ("i", Some("make()")),
                 ("j", None),
-                ("c", None),
+                ("c", Some("make()")),
                 ("c", Some("Disk::new()")),
                 ("m", Some("Net")),
                 ("c", None),
@@ -2036,6 +2118,47 @@ mod tests {
         // A generic parameter is no type of the crate's.
         let out = extract(b"fn g<T: Tr>(t: &T) { t.x(); let u = T::make(); u.x(); }");
         assert!(out.calls.iter().all(|c| c.typed.is_none()));
+    }
+
+    #[test]
+    fn a_struct_keeps_its_fields_types_and_a_call_on_a_field_names_what_holds_it() {
+        let source = "struct S<T> { a: store::Disk, b: Box<Net>, c: Arc<Mutex<Net>>, d: &'a Rc<Net>, e: T, f: (u8, u8), g: Self }
+struct P(pub Disk, u8, Rc<Net>);
+impl S<u8> {
+    fn f(&self, p: P) {
+        self.a.x(); self.b.c.x(); p.0.x(); p.2.x(); q.0.x(); self.get().x(); self.x();
+    }
+}";
+        let out = extract(source.as_bytes());
+        let held = |name: &str| {
+            out.symbols
+                .iter()
+                .find(|s| s.name == name)
+                .and_then(|s| s.typed.clone())
+        };
+        assert_eq!(
+            held("S").as_deref(),
+            Some("a:store::Disk;b:Net;c:Mutex;d:Net;g:Self")
+        );
+        assert_eq!(held("P").as_deref(), Some("0:Disk;2:Net"));
+        let typed: Vec<Option<&str>> = out
+            .calls
+            .iter()
+            .filter(|c| c.name == "x")
+            .map(|c| c.typed.as_deref())
+            .collect();
+        assert_eq!(
+            typed,
+            vec![
+                Some("Self.a"),
+                Some("Self.b.c"),
+                Some("P.0"),
+                Some("P.2"),
+                None,
+                None,
+                None
+            ]
+        );
     }
 
     #[test]

@@ -16,6 +16,10 @@ drawn by the protocol's rule before graff's first code (task 46).
 
 ## Gate B's runs (task 25)
 
+The result, 2026-10-17: **pass** (graff called in 4 of 4, resolved 4 to
+control's 3, units 0.84 of control's in geometric mean); [GATE-B.md](GATE-B.md)
+has the configuration, the runs, the pairs and what was observed.
+
 `harness.py` runs the probe and the pairs, `grade.py` grades them and reads
 the decision; both are ekko's evals/paired at 099da4f with what PROTOCOL.md's
 Harness and Deviations say. The runs get the user's environment, so the

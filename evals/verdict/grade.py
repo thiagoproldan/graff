@@ -54,10 +54,17 @@ def judge_dir():
     return os.path.join(H.OUT, "judge")
 
 
+def check_env(environ=None):
+    """The checks' environment: what a run's own sessions had dropped, dropped
+    here too. An ekko agents session that grades exports EKKO_PROJECT, which
+    ekko's CLI tests read and refuse beside their own --ekko-dir; a devshell
+    may point cargo at another target folder."""
+    environ = os.environ if environ is None else environ
+    return {k: v for k, v in environ.items() if not k.startswith(("CLAUDE", "EKKO", "CTX_")) and k != "CARGO_TARGET_DIR"}
+
+
 def cargo(repo, *args):
-    # The devshell that runs this script may point cargo at another target folder.
-    env = {k: v for k, v in os.environ.items() if k != "CARGO_TARGET_DIR"}
-    return subprocess.run(["nix", "develop", "-c", "cargo", *args], cwd=repo, env=env, capture_output=True, text=True,
+    return subprocess.run(["nix", "develop", "-c", "cargo", *args], cwd=repo, env=check_env(), capture_output=True, text=True,
                           timeout=1800, stdin=subprocess.DEVNULL)
 
 
@@ -284,6 +291,34 @@ def run_dir_of(run_id):
     return os.path.join(H.ROOT, run_id)
 
 
+# cargo test runs three times, and a test fails the checks only when it fails
+# in two of them: ekko's concurrency test failed once in ekko-394/control's
+# suite under the load of a nix build beside it and passed 21 times in a loop
+# (task 25's question 680, settled after that failure was seen). A build that
+# does not compile fails every attempt, so it still fails.
+TEST_ATTEMPTS = 3
+
+
+def test_attempt(test):
+    return {"ok": test.returncode == 0,
+            "passed": sum(int(n) for n in re.findall(r"test result: \w+\. (\d+) passed", test.stdout)),
+            "failed": sum(int(n) for n in re.findall(r"test result: \w+\. \d+ passed; (\d+) failed", test.stdout)),
+            "failures": re.findall(r"(?m)^test (\S+) \.\.\. FAILED$", test.stdout),
+            "tail": (test.stdout + test.stderr)[-1500:] if test.returncode else ""}
+
+
+def tests_pass(attempts):
+    """No test fails in a majority of the attempts, and a majority of them ran:
+    an attempt that failed with no test named (a build error, a crash) counts
+    against every test."""
+    need = len(attempts) // 2 + 1
+    unnamed = sum(1 for a in attempts if not a["ok"] and not a["failures"])
+    if unnamed >= need:
+        return False
+    names = {name for a in attempts for name in a["failures"]}
+    return all(sum(1 for a in attempts if name in a["failures"]) + unnamed < need for name in names)
+
+
 def checks(run_id):
     """The repository's checks on a run's result, and the hidden tests where
     the task has them."""
@@ -294,21 +329,24 @@ def checks(run_id):
     repo = os.path.join(run_dir_of(run_id), "repo")
     found = {"run": run_id, "head": H.git(repo, "rev-parse", "--short", "HEAD"), "dirty": bool(H.git(repo, "status", "--porcelain"))}
     if task["repo"] == "ekko":
-        test = cargo(repo, "test", "--locked")
-        found["tests"] = {"ok": test.returncode == 0,
-                          "passed": sum(int(n) for n in re.findall(r"test result: \w+\. (\d+) passed", test.stdout)),
-                          "failed": sum(int(n) for n in re.findall(r"test result: \w+\. \d+ passed; (\d+) failed", test.stdout)),
-                          "failures": re.findall(r"(?m)^test (\S+) \.\.\. FAILED$", test.stdout),
-                          "tail": (test.stdout + test.stderr)[-1500:] if test.returncode else ""}
+        # A run graded once before the three attempts keeps that grading's
+        # test as its first attempt, which is the literal reading.
+        path = os.path.join(H.OUT, "runs", run_id, "checks.json")
+        before = json.load(open(path)) if os.path.exists(path) else {}
+        attempts = [before["tests"]] if "tests" in before and "test_attempts" not in before else []
+        attempts += [test_attempt(cargo(repo, "test", "--locked")) for _ in range(TEST_ATTEMPTS - len(attempts))]
+        found["tests"] = dict(attempts[0], ok=tests_pass(attempts), literal_ok=attempts[0]["ok"])
+        found["test_attempts"] = attempts
         binary = os.path.join(repo, "target", "debug", "ekko")
         hidden = HIDDEN.get(record["task"])
         found["hidden"] = ([{"name": name, "ok": ok, "reply": reply[:600]} for name, ok, reply in hidden(binary)]
                            if hidden and os.path.exists(binary) else [])
         found["clippy"] = cargo(repo, "clippy", "--locked", "--all-targets", "--", "-D", "warnings").returncode == 0
         # The flake's build runs the tests in Nix's sandbox, as CI does (ekko's).
-        found["nix"] = subprocess.run(["nix", "build", ".#default", "--no-link"], cwd=repo, capture_output=True, text=True,
+        found["nix"] = subprocess.run(["nix", "build", ".#default", "--no-link"], cwd=repo, env=check_env(), capture_output=True, text=True,
                                       timeout=3600, stdin=subprocess.DEVNULL).returncode == 0
         found["ok"] = found["tests"]["ok"] and found["clippy"] and found["nix"]
+        found["literal_ok"] = found["tests"]["literal_ok"] and found["clippy"] and found["nix"]
     else:
         found["hidden"] = []
         found["nix_checks"] = [{"name": name, "ok": ok, "read": str(read)[:300]} for name, ok, read in nix.nix_checks(repo, task["checks"]["nix"])]
@@ -323,11 +361,20 @@ def checks(run_id):
 # ---- the judge ----------------------------------------------------------------------------
 
 
+# What a run's status makes of it. A run the harness stopped by its own rule --
+# the 3M cap, or 8 sessions spent -- is measured and graded as it stands, as
+# PROTOCOL.md's Budget reads; a run cut by the usage limit (or ctx's refusal,
+# which the harness files as one) is discarded and run again, and one stopped
+# by the week's guard is not a result either. test_grade.py holds every
+# status harness.py writes to one of the two.
+COUNTED, DISCARDED = H.COUNTED, H.DISCARDED
+
+
 def pair_runs(name, records=None):
-    """A task's pair: the last finished pair run of each cell."""
+    """A task's pair: the last counted pair run of each cell."""
     found = {}
     for record in records if records is not None else H.records():
-        if record["task"] == name and record.get("kind") == "pair" and record["status"] == "done":
+        if record["task"] == name and record.get("kind") == "pair" and record["status"] in COUNTED:
             found[record["cell"]] = record
     return found
 
@@ -396,13 +443,15 @@ def transcripts_of(record):
     return sorted(glob.glob(os.path.join(H.OUT, "runs", record["run"], "transcripts", "**", "*.jsonl"), recursive=True))
 
 
-def first_edit(path, prompt):
-    """In a session's main thread: the calls before the first that edits or
-    commits (grade.py's productive), and the seconds from the prompt's row to
-    that call's (note 527). None for both when it never edits."""
-    calls, _ = main_calls(path)
+def first_edit(paths, prompt):
+    """Over a run's sessions in order, main threads only: the calls before the
+    first that edits or commits (grade.py's productive), and the seconds from
+    the first session's prompt row to that call's (note 527) -- a run's, as
+    PROTOCOL.md's Measures read, so a first edit after a handoff counts the
+    sessions before it. None for both when the run never edits."""
+    paths = [paths] if isinstance(paths, str) else list(paths)
     at = None
-    with open(path, errors="replace") as handle:
+    with open(paths[0], errors="replace") as handle:
         for raw in handle:
             try:
                 row = json.loads(raw)
@@ -414,10 +463,14 @@ def first_edit(path, prompt):
             if row.get("type") == "user" and not row.get("isSidechain") and prompt in text and row.get("timestamp"):
                 at = datetime.datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00")).timestamp()
                 break
-    index = next((i for i, call in enumerate(calls) if call.productive()), None)
-    if index is None:
-        return None, None
-    return index, (round(calls[index].at - at) if at is not None else None)
+    before = 0
+    for path in paths:
+        calls, _ = main_calls(path)
+        index = next((i for i, call in enumerate(calls) if call.productive()), None)
+        if index is not None:
+            return before + index, (round(calls[index].at - at) if at is not None else None)
+        before += len(calls)
+    return None, None
 
 
 def navigation(paths):
@@ -448,8 +501,9 @@ def billed(record):
 
 def measure(record):
     paths = transcripts_of(record)
-    first = os.path.join(H.OUT, "runs", record["run"], "transcripts", record["sessions"][0]["sid"] + ".jsonl") if record["sessions"] else None
-    to_edit, seconds = first_edit(first, record["sessions"][0]["prompt"]) if first and os.path.exists(first) else (None, None)
+    mains = [os.path.join(H.OUT, "runs", record["run"], "transcripts", s["sid"] + ".jsonl") for s in record["sessions"]]
+    mains = [path for path in mains if os.path.exists(path)]
+    to_edit, seconds = first_edit(mains, record["sessions"][0]["prompt"]) if mains else (None, None)
     cost, dollars = billed(record)
     versions = sorted({s["setup"]["claude_code"] for s in record["sessions"] if s.get("setup", {}).get("claude_code")})
     return {"units": record["units"], "billed": cost, "dollars": dollars, "nav": navigation(paths), "calls": record["calls"],
@@ -457,10 +511,12 @@ def measure(record):
             "minutes": sum(s["seconds"] for s in record["sessions"]) / 60}
 
 
-def resolved(task, found, judged, run_id):
+def resolved(task, found, judged, run_id, literal=False):
     """PROTOCOL.md: the repository's checks and the hidden tests pass; where a
-    task has no hidden test, the judge's correctness averages 4 or more."""
-    if not found or not found.get("ok"):
+    task has no hidden test, the judge's correctness averages 4 or more.
+    literal: cargo test's first attempt alone, as PROTOCOL.md read before
+    question 680."""
+    if not found or not found.get("literal_ok" if literal and "literal_ok" in found else "ok"):
         return False
     if task["id"] in HIDDEN:
         return bool(found["hidden"]) and all(check["ok"] for check in found["hidden"])
@@ -522,15 +578,41 @@ def ratio(a, b):
     return f"{a / b:.2f}" if a is not None and b else "-"
 
 
+# graff's builds by the revision they come from, each mapped with `nix eval
+# --raw github:thiagoproldan/graff/<rev>#packages.x86_64-linux.default.outPath`
+# (note 674): a `nix flake update` of ~/NixOS at 17:36 moved the installed
+# graff after the probe and before the first pair.
+BUILDS = {
+    "/nix/store/637wx6rqqqf9pg0p074w2pcal2avyxyv-graff-0.1.0": "bc7e6f8",
+    "/nix/store/dg43zjigf5ndgqvck85cikvcgnfxf7bd-graff-0.1.0": "939981e",
+    "/nix/store/71qkjaqy9gv3327mgkypr4ifdgjpyw65-graff-0.1.0": "22be0fb",
+}
+STORE_GRAFF = re.compile(rb"/nix/store/[a-z0-9]{32}-graff-[0-9.]+")
+
+
+def graff_builds(run_id):
+    """The graff builds a run's streams and transcripts name: what it ran,
+    measured from inside rather than from the lock."""
+    found = set()
+    for path in glob.glob(os.path.join(H.OUT, "runs", run_id, "**", "*.jsonl"), recursive=True):
+        found |= {hit.decode() for hit in STORE_GRAFF.findall(open(path, "rb").read())}
+    return sorted(found)
+
+
 def configuration(records):
     head = H.git(os.path.normpath(os.path.join(HERE, "..", "..")), "rev-parse", "--short", "HEAD")
-    graff = shutil.which("graff")
+    builds = {}
+    for record in records:
+        for build in graff_builds(record["run"]):
+            builds.setdefault(build, []).append(record["run"])
     versions = sorted({v for r in records for s in r["sessions"] for v in [s.get("setup", {}).get("claude_code")] if v})
     models = sorted({v for r in records for s in r["sessions"] for v in [s.get("setup", {}).get("model")] if v})
     plugins = sorted({p for r in records for s in r["sessions"] for p in s.get("setup", {}).get("plugins", [])})
     return [
         f"- Harness and grader: evals/verdict/harness.py and grade.py at graff {head}, adapted from ekko's evals/paired at 099da4f.",
-        f"- graff measured: the installed {os.path.realpath(graff) if graff else '-'} (~/NixOS's lock: graff bc7e6f8, task 24).",
+        "- graff measured, as the runs' own files name it: " + ("; ".join(
+            f"{BUILDS.get(build, 'an unknown revision')} ({build}) in {', '.join(runs)}" for build, runs in sorted(builds.items())) or "-")
+        + ". Control's runs must name none.",
         f"- Claude Code {', '.join(versions) or '-'}; model {', '.join(models) or '-'}; effort max (the probe at low); account {H.ACCOUNT}, "
         f"{H.POINT // 1000}k units a point of its 5-hour window.",
         f"- Plugins seen in the runs' init: {', '.join(plugins) or '-'}.",
@@ -577,6 +659,7 @@ def report(public=False):
         c, g = measured[runs["control"]["run"]], measured[runs["graff"]["run"]]
         row = {"task": name, "graff_calls": g["graff_calls"], "control_graff_calls": c["graff_calls"],
                "resolved": {cell: resolved(tasks[name], found_checks[r["run"]], judged, r["run"]) for cell, r in runs.items()},
+               "resolved_literal": {cell: resolved(tasks[name], found_checks[r["run"]], judged, r["run"], literal=True) for cell, r in runs.items()},
                "units": {"control": c["units"], "graff": g["units"]}, "prefer": preferred(judged, runs) if judged else None}
         rows.append(row)
         same = "same" if c["versions"] == g["versions"] else "DIFFERS"
@@ -586,6 +669,7 @@ def report(public=False):
     lines += ["", "Ratios are graff's over control's. Navigation, calls and the first edit are descriptive only (PROTOCOL.md, Measures; note 527).", ""]
     judged_all = all(row["prefer"] is not None for row in rows)
     result = decide(rows) if judged_all else {"outcome": "incomplete", "why": "not every pair is judged"}
+    literal = decide([dict(row, resolved=row["resolved_literal"]) for row in rows]) if judged_all else result
     contaminated = [row["task"] for row in rows if row["control_graff_calls"]]
     lines += ["## The decision", "", f"**{result['outcome']}**: {result['why']}.", ""]
     if "geometric_mean" in result:
@@ -593,6 +677,9 @@ def report(public=False):
                   f"- Quality: resolved, control {result['resolved']['control']}, graff {result['resolved']['graff']}; the judge prefers "
                   f"control in {result['wins']['control']}, graff in {result['wins']['graff']}, one-sided sign test p = {result['sign_p']:.4f} (fails at 0.10 or less).",
                   f"- Cost: graff over control, per task {', '.join(f'{r:.2f}' for r in result['ratios'])}; geometric mean {result['geometric_mean']:.2f} (1.30 or less).", ""]
+    if "geometric_mean" in literal:
+        lines += [f"- Beside it, the literal reading (cargo test's first attempt alone, as before question 680): **{literal['outcome']}**; "
+                  f"resolved, control {literal['resolved']['control']}, graff {literal['resolved']['graff']}.", ""]
     lines += [f"- Control's calls to graff, Bash included: {'none' if not contaminated else 'IN ' + ', '.join(contaminated)} (note 115 demands zero).", ""]
     if not public:
         for path in sorted(glob.glob(os.path.join(judge_dir(), "*.json"))):
@@ -603,7 +690,7 @@ def report(public=False):
     with open(os.path.join(H.OUT, "report-public.md" if public else "report.md"), "w") as handle:
         handle.write(text)
     with open(os.path.join(H.OUT, "decision.json"), "w") as handle:
-        json.dump({"rows": rows, "decision": result}, handle, indent=2)
+        json.dump({"rows": rows, "decision": result, "literal": literal}, handle, indent=2)
     print(text)
     return result
 
@@ -612,7 +699,7 @@ def main(argv):
     if not argv or argv[0] not in ("checks", "judge", "report"):
         raise SystemExit(__doc__)
     if argv[0] == "checks":
-        done = [r["run"] for r in H.records() if r["status"] == "done" and r.get("kind") == "pair"]
+        done = [r["run"] for r in H.records() if r["status"] in COUNTED and r.get("kind") == "pair"]
         for run_id in argv[1:] or [r for r in done if not os.path.exists(os.path.join(H.OUT, "runs", r, "checks.json"))]:
             checks(run_id)
     elif argv[0] == "judge":

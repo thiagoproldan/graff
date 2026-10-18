@@ -66,6 +66,45 @@ Task 25 runs it as written. Nothing here moves after a result is seen.
       stays five + 1.3M under 95%.
     - Each task's cells are shuffled with seed 25 (`harness.py gate --dry-run`
       prints the order).
+- 2026-10-17, gate B, written after its runs began and before any grading
+  (task 25):
+    - graff measured is 22be0fb (VERSION 31, SCHEMA 15), not bc7e6f8: a
+      whole `nix flake update` of ~/NixOS at 17:36, outside this board, moved
+      the installed graff after the probe (15:40-15:48, on bc7e6f8) and
+      before the first pair (19:02). Every pair run's own files name
+      /nix/store/71qkjaqy...-graff-0.1.0, which `nix eval` of
+      github:thiagoproldan/graff/22be0fb gives; control's name none (note
+      674). The report reads it from each run. The same update moved Claude
+      Code from 2.1.296 (the check and the probe) to 2.1.302, which every
+      session of every pair ran, as each session's init reads.
+    - The grader counted only a run whose status is done, which dropped a
+      run stopped at the 3M cap: the cap stops a run and does not discard it,
+      so a capped run, or one that spent its 8 sessions, is measured and
+      graded as it stands; one cut by the usage limit, ctx's refusal or the
+      week's guard is not a result (note 677). `test_grade.py` reads every
+      status harness.py writes and holds each to one of the two.
+- 2026-10-17, gate B, settled after the first checks and the judge of
+  ekko-394 and ekko-121 were seen, before ekko-397 ended (task 25):
+    - The checks ran with the grading session's own variables: an ekko
+      agents session exports EKKO_PROJECT, and ekko's CLI tests refused it
+      beside their own --ekko-dir, so all four ekko runs failed the same
+      five tests. The checks now drop what a run's sessions drop (CLAUDE*,
+      EKKO*, CTX_*, CARGO_TARGET_DIR), and were run again.
+    - Run again, ekko-394/control failed one test its diff does not touch,
+      tests/concurrency.rs's fifty_concurrent_writers..., with a nix build
+      of another run beside it; the test passed 15 of 15 alone and the whole
+      suite 6 of 6 in each 394 run, and control's flake build, which runs
+      the suite, passed. Settled by the orchestrator under decision 595
+      (question 680), against graff's interest: in every ekko run cargo test
+      runs three times (that grading's run is the first), and a test fails
+      the checks only when it fails in two of them. The report gives the
+      literal reading, the first attempt alone, beside the decision.
+- 2026-10-18, gate B, a grader fix made after the decision was read (task
+  25), in a measure that decides nothing: "calls to the first edit" and its
+  seconds were counted in a run's first session alone, so a run whose first
+  edit came after a handoff read as never editing, where the Measures say
+  per run. They now count over the run's sessions in order, the seconds from
+  the first prompt.
 
 ## What is decided
 

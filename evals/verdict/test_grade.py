@@ -6,6 +6,8 @@ a transcript, each with a case that makes it say no.
 
 import json
 import os
+import re
+import shutil
 import sys
 import tempfile
 
@@ -114,7 +116,68 @@ def main():
         failed.append(f"first_edit with no edit: {grade.first_edit(path, 'faz a 394')}, want (None, None)")
     if harness.graff_calls([path]) != 0:
         failed.append(f"graff_calls with graff only as a word: {harness.graff_calls([path])}, want 0")
+    # A first edit after a handoff: the first session's calls count, and the
+    # seconds run from its prompt.
+    later = transcript([{"type": "user", "timestamp": "2026-10-17T23:10:00.000Z", "message": {"role": "user", "content": "continuando"}},
+                        call("n1", "2026-10-17T23:10:05.000Z", [("Read", {"file_path": "src/ops.rs"})]),
+                        call("n2", "2026-10-17T23:11:00.000Z", [("Write", {"file_path": "src/ops.rs", "content": "b"})])])
+    if grade.first_edit([path, later], "faz a 394") != (3, 660):
+        failed.append(f"first_edit after a handoff: {grade.first_edit([path, later], 'faz a 394')}, want (3, 660)")
     os.unlink(path)
+    os.unlink(later)
+
+    # Every status harness.py writes is either counted or discarded, never
+    # both, and a capped or segments run makes a pair like a done one.
+    source = open(harness.__file__).read()
+    written = set(re.findall(r'\bstatus\s*=\s*"(\w+)"', source)) | set(re.findall(r'\bstatus\s*,\s*"(\w+)"\s*$', source, re.M)) \
+        | set(re.findall(r'text, status = prompt, "(\w+)"', source))
+    if not {"done", "capped", "limit"} <= written:
+        failed.append(f"statuses read from harness.py: {sorted(written)}, which misses some it writes")
+    for status in sorted(written):
+        if (status in grade.COUNTED) == (status in grade.DISCARDED):
+            failed.append(f"status {status!r}: counted and discarded, or neither")
+    for status in sorted(written):
+        given = [{"task": "t", "kind": "pair", "cell": cell, "status": status, "run": f"{cell}-{status}"} for cell in ("control", "graff")]
+        if bool(grade.pair_runs("t", given)) != (status in grade.COUNTED):
+            failed.append(f"pair_runs with both runs {status}: {grade.pair_runs('t', given)}")
+
+    # cargo test's three attempts: a test fails the checks only in two of them.
+    ok, broke = {"ok": True, "failures": []}, {"ok": False, "failures": []}
+    a, b = {"ok": False, "failures": ["a"]}, {"ok": False, "failures": ["b"]}
+    for name, attempts, want in (("all pass", [ok, ok, ok], True), ("a once", [a, ok, ok], True), ("a twice", [a, a, ok], False),
+                                 ("a, then b", [a, b, ok], True), ("no build", [broke, broke, broke], False),
+                                 ("one crash", [broke, ok, ok], True), ("a crash and a", [broke, a, ok], False)):
+        if grade.tests_pass(attempts) != want:
+            failed.append(f"tests_pass, {name}: want {want}")
+    flaky = {"ok": True, "literal_ok": False, "hidden": [{"ok": True}]}
+    task = {"id": "ekko-394"}
+    if not grade.resolved(task, flaky, None, "c") or grade.resolved(task, flaky, None, "c", literal=True):
+        failed.append("resolved: a flake once in three resolves, and not in the literal reading")
+    if not grade.resolved(task, {"ok": True, "hidden": [{"ok": True}]}, None, "c", literal=True):
+        failed.append("resolved, literal: a run with one reading only (nixos-789's checks) reads it")
+
+    # The checks run without the grading session's own variables: an ekko
+    # agents session exports EKKO_PROJECT, which ekko's CLI tests refuse.
+    session = {"PATH": "/bin", "HOME": "/home/x", "EKKO_PROJECT": "graff", "EKKO_AGENT_TASK": "25", "CLAUDECODE": "1",
+               "CTX_HANDOFF_5H": "1", "CARGO_TARGET_DIR": "/elsewhere"}
+    if grade.check_env(session) != {"PATH": "/bin", "HOME": "/home/x"}:
+        failed.append(f"check_env keeps {sorted(set(grade.check_env(session)) - {'PATH', 'HOME'})}")
+
+    # The graff build a run names in its own files, and none where graff is
+    # only a word.
+    out, harness.OUT = harness.OUT, tempfile.mkdtemp(prefix="graff-25-builds-")
+    try:
+        build = "/nix/store/71qkjaqy9gv3327mgkypr4ifdgjpyw65-graff-0.1.0"
+        for run_id, text, want in (("g", f'{{"command": "{build}/bin/graff def batch"}}', [build]),
+                                   ("c", '{"command": "command -v graff || echo none", "graff-0.1.0": 1}', [])):
+            os.makedirs(os.path.join(harness.OUT, "runs", run_id, "transcripts"))
+            with open(os.path.join(harness.OUT, "runs", run_id, "transcripts", "s.jsonl"), "w") as handle:
+                handle.write(text + "\n")
+            if grade.graff_builds(run_id) != want:
+                failed.append(f"graff_builds {run_id}: {grade.graff_builds(run_id)}, want {want}")
+    finally:
+        shutil.rmtree(harness.OUT, ignore_errors=True)
+        harness.OUT = out
 
     for line in failed:
         print("FAIL " + line)

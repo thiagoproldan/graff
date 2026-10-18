@@ -43,7 +43,16 @@ harness runs on the store's python, outside the devshell:
   rules: the real repositories, ~/NixOS, the profiles' transcripts and
   ekko's other boards are refused, and so are sudo, a switch of the system
   or the profile, services and writes under ~/.claude*. `test_harness.py`
-  holds a case each way for every rule.
+  holds a case each way for every rule. It also refuses a scratch board a run
+  makes for itself (`EKKO_DIR=` under its own folder or a mktemp path) and
+  the run's own saved tool outputs under the profile's projects folder:
+  see note 678 on task 25 before reusing it.
+- **What counts**: a run stopped at the cap or after 8 sessions is graded as
+  it stands; one cut by the usage limit, ctx's refusal or the week's guard
+  is run again (`harness.COUNTED`, `DISCARDED`). The checks drop the grading
+  session's own variables, and run cargo test three times: a test fails
+  only when it fails in two (question 680); the report gives the first
+  attempt's reading beside it.
 - **Where things land**: the run repositories in
   ~/.cache/ekko-paired/graff-25/ (a folder the transcript studies skip, so
   that task 51's bill leaves them out), and runs, transcripts, checks, the

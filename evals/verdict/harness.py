@@ -88,6 +88,11 @@ TOTAL_CAP = 30_000_000  # the whole gate, the probe included
 NIGHT = (datetime.time(19, 0), datetime.time(7, 30))
 SEED = 25  # the cells' order within each task
 
+# A run stopped by the harness's own rule (the cap, 8 sessions) is a result;
+# one cut by the usage limit, ctx's refusal or the week's guard is not, and the
+# gate runs it again (PROTOCOL.md's Budget; note 677).
+COUNTED = ("done", "capped", "segments")
+DISCARDED = ("limit", "week")
 CELLS = {
     "control": {"graff": False},
     "graff": {"graff": True},
@@ -875,7 +880,7 @@ def at_night(moment):
 def gate(dry_run=False, anytime=False):
     log(f"account {ACCOUNT} at {POINT // 1000}k units a point; a run starts from {NIGHT[0]:%H:%M} to {NIGHT[1]:%H:%M}, "
         f"while the week is under {SEVEN_DAY:.0%} and {EXPECTED / 1e6:.1f}M units fit under {FIVE_HOUR:.0%} of the 5-hour window")
-    done = {(r["task"], r["cell"]) for r in records() if r["status"] == "done" and r.get("kind") == "pair"}
+    done = {(r["task"], r["cell"]) for r in records() if r["status"] in COUNTED and r.get("kind") == "pair"}
     queue = [entry for entry in queue_of() if entry[:2] not in done]
     log("queue: " + ", ".join(f"{n}/{c}" for n, c, _ in queue) + (f" ({len(done)} done before)" if done else ""))
     if dry_run:

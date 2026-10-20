@@ -27,6 +27,7 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "ceiling"))
 sys.path.insert(0, HERE)
+import boards  # noqa: E402
 import ceiling  # noqa: E402
 import draw  # noqa: E402
 
@@ -61,8 +62,7 @@ def tasks():
 def spec_of(task):
     """ekko's grade.py's spec: the request as the user typed it, and the text of
     each task it names as the board holds it."""
-    with open(os.path.join(BOARDS[task["board"]], "storage", "storage.json")) as handle:
-        by_id = {int(item["_id"]): item for item in json.load(handle).values()}
+    by_id = {int(item["_id"]): item for item in boards.read(BOARDS[task["board"]]).values()}
     parts = [f"The request, as the user typed it: '{task['prompt']}'."]
     parts += [f"Task {n}: {by_id[int(n)]['description']}" for n in re.findall(r"\d+", task["prompt"])]
     return "\n\n".join(parts)

@@ -55,6 +55,8 @@ import uuid
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "ceiling"))
 from ceiling import W_CR, W_CW1H, W_CW5M, W_IN, W_OUT, bash_segments  # noqa: E402
+sys.path.insert(0, HERE)
+import boards  # noqa: E402
 
 HOME = os.path.expanduser("~")
 LOCAL = datetime.timezone(datetime.timedelta(hours=-3))
@@ -334,8 +336,7 @@ def snapshot(board, start_ms, targets, dest):
     later left out, stashes and answers made later undone, tasks finished
     later reopened, no session holding anything, the targets pending. Text
     edited later cannot be recovered: returns the ids whose text may be newer."""
-    with open(os.path.join(board, "storage", "storage.json")) as handle:
-        items = json.load(handle)
+    items = boards.read(board)
     kept, newer = {}, []
     for key, item in items.items():
         if int(item.get("_timestamp") or 0) >= start_ms:
@@ -356,12 +357,14 @@ def snapshot(board, start_ms, targets, dest):
         if int(item.get("updatedAt") or 0) >= start_ms and not item.get("_isTask"):
             newer.append(item["_id"])
         kept[key] = item
-    counters = json.load(open(os.path.join(board, "storage", "counters.json")))
+    counters = boards.counters(board)
     counters["highestId"] = max(int(item["_id"]) for item in kept.values())
     os.makedirs(os.path.join(dest, "storage"))
     for folder in ("history", "archive"):
         os.makedirs(os.path.join(dest, folder))
     shutil.copy(os.path.join(board, "project.json"), dest)
+    # Seeded as JSON, which ekko reads as it is until its first write moves
+    # the board into a database.
     with open(os.path.join(dest, "storage", "storage.json"), "w") as handle:
         json.dump(kept, handle, indent=4)
     with open(os.path.join(dest, "storage", "counters.json"), "w") as handle:
@@ -497,8 +500,8 @@ def handoff_text(tokens, limit):
 
 def handoffs_since(repo, since):
     try:
-        items = json.load(open(os.path.join(repo, ".ekko", "storage", "storage.json")))
-    except (OSError, ValueError):
+        items = boards.read(os.path.join(repo, ".ekko"))
+    except boards.ERRORS:
         return []
     return [item["_id"] for item in items.values() if item.get("handoff") and int(item.get("_timestamp") or 0) >= since * 1000]
 
@@ -782,7 +785,8 @@ def run(name, cell, rep, effort="max", prompt=None, cap=CAP, build=True, kind="p
         rows = [json.loads(line) for line in open(fence_log)]
         record["fence"] = {"calls": len(rows), "refused": [r for r in rows if r["refused"]],
                            "graff_on_hook_path": sorted({r["graff_on_path"] or "" for r in rows})}
-    shutil.copy(os.path.join(repo, ".ekko", "storage", "storage.json"), os.path.join(out_dir, "board.json"))
+    with open(os.path.join(out_dir, "board.json"), "w") as handle:
+        json.dump(boards.read(os.path.join(repo, ".ekko")), handle, indent=4)
     with open(os.path.join(out_dir, "run.json"), "w") as handle:
         json.dump(record, handle, indent=2)
     log(f"{run_id}: {status}, {calls} calls, {total / 1e6:.2f}M units ({total / POINT:.0f} points), "

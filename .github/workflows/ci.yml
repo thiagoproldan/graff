@@ -37,13 +37,25 @@ jobs:
 
       # The evals' own tests: the checkers and metrics gate A and gate B are
       # read with, each case holding an input that must make it say no. They
-      # read no transcript and no repository of the user's.
+      # read no transcript and no repository of the user's. They run in the
+      # dev shell, as their docstrings and the local gate run them: the C
+      # eval needs its addr2line (the runner's, binutils 2.42, places a
+      # function a header defines in the file that includes it), and the
+      # Markdown eval builds cmark-gfm with nix. Every test runs, and the
+      # step fails at the end, so that one failure hides no other.
+      - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Eval tests
+        shell: nix develop --command bash -e {0}
         run: |
+          failed=0
           for t in evals/*/test_*.py; do
             echo "$t"
-            python3 "$t"
+            python3 "$t" || { echo "::error::$t failed"; failed=1; }
           done
+          exit "$failed"
 
       # Nothing else pins the declared MSRV, so it would rot while CI builds
       # on stable. Build only, as ekko's CI does.
